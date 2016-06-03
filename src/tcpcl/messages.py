@@ -14,17 +14,17 @@ class Contact(NoPayloadPacket):
     #: Contact header magic head-data
     MAGIC_HEAD = 'dtn!'
     
-    FLAG_ENA_ACK     = 0x01
+    FLAG_ENA_ACK    = 0x01
     FLAG_ENA_FRAG   = 0x02
     FLAG_ENA_REFUSE = 0x04
-    FLAG_ENA_LENGTH  = 0x08
+    FLAG_ENA_LENGTH = 0x08
     
     fields_desc = [
         fields.StrFixedLenField('magic', default=MAGIC_HEAD, length=4),
         formats.UInt8Field('version', default=4),
         fields.FlagsField('flags', default=0, size=8,
                           # names in LSbit-first order
-                          names=['ENA_LENGTH', 'ENA_REFUSE', 'ENA_FRAG', 'ENA_ACK']),
+                          names=['ENA_ACK', 'ENA_FRAG', 'ENA_REFUSE', 'ENA_LENGTH']),
         formats.UInt16Field('keepalive', default=0),
         
         formats.SdnvFieldLenField('eid_length', default=None, length_of='eid_data'),
@@ -106,12 +106,20 @@ class BundleLength(NoPayloadPacket):
 class RefuseBundle(NoPayloadPacket):
     ''' An REFUSE_BUNDLE with no payload. '''
     
+    REASON_UNKNOWN    = 0x0
+    REASON_COMPLETED  = 0x1
+    REASON_RESOURCES  = 0x2
+    REASON_RETRANSMIT = 0x3
+    
     fields_desc = [
         formats.SdnvField('bundle_id', default=None),
     ]
 
 class DataSegment(NoPayloadPacket):
     ''' A DATA_SEGMENT with bundle data as payload. '''
+    
+    FLAG_START = 0x2
+    FLAG_END   = 0x1
     
     fields_desc = [
         formats.SdnvField('bundle_id', default=None),
