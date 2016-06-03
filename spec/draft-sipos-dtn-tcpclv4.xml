@@ -1,0 +1,1298 @@
+<?xml version="1.0"?>
+<!DOCTYPE rfc SYSTEM "rfc2629.dtd" [
+<!ENTITY rfc2119 PUBLIC '' 'http://xml.resource.org/public/rfc/bibxml/reference.RFC.2119.xml'>
+<!ENTITY rfc2595 PUBLIC '' 'http://xml.resource.org/public/rfc/bibxml/reference.RFC.2595.xml'>
+<!ENTITY rfc5226 PUBLIC '' 'http://xml.resource.org/public/rfc/bibxml/reference.RFC.5226.xml'>
+<!ENTITY rfc5246 PUBLIC '' 'http://xml.resource.org/public/rfc/bibxml/reference.RFC.5246.xml'>
+<!ENTITY rfc7242 PUBLIC '' 'http://xml.resource.org/public/rfc/bibxml/reference.RFC.7242.xml'>
+]>
+<?rfc toc="yes"?>
+<rfc ipr="trust200902" 
+     category="exp"
+     docName="draft-sipos-dtn-tcpclv4-00"
+     obsoletes="RFC7242">
+  <front>
+    <title abbrev="DTN TCPCLv4">
+      Delay-Tolerant Networking TCP Convergence Layer Protocol Version 4
+    </title>
+    <author initials="B." surname="Sipos" fullname="Brian Sipos">
+      <organization abbrev="RKF Engineering">
+        RKF Engineering Solutions, LLC
+      </organization>
+      <address>
+        <postal>
+        <street>1229 19th Street NW</street>
+        <city>Wasington</city>
+        <region>DC</region>
+        <code>20036</code>
+        <country>US</country>
+        </postal>
+        <email>BSipos@rkf-eng.com</email>
+      </address>
+    </author>
+    <date year="2016" month="May"/>
+    <workgroup>Delay Tolerant Networking</workgroup>
+
+    <abstract>
+      <t>
+This document describes a revised protocol for the TCP-based convergence
+layer for Delay-Tolerant Networking (DTN).
+The protocol revision is based on implementation issues in the original
+<xref target="RFC7242"/> and updates to the Bundle Protocol contents,
+encodings, and convergence layer requirements in <xref target="I-D.ietf-dtn-bpbis"/>.
+The majority of this specification is unchanged from TCPCL version 3.
+      </t>
+    </abstract>
+  </front>
+  <middle>
+    <section anchor="sec-1" title="Introduction">
+      <t>
+   This document describes the TCP-based convergence-layer protocol for
+   Delay-Tolerant Networking.  Delay-Tolerant Networking is an end-to-
+   end architecture providing communications in and/or through highly
+   stressed environments, including those with intermittent
+   connectivity, long and/or variable delays, and high bit error rates.
+   More detailed descriptions of the rationale and capabilities of these
+   networks can be found in &quot;Delay-Tolerant Network Architecture&quot;
+   <xref target="RFC4838"/>.
+</t><t>
+   An important goal of the DTN architecture is to accommodate a wide
+   range of networking technologies and environments.  The protocol used
+   for DTN communications is the revsided Bundle Protocol (BP)
+   <xref target="I-D.ietf-dtn-bpbis"/>, an
+   application-layer protocol that is used to construct a store-and-
+   forward overlay network.  As described in the Bundle Protocol
+   specification <xref target="I-D.ietf-dtn-bpbis"/>,
+   it requires the services of a &quot;convergence-
+   layer adapter&quot; (CLA) to send and receive bundles using the service of
+   some &quot;native&quot; link, network, or Internet protocol.  This document
+   describes one such convergence-layer adapter that uses the well-known
+   Transmission Control Protocol (TCP).  This convergence layer is
+   referred to as TCPCL.
+</t><t>
+   The locations of the TCPCL and the BP in the Internet model protocol
+   stack are shown in Figure 1.  In particular, when BP is using TCP as
+   its bearer with TCPCL as its convergence layer, both BP and TCPCL
+   reside at the application layer of the Internet model.
+ </t>
+ <figure anchor="fig-tcpcl-ip-stack"
+     title="The Locations of the Bundle Protocol and the TCP Convergence-Layer Protocol above the Internet Protocol Stack">
+   <artwork>
+      +-------------------------+
+      |     DTN Application     | -\
+      +-------------------------|   |
+      |  Bundle Protocol (BP)   |   -&gt; Application Layer
+      +-------------------------+   |
+      | TCP Conv. Layer (TCPCL) | -/
+      +-------------------------+
+      |          TCP            | ---&gt; Transport Layer
+      +-------------------------+
+      |           IP            | ---&gt; Network Layer
+      +-------------------------+
+      |   Link-Layer Protocol   | ---&gt; Link Layer
+      +-------------------------+
+      |    Physical Medium      | ---&gt; Physical Layer
+      +-------------------------+
+   </artwork>
+ </figure>
+<t>
+   This document describes the format of the protocol data units passed
+   between entities participating in TCPCL communications.  This
+   document does not address:
+ </t>
+ <t>
+ <list style="symbols">
+   <t>
+     The format of protocol data units of the Bundle Protocol, as those
+     are defined elsewhere in <xref target="RFC5050"/> and
+     <xref target="I-D.ietf-dtn-bpbis"/>.
+   </t><t>
+     Mechanisms for locating or identifying other bundle nodes within
+     an internet.
+   </t>
+ </list>
+ </t><t>
+   Note that this document describes version 3 of the protocol.
+   Versions 0, 1, and 2 were never specified in an Internet-Draft, RFC,
+   or any other public document.  These prior versions of the protocol
+   were, however, implemented in the DTN reference implementation
+   [DTNIMPL] in prior releases; hence, the current version number
+   reflects the existence of those prior versions.
+</t><t>
+   This is an experimental protocol produced within the IRTF's Delay-
+   Tolerant Networking Research Group (DTNRG).  It represents the
+   consensus of all active contributors to this group.  If this protocol
+   is used on the Internet, IETF standard protocols for security and
+   congestion control should be used.
+</t>
+</section>
+<section title="Requirements Language">
+<t>
+   The key words &quot;MUST&quot;, &quot;MUST NOT&quot;, &quot;REQUIRED&quot;, &quot;SHALL&quot;, &quot;SHALL NOT&quot;,
+   &quot;SHOULD&quot;, &quot;SHOULD NOT&quot;, &quot;RECOMMENDED&quot;, &quot;MAY&quot;, and &quot;OPTIONAL&quot; in this
+   document are to be interpreted as described in <xref target="RFC2119"/>.
+</t>
+<section anchor="sec-2.1" title="Definitions Specific to the TCPCL Protocol">
+<t>
+   This section contains definitions that are interpreted to be specific
+   to the operation of the TCPCL protocol, as described below.
+<list style="hanging">
+<t hangText="TCP Connection:">
+  A TCP connection refers to a transport connection
+  using TCP as the transport protocol.
+</t><t hangText="TCPCL Connection:">
+  A TCPCL connection (as opposed to a TCP
+  connection) is a TCPCL communication relationship between two
+  bundle nodes. The lifetime of a TCPCL connection is bound to
+  the lifetime of an underlying TCP connection. Therefore, a
+  TCPCL connection is initiated when a bundle node initiates a TCP
+  connection to be established for the purposes of bundle
+  communication. A TCPCL connection is terminated when the TCP
+  connection ends, due either to one or both nodes actively
+  terminating the TCP connection or due to network errors causing
+  a failure of the TCP connection. For the remainder of this
+  document, the term &quot;connection&quot; without the prefix &quot;TCPCL&quot;
+  refer to a TCPCL connection.
+</t><t hangText="Connection parameters:">
+  The connection parameters are a set of
+  values used to affect the operation of the TCPCL for a given
+  connection. The manner in which these parameters are conveyed
+  to the bundle node and thereby to the TCPCL is implementation
+  dependent. However, the mechanism by which two bundle nodes
+  exchange and negotiate the values to be used for a given session
+  is described in <xref target="sec-contact-negotiate"/>.
+</t><t hangText="Transmission:">
+  Transmission refers to the procedures and mechanisms
+  (described below) for conveyance of a bundle from one node to
+  another.
+</t></list></t>
+</section>
+</section>
+<section anchor="sec-3" title="General Protocol Description">
+<t>
+   The service of this protocol is the transmission of DTN bundles over
+   TCP.  This document specifies the encapsulation of bundles,
+   procedures for TCP setup and teardown, and a set of messages and node
+   requirements.  The general operation of the protocol is as follows.
+</t><t>
+   First, one node establishes a TCPCL connection to the other by
+   initiating a TCP connection.  After setup of the TCP connection is
+   complete, an initial contact header is exchanged in both directions
+   to set parameters of the TCPCL connection and exchange a singleton
+   endpoint identifier for each node (not the singleton Endpoint
+   Identifier (EID) of any application running on the node) to denote
+   the bundle-layer identity of each DTN node.  This is used to assist
+   in routing and forwarding messages, e.g., to prevent loops.
+</t><t>
+   Once the TCPCL connection is established and configured in this way,
+   bundles can be transmitted in either direction.  Each bundle is
+   transmitted in one or more logical segments of formatted bundle data.
+   Each logical data segment consists of a DATA_SEGMENT message header,
+   a Self-Delimiting Numeric Value (SDNV) as defined in <xref target="RFC6256"/>
+   containing the length of the segment, and finally the
+   byte range of the bundle data.  The choice of the length to use for
+   segments is an implementation matter.  The first segment for a bundle
+   must set the 'start' flag, and the last one must set the 'end' flag
+   in the DATA_SEGMENT message header.
+</t><t>
+   If multiple bundles are transmitted on a single TCPCL connection,
+   they MUST be transmitted consecutively.  Interleaving data segments
+   from different bundles is not allowed.  Bundle interleaving can be
+   accomplished by fragmentation at the BP layer.
+</t><t>
+   An optional feature of the protocol is for the receiving node to send
+   acknowledgments as bundle data segments arrive (ACK_SEGMENT).  The
+   rationale behind these acknowledgments is to enable the sender node
+   to determine how much of the bundle has been received, so that in
+   case the connection is interrupted, it can perform reactive
+   fragmentation to avoid re-sending the already transmitted part of the
+   bundle.
+</t><t>
+   When acknowledgments are enabled, then for each data segment that is
+   received, the receiving node sends an ACK_SEGMENT code followed by an
+   SDNV containing the cumulative length of the bundle that has been
+   received.  The sending node may transmit multiple DATA_SEGMENT
+   messages without necessarily waiting for the corresponding
+   ACK_SEGMENT responses.  This enables pipelining of messages on a
+   channel.  In addition, there is no explicit flow control on the TCPCL
+   layer.
+</t><t>
+   Another optional feature is that a receiver may interrupt the
+   transmission of a bundle at any point in time by replying with a
+   REFUSE_BUNDLE message, which causes the sender to stop transmission
+   of the current bundle, after completing transmission of a partially
+   sent data segment.  Note: This enables a cross-layer optimization in
+   that it allows a receiver that detects that it already has received a
+   certain bundle to interrupt transmission as early as possible and
+   thus save transmission capacity for other bundles.
+</t><t>
+   For connections that are idle, a KEEPALIVE message may optionally be
+   sent at a negotiated interval.  This is used to convey liveness
+   information.
+</t><t>
+   Finally, before connections close, a SHUTDOWN message is sent on the
+   channel.  After sending a SHUTDOWN message, the sender of this
+   message may send further acknowledgments (ACK_SEGMENT or
+   REFUSE_BUNDLE) but no further data messages (DATA_SEGMENT).  A
+   SHUTDOWN message may also be used to refuse a connection setup by a
+   peer.
+</t>
+<section anchor="sec-3.1" title="Bidirectional Use of TCP Connection">
+<t>
+   There are specific messages for sending and receiving operations (in
+   addition to connection setup/teardown).  TCPCL is symmetric, i.e.,
+   both sides can start sending data segments in a connection, and one
+   side's bundle transfer does not have to complete before the other
+   side can start sending data segments on its own.  Hence, the protocol
+   allows for a bi-directional mode of communication.
+</t><t>
+   Note that in the case of concurrent bidirectional transmission,
+   acknowledgment segments may be interleaved with data segments.
+</t>
+</section>
+<section anchor="sec-3.2" title="Example Message Exchange">
+<t>
+   The following figure visually depicts the protocol exchange for a
+   simple session, showing the connection establishment and the
+   transmission of a single bundle split into three data segments (of
+   lengths L1, L2, and L3) from Node A to Node B.
+</t><t>
+   Note that the sending node may transmit multiple DATA_SEGMENT
+   messages without necessarily waiting for the corresponding
+   ACK_SEGMENT responses.  This enables pipelining of messages on a
+   channel.  Although this example only demonstrates a single bundle
+   transmission, it is also possible to pipeline multiple DATA_SEGMENT
+   messages for different bundles without necessarily waiting for
+   ACK_SEGMENT messages to be returned for each one.  However,
+   interleaving data segments from different bundles is not allowed.
+</t><t>
+   No errors or rejections are shown in this example.
+</t>
+<figure anchor="fig-contact-example"
+    title="A Simple Visual Example of the Flow of Protocol Messages on a Single TCP Session between Two Nodes (A and B)">
+<artwork>
+              Node A                              Node B
+              ======                              ======
+    +-------------------------+         +-------------------------+
+    |     Contact Header      | -&gt;   &lt;- |     Contact Header      |
+    +-------------------------+         +-------------------------+
+    
+    +-------------------------+
+    |   DATA_SEGMENT (start)  | -&gt;
+    |    SDNV length [L1]     | -&gt;
+    |  Bundle Data 0..(L1-1)  | -&gt;
+    +-------------------------+
+    +-------------------------+         +-------------------------+
+    |     DATA_SEGMENT        | -&gt;   &lt;- |       ACK_SEGMENT       |
+    |    SDNV length [L2]     | -&gt;   &lt;- |     SDNV length [L1]    |
+    |Bundle Data L1..(L1+L2-1)| -&gt;      +-------------------------+
+    +-------------------------+
+    +-------------------------+         +-------------------------+
+    |    DATA_SEGMENT (end)   | -&gt;   &lt;- |       ACK_SEGMENT       |
+    |     SDNV length [L3]    | -&gt;   &lt;- |   SDNV length [L1+L2]   |
+    |Bundle Data              | -&gt;      +-------------------------+
+    |    (L1+L2)..(L1+L2+L3-1)|
+    +-------------------------+
+                                        +-------------------------+
+                                     &lt;- |       ACK_SEGMENT       |
+                                     &lt;- |  SDNV length [L1+L2+L3] |
+                                        +-------------------------+
+
+    +-------------------------+         +-------------------------+
+    |       SHUTDOWN          | -&gt;   &lt;- |         SHUTDOWN        |
+    +-------------------------+         +-------------------------+
+</artwork></figure>
+</section>
+</section>
+<section title="Connection Establishment">
+<t>
+   For bundle transmissions to occur using the TCPCL, a TCPCL connection
+   must first be established between communicating nodes.  It is up to
+   the implementation to decide how and when connection setup is
+   triggered.  For example, some connections may be opened proactively
+   and maintained for as long as is possible given the network
+</t><t>
+   conditions, while other connections may be opened only when there is
+   a bundle that is queued for transmission and the routing algorithm
+   selects a certain next-hop node.
+</t><t>
+   To establish a TCPCL connection, a node must first establish a TCP
+   connection with the intended peer node, typically by using the
+   services provided by the operating system.  Port number 4556 has been
+   assigned by IANA as the well-known port number for the TCP
+   convergence layer.  Other port numbers MAY be used per local
+   configuration.  Determining a peer's port number (if different from
+   the well-known TCPCL port) is up to the implementation.
+</t><t>
+   If the node is unable to establish a TCP connection for any reason,
+   then it is an implementation matter to determine how to handle the
+   connection failure.  A node MAY decide to re-attempt to establish the
+   connection.  If it does so, it MUST NOT overwhelm its target with
+   repeated connection attempts.  Therefore, the node MUST retry the
+   connection setup only after some delay (a 1-second minimum is
+   RECOMMENDED), and it SHOULD use a (binary) exponential backoff
+   mechanism to increase this delay in case of repeated failures.  In
+   case a SHUTDOWN message specifying a reconnection delay is received,
+   that delay is used as the initial delay.  The default initial delay
+   SHOULD be at least 1 second but SHOULD be configurable since it will
+   be application and network type dependent.
+</t><t>
+   The node MAY declare failure after one or more connection attempts
+   and MAY attempt to find an alternate route for bundle data.  Such
+   decisions are up to the higher layer (i.e., the BP).
+</t><t>
+   Once a TCP connection is established, each node MUST immediately
+   transmit a contact header over the TCP connection.  The format of the
+   contact header is described in <xref target="sec-contact-header"/>.
+</t><t>
+   Upon receipt of the contact header, both nodes perform the validation
+   and negotiation procedures defined in <xref target="sec-contact-negotiate"/>
+</t><t>
+   After receiving the contact header from the other node, either node
+   MAY also refuse the connection by sending a SHUTDOWN message.  If
+   connection setup is refused, a reason MUST be included in the
+   SHUTDOWN message.
+</t>
+<section anchor="sec-contact-header" title="Contact Header">
+<t>
+   Once a TCP connection is established, both parties exchange a contact
+   header.  This section describes the format of the contact header and
+   the meaning of its fields.
+</t><t>
+   The format for the Contact Header is as follows:
+</t>
+ <figure anchor="fig-contact-header"
+     title="Contact Header Format">
+   <artwork>
+                        1 1 1 1 1 1 1 1 1 1 2 2 2 2 2 2 2 2 2 2 3 3
+    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   +---------------+---------------+---------------+---------------+
+   |                          magic='dtn!'                         |
+   +---------------+---------------+---------------+---------------+
+   |     version   |     flags     |    Keepalive interval (U16)   |
+   +---------------+---------------+---------------+---------------+
+   |                     local EID length (SDNV)                   |
+   +---------------+---------------+---------------+---------------+
+   |                     local EID (byte string)                   |
+   |                                                               |
+   +---------------+---------------+---------------+---------------+
+   |                     BP version count (SDNV)                   |
+   +---------------+---------------+---------------+---------------+
+   |                BP version supported (sequence of byte)        |
+   |                                                               |
+   +---------------+---------------+---------------+---------------+
+</artwork>
+</figure>
+<t>
+   The fields of the contact header are:
+</t><t>
+<list style="hanging">
+<t hangText="magic:">
+    A four-byte field that always contains the byte sequence 0x64
+    0x74 0x6e 0x21, i.e., the text string &quot;dtn!&quot; in US-ASCII.
+</t><t hangText="version:">
+    A one-byte field value containing the value 4 (current
+    version of the protocol).
+</t><t hangText="flags:">
+    A one-byte field containing optional connection flags.  The
+    first four bits are unused and MUST be set to zero upon
+    transmission and MUST be ignored upon reception.  The last four
+    bits are interpreted as shown in Table 1 below.
+</t><t hangText="Keepalive Interval">
+    A two-byte unsigned integer (U16) field containing the number
+    of seconds between exchanges of KEEPALIVE messages on the
+    connection (see <xref target="sec-keepalive"/>).  This value is in network byte
+    order, as are all other multi-byte fields described in this
+    protocol.
+</t><t hangText="local EID length:">
+    A variable-length SDNV field containing the length
+    of the endpoint identifier (EID) for some singleton endpoint in
+    which the sending node is a member.  A four-byte SDNV is
+    depicted for clarity of the figure.
+</t><t hangText="local EID:">
+    A byte string containing the UTF-8 encoded EID of some singleton
+    endpoint in which the sending node is a member, in the canonical
+    format of &lt;scheme name&gt;:&lt;scheme-specific part&gt;.
+    An eight-byte EID is shown for clarity of the figure.
+</t><t hangText="BP version count:">
+    A count of the number of "BP version supported" values to follow.
+    The order of the sequence is not significant, but a canonical order is
+    ascending by numeric value.
+</t><t hangText="BP version supported:">
+    An individual Bundle Protocol version number (encoded as a single byte)
+    supported by the BP node sending the header.
+</t>
+</list>
+</t>
+<texttable anchor="fig-contact-flags" title="Contact Header Flags">
+  <ttcol>Value (bits)</ttcol><ttcol>Meaning</ttcol>
+  <c>00000001</c><c>Request acknowledgment of bundle segments.</c>
+  <c>00000010</c><c>Request enabling of reactive fragmentation.</c>
+  <c>00000100</c><c>Indicate support for bundle refusal.
+    This flag MUST NOT be set to '1' unless support for acknowledgments
+    is also indicated.</c>
+  <c>00001000</c><c>Request sending of LENGTH messages.</c>
+</texttable>
+<t>
+   The manner in which values are configured and chosen for the various
+   flags and parameters in the contact header is implementation
+   dependent.
+</t><t>
+</t>
+</section>
+<section anchor="sec-contact-negotiate"
+    title="Validation and Parameter Negotiation">
+<t>
+   Upon reception of the contact header, each node follows the following
+   procedures to ensure the validity of the TCPCL connection and to
+   negotiate values for the connection parameters.
+</t><t>
+   If the magic string is not present or is not valid, the connection
+   MUST be terminated.  The intent of the magic string is to provide
+   some protection against an inadvertent TCP connection by a different
+   protocol than the one described in this document.  To prevent a flood
+   of repeated connections from a misconfigured application, a node MAY
+   elect to hold an invalid connection open and idle for some time
+   before closing it.
+</t><t>
+   If a node receives a contact header containing a version that is
+   greater than the current version of the protocol that the node
+   implements, then the node SHOULD interpret all fields and messages as
+   it would normally.  If a node receives a contact header with a
+   version that is lower than the version of the protocol that the node
+   implements, the node may either terminate the connection due to the
+   version mismatch or may adapt its operation to conform to the older
+   version of the protocol.  This decision is an implementation matter.
+</t><t>
+   A node calculates the parameters for a TCPCL connection by
+   negotiating the values from its own preferences (conveyed by the
+   contact header it sent) with the preferences of the peer node
+   (expressed in the contact header that it received).  This negotiation
+   MUST proceed in the following manner:
+</t><t>
+<list style="symbols">
+<t>
+    The parameter for requesting acknowledgment of bundle segments is
+    set to true iff the corresponding flag is set in both contact
+    headers.
+</t><t>
+    The parameter for enabling reactive fragmentation is set to true
+    iff the corresponding flag is set in both contact headers.
+</t><t>
+    The bundle refusal capability is set to true if the corresponding
+    flag is set in both contact headers and if segment acknowledgment
+    has been enabled.
+</t><t>
+    The keepalive_interval parameter is set to the minimum value from
+    both contact headers.  If one or both contact headers contains the
+    value zero, then the keepalive feature (described in <xref target="sec-keepalive"/>)
+    is disabled.
+</t><t>
+    The flag requesting sending of LENGTH messages is handled as
+    described in <xref target="sec-5.5"/>.
+</t><t>
+    The set of supported BP versions is the intersection of the BP versions
+    indicated by both of the contact headers.
+    If interoperating with a TCPCL Version 3 node, a TCPCL Version 4 node MAY
+    assume that the TCPCL Version 3 node supports exactly one BP Version:
+    0x06 of <xref target="RFC5050"/>.
+    If there is no common supported BP version then the connection SHOULD
+    be shutdown with reason "BP Version mismatch", 
+    as no possible bundle exchange can occur.
+</t>
+</list>
+</t><t>
+   Once this process of parameter negotiation is completed, the protocol
+   defines no additional mechanism to change the parameters of an
+   established connection; to effect such a change, the connection MUST
+   be terminated and a new connection established.
+</t>
+</section>
+</section>
+
+<section anchor="sec-5" title="Established Connection Operation">
+<t>
+   This section describes the protocol operation for the duration of an
+   established connection, including the mechanisms for transmitting
+   bundles over the connection.
+</t>
+<section anchor="sec-5.1" title="Message Type Codes">
+<t>
+   After the initial exchange of a contact header, all messages
+   transmitted over the connection are identified by a one-byte header
+   with the following structure:
+</t>
+<figure anchor="fig-msg-header" title="Format of the One-Byte Message Header">
+<artwork>
+                             0 1 2 3 4 5 6 7
+                            +-+-+-+-+-+-+-+-+
+                            | type  | flags |
+                            +-+-+-+-+-+-+-+-+
+</artwork></figure>
+<t>
+   type:  Indicates the type of the message as per Table 2 below
+</t><t>
+   flags:  Optional flags defined based on message type.
+</t><t>
+   The types and values for the message type code are as follows.
+</t>
+<texttable anchor="tab-msg-types" title="TCPCL Message Types">
+  <ttcol>Type</ttcol><ttcol>Code</ttcol><ttcol>Description</ttcol>
+  <c>DATA_SEGMENT</c><c>0x1</c><c>Indicates the transmission of a segment of 
+  bundle data, as described in <xref target="sec-5.2"/>.</c>
+  <c>ACK_SEGMENT</c><c>0x2</c><c>Acknowledges reception of a data segment, as 
+  described in <xref target="sec-5.3"/>.</c>
+  <c>REFUSE_BUNDLE</c><c>0x3</c><c>Indicates that the transmission of the 
+  current bundle shall be stopped, as described in <xref target="sec-5.4"/>.</c>
+  <c>KEEPALIVE</c><c>0x4</c><c>KEEPALIVE message for the connection, 
+  as described in <xref target="sec-keepalive"/>.</c>
+  <c>SHUTDOWN</c><c>0x5</c><c>Indicates that one of the nodes participating in 
+  the connection wishes to cleanly terminate the connection, 
+  as described in <xref target="sec-6"/>.</c>
+  <c>LENGTH</c><c>0x6</c><c>Contains the length (in bytes) of the next bundle, as described in <xref target="sec-5.5"/>.</c>
+</texttable>
+</section>
+
+<section anchor="sec-conn-upkeep" title="Upkeep and Status Messages">
+
+<section anchor="sec-keepalive" title="Connection Upkeep (KEEPALIVE)">
+<t>
+   The protocol includes a provision for transmission of KEEPALIVE
+   messages over the TCP connection to help determine if the connection
+   has been disrupted.
+</t><t>
+   As described in <xref target="sec-contact-header"/>, 
+   one of the parameters in the contact
+   header is the keepalive_interval.  Both sides populate this field
+   with their requested intervals (in seconds) between KEEPALIVE
+   messages.
+</t><t>
+   The format of a KEEPALIVE message is a one-byte message type code of
+   KEEPALIVE (as described in Table 2) with no additional data.  Both
+   sides SHOULD send a KEEPALIVE message whenever the negotiated
+   interval has elapsed with no transmission of any message (KEEPALIVE
+   or other).
+</t><t>
+   If no message (KEEPALIVE or other) has been received for at least
+   twice the keepalive_interval, then either party MAY terminate the
+   session by transmitting a one-byte SHUTDOWN message (as described in
+   Table 2) and by closing the TCP connection.
+</t><t>
+   Note: The keepalive_interval should not be chosen too short as TCP
+   retransmissions may occur in case of packet loss.  Those will have to
+   be triggered by a timeout (TCP retransmission timeout (RTO)), which
+   is dependent on the measured RTT for the TCP connection so that
+   KEEPALIVE messages may experience noticeable latency.
+</t>
+</section>
+
+<section anchor="sec-reject" title="Message Rejection (REJECT)">
+<t>
+    If a TCPCL endpoint receives a message which is uknown to it (possibly due
+    to an unhandled protocol mismatch) or is inappropriate for the current 
+    connection state (e.g. a KEEPALIVE or LENGTH message received after
+    feature negotation has disabled those features), there is a protocol-level
+    message to signal this condition in the form of a REJECT reply.
+</t><t>
+    The format of a REJECT message follows:
+</t>
+<figure anchor="fig-msg-reject" title="Format of REJECT Messages">
+<artwork align="center">
++-----------------------------+
+|       Message Header        |
++-----------------------------+
+|   Rejected Message Header   |
++-----------------------------+
+|     Reason Code (byte)      |
++-----------------------------+
+</artwork></figure>
+<t>
+    The Rejected Message Header is a copy of the Message Header to which the
+    REJECT message is sent as a response.
+    The REJECT Reason Code indicates why the REJECT itself was sent.
+    The specified values of the reason code are:
+</t>
+<texttable anchor="tab-reject-reasons" title="REJECT Reason Codes">
+  <ttcol>Name</ttcol><ttcol>Code</ttcol><ttcol>Description</ttcol>
+  <c>Message Type Unknown</c><c>0x01</c><c>A message was received with
+  a Message Type code unknown to the TCPCL endpoint.</c>
+  <c>Message Unsupported</c><c>0x02</c><c>A message was received but
+  the TCPCL endpoint cannot comply with the message contents.</c>
+  <c>Message Unexpected</c><c>0x03</c><c>A message was received while the
+  connection is in a state in which the message is not expected.</c>
+</texttable>
+</section>
+</section>
+
+<section anchor="sec-conn-security" title="Connection Security">
+<t>
+  This version of the TCPCL supports establishing a connection-level Transport
+  Layer Security (TLS) session within an existing TCPCL connection.
+</t><t>
+  When TLS is used within the TCPCL it affects the entire connection, and
+  it can technically be initiated by either endpoint of the connection.
+  By convention, this protocol uses the endpoint which initiated the
+  underlying TCP connection as the initiator of the TLS session request.
+  Once a TLS session is established within TCPCL, there is no mechanism
+  provided to end the TLS session and downgrade the connection.
+  If a non-TLS connection is desired after a TLS session is started then
+  the entire TCPCL connection MUST be shutdown first.
+</t>
+
+      <section title="Requester Role">
+        <t>
+A STARTTLS message SHOULD be sent by the TCP client immediately
+after reception of the TCPCL Contact Header from the server.
+
+Upon sending a STARTTLS message, the requester SHALL enter a waiting state.
+        </t><t>
+While in the waiting state, upon reception of a confirmation STARTTLS message
+the requestor SHALL begin a TLS handshake in accordance with
+<xref target="RFC5246"/>.
+
+While in the waiting state, the recepiton of any message other than a
+STARTTLS reply MAY cause a connection shutdown depending upon security policy
+of the endpoint.
+        </t>
+      </section>
+      <section title="Responder Role">
+        <t>
+Upon reception of a STARTTLS message while not already within a TLS session and
+while not acting as a TLS requester and if the endpoint supports TLS 
+connections, a STARTTLS message SHALL be sent in response.
+If an endpoint receives a STARTTLS message but cannot support a TLS connection
+(for any reason) then a REJECT message SHALL be sent in response containing a
+Reason Code of "Message Unsupported.
+
+Upon reception of a STARTTLS message while already within a TLS session,
+a REJECT message SHOULD be sent in response containing a Reason Code of
+"Message Unexpected".
+
+Upon sending a response STARTTLS message the responder SHALL begin a
+TLS handshake in accordance with <xref target="RFC5246"/>.
+        </t>
+      </section>
+      <section title="TLS Handshake Result">
+        <t>
+If a TLS handshake cannot negotiate a TLS session, either endpoint of the TCPCL
+connection SHOULD cause a TCPCL shutdown with reason "TLS negotiation failed".
+
+After a TLS handshake failure, if the connection is not shutdown then
+either endpoint MAY request a new TLS handshake.
+Unless the TLS parameters change between two sequential handshakes, the
+subsequent handshake is likely to fail just as the earlier one.
+        </t>
+        <t>
+After a TLS session is successfuly established, both TCPCL endpoints SHALL
+re-exchange TCPCL Contact Header messages.
+Any information cached from the prior Contact Header exchange SHALL be
+discarded.
+This re-exchange avoids man-in-the-middle attack in identical fashon to
+<xref target="RFC2595"/>.
+        </t>
+      </section>
+    <section title="Example TLS Initiation">
+      <t>
+A summary of a typical STARTTLS usage is shown in the sequence below where
+the client/requester role is represented by the prefix "C" and the
+server/responder role is represented by the prefix "S".
+Unordered or "simultaneous" actions are shown as "C/S".
+      </t>
+<figure anchor="fig-tls-example" title="A simple visual example of TCPCL TLS Establishment between two nodes"><artwork>
+              Node A                              Node B
+              ======                              ======
+    
+    +-------------------------+         
+    |  Open TCP Connnection   | -&gt;   
+    +-------------------------+         +-------------------------+
+                                     &lt;- |   Accept Connection     |
+                                        +-------------------------+
+    
+    +-------------------------+         +-------------------------+
+    |     Contact Header      | -&gt;   &lt;- |     Contact Header      |
+    +-------------------------+         +-------------------------+
+    
+                    ... plaintext TCPCL messaging ...
+    
+    +-------------------------+
+    |       STARTTLS          | -&gt;
+    +-------------------------+         +-------------------------+
+                                     &lt;- |       STARTTLS          |
+                                        +-------------------------+
+
+    +-------------------------+         +-------------------------+
+    |     TLS Negotiation     | -&gt;   &lt;- |     TLS Negotiation     |
+    +-------------------------+         +-------------------------+
+    
+    +-------------------------+         +-------------------------+
+    |     Contact Header      | -&gt;   &lt;- |     Contact Header      |
+    +-------------------------+         +-------------------------+
+    
+                    ... secured TCPCL messaging ...
+    
+    +-------------------------+         +-------------------------+
+    |       SHUTDOWN          | -&gt;   &lt;- |         SHUTDOWN        |
+    +-------------------------+         +-------------------------+
+</artwork></figure>
+  </section>
+</section>
+
+<section title="Bundle Transfer">
+<t>
+All of the message in this section are directly associated with tranfering
+a bundle between TCPCL endpoints.
+Each of the messages contains a Bundle ID number which is used to correlate
+messages originating from sender and receiver of a bundle.
+The Bundle ID provides a similar behaivior to a datagram sequence number,
+but there are no requirements on Bundle ID ordering or reuse.
+</t><t>
+Bundle IDs SHOULD be unique within a limited scope dependant upon
+implementation needs.
+Sequential bundle transfers SHALL NOT use the same Bundle ID.
+Bundle ID numbers MAY be reused after a window of either count or time.
+Bundle ID reuse SHOULD take into account unacknowledged bundle segments if
+acknowledgement is used within a connection.
+For example, Bundle IDs in the range 1--50 inclusive can be used for sequential
+bundle transmissions in ascending order before recycling back to 1.
+This allows discrimination between 50 adjacent bundle transfers.
+</t><t>
+A TCPCL endpoint SHALL support Bundle IDs at least between 0 and 2^14 
+(two-bytes encoded). A TCPCL endpoint MAY support larger Bundle IDs depending
+upon implementation needs.
+For bidirectional bundle transfers, a TCPCL endpoint SHOULD NOT rely on any
+relation between Bundle IDs originating from each side of the TCPCL connection.
+Upon reception of a Bundle ID not able to be handled by an endpoint, a
+REFUSE_BUNDLE message SHOULD be sent in response.
+</t>
+
+<section anchor="sec-5.2" title="Bundle Data Transmission (DATA_SEGMENT)">
+<t>
+   Each bundle is transmitted in one or more data segments.  The format
+   of a DATA_SEGMENT message follows:
+</t>
+<figure anchor="fig-msg-data-segment" title="Format of DATA_SEGMENT Messages">
+<artwork align="center">
++-----------------------------+
+|       Message Header        |
++-----------------------------+
+|      Bundle ID (SDNV)       |
++-----------------------------+
+|     Data length (SDNV)      |
++-----------------------------+
+| Data contents (byte string) |
++-----------------------------+
+</artwork></figure>
+<figure anchor="fig-flags-data-segment" title="Format of DATA_SEGMENT Header flags">
+<artwork align="center">
+ 4 5 6 7
++-+-+-+-+
+|0|0|S|E|
++-+-+-+-+
+</artwork></figure>
+<t>
+   The type portion of the message header contains the value 0x1.
+</t><t>
+   The flags portion of the message header byte contains two optional
+   values in the two low-order bits, denoted 'S' and 'E' above.  The 'S'
+   bit MUST be set to one if it precedes the transmission of the first
+   segment of a new bundle.  The 'E' bit MUST be set to one when
+   transmitting the last segment of a bundle.
+</t><t>
+   Following the message header, the length field is an SDNV containing
+   the number of bytes of bundle data that are transmitted in this
+   segment.  Following this length is the actual data contents.
+</t><t>
+   Determining the size of the segment is an implementation matter.  In
+   particular, a node may, based on local policy or configuration, only
+   ever transmit bundle data in a single segment, in which case both the
+   'S' and 'E' bits MUST be set to one.
+</t><t>
+  In the Bundle Protocol specification <xref target="RFC5050"/>,
+  a single bundle
+   comprises a primary bundle block, a payload block, and zero or more
+   additional bundle blocks.  The relationship between the protocol
+   blocks and the convergence-layer segments is an implementation-
+   specific decision.  In particular, a segment MAY contain more than
+   one protocol block; alternatively, a single protocol block (such as
+   the payload) MAY be split into multiple segments.
+</t><t>
+   However, a single segment MUST NOT contain data of more than a single
+   bundle.
+</t><t>
+   Once a transmission of a bundle has commenced, the node MUST only
+   send segments containing sequential portions of that bundle until it
+   sends a segment with the 'E' bit set.
+</t>
+</section>
+<section anchor="sec-5.3" title="Bundle Acknowledgments (ACK_SEGMENT)">
+<t>
+   Although the TCP transport provides reliable transfer of data between
+   transport peers, the typical BSD sockets interface provides no means
+   to inform a sending application of when the receiving application has
+   processed some amount of transmitted data.  Thus, after transmitting
+   some data, a Bundle Protocol agent needs an additional mechanism to
+   determine whether the receiving agent has successfully received the
+   segment.
+</t><t>
+   To this end, the TCPCL protocol offers an optional feature whereby a
+   receiving node transmits acknowledgments of reception of data
+   segments.  This feature is enabled if, and only if, during the
+   exchange of contact headers, both parties set the flag to indicate
+   that segment acknowledgments are enabled (see <xref target="sec-contact-header"/>).  If so,
+   then the receiver MUST transmit a bundle acknowledgment message when
+   it successfully receives each data segment.
+</t><t>
+   The format of a bundle acknowledgment is as follows:
+</t>
+<figure anchor="fig-msg-ack-segment" title="Format of ACK_SEGMENT Messages">
+<artwork align="center">
++-----------------------------+
+|       Message Header        |
++-----------------------------+
+|      Bundle ID (SDNV)       |
++-----------------------------+
+| Acknowledged length (SDNV)  |
++-----------------------------+
+</artwork></figure>
+<t>
+   To transmit an acknowledgment, a node first transmits a message
+   header with the ACK_SEGMENT type code and all flags set to zero, then
+   transmits an SDNV containing the cumulative length in bytes of the
+   received segment(s) of the current bundle.  The length MUST fall on a
+   segment boundary.  That is, only full segments can be acknowledged.
+</t><t>
+   For example, suppose the sending node transmits four segments of
+   bundle data with lengths 100, 200, 500, and 1000, respectively.
+   After receiving the first segment, the node sends an acknowledgment
+   of length 100.  After the second segment is received, the node sends
+   an acknowledgment of length 300.  The third and fourth
+   acknowledgments are of length 800 and 1800, respectively.
+</t><t>
+</t>
+</section>
+<section anchor="sec-5.4" title="Bundle Refusal (REFUSE_BUNDLE)">
+<t>
+   As bundles may be large, the TCPCL supports an optional mechanisms by
+   which a receiving node may indicate to the sender that it does not
+   want to receive the corresponding bundle.
+</t><t>
+   To do so, upon receiving a DATA_SEGMENT message, the node MAY
+   transmit a REFUSE_BUNDLE message.  As data segments and
+   acknowledgments may cross on the wire, the bundle that is being
+   refused is implicitly identified by the sequence in which
+   acknowledgements and refusals are received.
+</t><t>
+   The format of the  message is as follows:
+</t>
+<figure anchor="fig-msg-refuse-bundle" title="Format of REFUSE_BUNDLE Messages">
+<artwork align="center">
++-----------------------------+
+|       Message Header        |
++-----------------------------+
+|      Bundle ID (SDNV)       |
++-----------------------------+
+</artwork></figure>
+<figure anchor="fig-flags-refuse-bundle" title="Format of REFUSE_BUNDLE Header flags">
+<artwork align="center">
+ 4 5 6 7
++-+-+-+-+
+| RCode |
++-+-+-+-+
+</artwork></figure>
+<t>
+   The RCode field, which stands for &quot;reason code&quot;, contains a value
+   indicating why the bundle was refused.  The following table contains
+   semantics for some values.  Other values may be registered with IANA,
+   as defined in <xref target="sec-8"/>.
+</t>
+<texttable anchor="tab-rcode-values" title="REFUSE_BUNDLE Reason Codes">
+  <ttcol>Name</ttcol><ttcol>RCode</ttcol><ttcol>Semantics</ttcol>
+  <c>Unknown</c><c>0x0</c><c>Reason for refusal is unknown or not specified.</c>
+  <c>Completed</c><c>0x1</c><c>The receiver now has the complete bundle. The sender MAY now 
+  consider the bundle as completely received.</c>
+  <c>No Resources</c><c>0x2</c><c>The receiver's resources are exhausted. The sender SHOULD apply 
+  reactive bundle fragmentation before retrying.</c>
+  <c>Retransmit</c><c>0x3</c><c>The receiver has encountered a problem that requires the bundle 
+  to be retransmitted in its entirety.</c>
+</texttable>
+<t>
+   The receiver MUST, for each bundle preceding the one to be refused,
+   have either acknowledged all DATA_SEGMENTs or refused the bundle.
+   This allows the sender to identify the bundles accepted and refused
+   by means of a simple FIFO list of segments and acknowledgments.
+</t><t>
+   The bundle refusal MAY be sent before the entire data segment is
+   received.  If a sender receives a REFUSE_BUNDLE message, the sender
+   MUST complete the transmission of any partially sent DATA_SEGMENT
+   message (so that the receiver stays in sync).  The sender MUST NOT
+   commence transmission of any further segments of the refused bundle
+   subsequently.  Note, however, that this requirement does not ensure
+   that a node will not receive another DATA_SEGMENT for the same bundle
+   after transmitting a REFUSE_BUNDLE message since messages may cross
+   on the wire; if this happens, subsequent segments of the bundle
+   SHOULD also be refused with a REFUSE_BUNDLE message.
+</t><t>
+   Note: If a bundle transmission is aborted in this way, the receiver
+   may not receive a segment with the 'E' flag set to '1' for the
+   aborted bundle.  The beginning of the next bundle is identified by
+   the 'S' bit set to '1', indicating the start of a new bundle.
+</t>
+</section>
+<section anchor="sec-5.5" title="Bundle Length (LENGTH)">
+<t>
+   The LENGTH message contains the total length, in bytes, of the next
+   bundle, formatted as an SDNV.  Its purpose is to allow nodes to
+   preemptively refuse bundles that would exceed their resources.  It is
+   an optimization.
+</t><t>
+   The format of the LENGTH message is as follows:
+</t>
+<figure anchor="fig-msg-LENGTH" title="Format of LENGTH Messages">
+<artwork align="center">
++-----------------------------+
+|       Message Header        |
++-----------------------------+
+|      Bundle ID (SDNV)       |
++-----------------------------+
+| Total bundle length (SDNV)  |
++-----------------------------+
+</artwork></figure>
+<t>
+   LENGTH messages MUST NOT be sent unless the corresponding flag bit is
+   set in the contact header.  If the flag bit is set, LENGTH messages
+   MAY be sent at the sender's discretion.  LENGTH messages MUST NOT be
+   sent unless the next DATA_SEGMENT message has the 'S' bit set to &quot;1&quot;
+   (i.e., just before the start of a new bundle).
+</t><t>
+   A receiver MAY send a BUNDLE_REFUSE message as soon as it receives a
+   LENGTH message without waiting for the next DATA_SEGMENT message.
+   The sender MUST be prepared for this and MUST associate the refusal
+   with the right bundle.
+</t><t>
+   Upon reception of a LENGTH message when either LENGTH has not been
+   negotiated or not immediately before the start of a starting DATA_SEGMENT
+   the reciever MAY send a REJECT message with a Reason Code of
+   "Message Unexpected".
+</t>
+</section>
+</section>
+</section>
+
+<section anchor="sec-6" title="Connection Termination">
+<t>
+   This section describes the procedures for ending a TCPCL connection.
+</t>
+<section anchor="sec-6.1" title="Shutdown Message (SHUTDOWN)">
+<t>
+   To cleanly shut down a connection, a SHUTDOWN message MUST be
+   transmitted by either node at any point following complete
+   transmission of any other message.  In case acknowledgments have been
+   negotiated, a node SHOULD acknowledge all received data segments
+   first and then shut down the connection.
+</t><t>
+   The format of the SHUTDOWN message is as follows:
+</t>
+<figure anchor="fig-msg-SHUTDOWN" title="Format of SHUTDOWN Messages">
+<artwork align="center">
++-----------------------------------+
+|       Message Header              |
++-----------------------------------+
+|   Reason Code (optional byte)     |
++-----------------------------------+
+| Reconnection Delay (optional U16) |
++-----------------------------------+
+</artwork></figure>
+<figure anchor="fig-flags-SHUTDOWN" title="Format of SHUTDOWN Header flags">
+<artwork align="center">
+ 4 5 6 7
++-+-+-+-+
+|0|0|R|D|
++-+-+-+-+
+</artwork></figure>
+<t>
+   It is possible for a node to convey additional information regarding
+   the reason for connection termination.  To do so, the node MUST set
+   the 'R' bit in the message header flags and transmit a one-byte
+   reason code immediately following the message header.  The specified
+   values of the reason code are:
+</t>
+<texttable anchor="tab-shutdown-reasons" title="SHUTDOWN Reason Codes">
+  <ttcol>Name</ttcol><ttcol>Code</ttcol><ttcol>Description</ttcol>
+  <c>Idle timeout</c><c>0x00</c><c>The connection is being closed due to idleness.</c>
+  <c>CL Version mismatch</c><c>0x01</c><c>The node cannot conform to the specified TCPCL protocol version.</c>
+  <c>Busy</c><c>0x02</c><c>The node is too busy to handle the current connection.</c>
+  <c>BP Version mismatch</c><c>0x03</c><c>The node cannot negotiate a common BP protocol version.</c>
+  <c>TLS failure</c><c>0x04</c><c>The node failed to negotiate TLS session and cannot continue the connection.</c>
+</texttable>
+<t>
+   It is also possible to convey a requested reconnection delay to
+   indicate how long the other node must wait before attempting
+   connection re-establishment.  To do so, the node sets the 'D' bit in
+</t><t>
+   the message header flags and then transmits an SDNV specifying the
+   requested delay, in seconds, following the message header (and
+   optionally, the SHUTDOWN reason code).  The value 0 SHALL be
+   interpreted as an infinite delay, i.e., that the connecting node MUST
+   NOT re-establish the connection.  In contrast, if the node does not
+   wish to request a delay, it SHOULD omit the reconnection delay field
+   (and set the 'D' bit to zero).  Note that in the figure above, the
+   reconnection delay SDNV is represented as a two-byte field for
+   convenience.
+</t><t>
+   A connection shutdown MAY occur immediately after TCP connection
+   establishment or reception of a contact header (and prior to any
+   further data exchange).  This may, for example, be used to notify
+   that the node is currently not able or willing to communicate.
+   However, a node MUST always send the contact header to its peer
+   before sending a SHUTDOWN message.
+</t><t>
+   If either node terminates a connection prematurely in this manner, it
+   SHOULD send a SHUTDOWN message and MUST indicate a reason code unless
+   the incoming connection did not include the magic string.  If a node
+   does not want its peer to reopen the connection immediately, it
+   SHOULD set the 'D' bit in the flags and include a reconnection delay
+   to indicate when the peer is allowed to attempt another connection
+   setup.
+</t><t>
+   If a connection is to be terminated before another protocol message
+   has completed, then the node MUST NOT transmit the SHUTDOWN message
+   but still SHOULD close the TCP connection.  In particular, if the
+   connection is to be closed (for whatever reason) while a node is in
+   the process of transmitting a bundle data segment, the receiving node
+   is still expecting segment data and might erroneously interpret the
+   SHUTDOWN message to be part of the data segment.
+</t>
+</section>
+<section anchor="sec-6.2" title="Idle Connection Shutdown">
+<t>
+   The protocol includes a provision for clean shutdown of idle TCP
+   connections.  Determining the length of time to wait before closing
+   idle connections, if they are to be closed at all, is an
+   implementation and configuration matter.
+</t><t>
+   If there is a configured time to close idle links and if no bundle
+   data (other than KEEPALIVE messages) has been received for at least
+   that amount of time, then either node MAY terminate the connection by
+   transmitting a SHUTDOWN message indicating the reason code of 'Idle
+   timeout' (as described in Table 4).  After receiving a SHUTDOWN
+   message in response, both sides may close the TCP connection.
+</t>
+</section>
+</section>
+<section anchor="sec-7" title="Security Considerations">
+<t>
+   One security consideration for this protocol relates to the fact that
+   nodes present their endpoint identifier as part of the connection
+   header exchange.  It would be possible for a node to fake this value
+   and present the identity of a singleton endpoint in which the node is
+   not a member, essentially masquerading as another DTN node.  If this
+   identifier is used without further verification as a means to
+   determine which bundles are transmitted over the connection, then the
+   node that has falsified its identity may be able to obtain bundles
+   that it should not have.  Therefore, a node SHALL NOT use the
+   endpoint identifier conveyed in the TCPCL connection message to
+   derive a peer node's identity unless it can ascertain it via other
+   means.
+</t><t>
+   These concerns may be mitigated through the use of the Bundle
+   Security Protocol <xref target="RFC6257"/>.  In particular, the Bundle
+   Authentication Block defines mechanism for secure exchange of bundles
+   between DTN nodes.  Thus, an implementation could delay trusting the
+   presented endpoint identifier until the node can securely validate
+   that its peer is in fact the only member of the given singleton
+   endpoint.
+</t><t>
+   TCPCL can be used to provide point-to-point transport security, but does
+   not provide security of data-at-rest and does not guarantee
+   end-to-end bundle security.
+   The mechanisms defined in <xref target="RFC6257"/> and 
+   <xref target="I-D.ietf-dtn-bpsec"/> are to be used instead.
+</t><t>
+   Even when using TLS to secure the TCPCL connection, the actual ciphersuite
+   negotiated between the TLS peers may be insecure.
+   TLS can be used to perform authentication without data confidentiality,
+   for example.
+   It is up to security policies within each TCPCL node to ensure that the 
+   negotiated TLS ciphersuite meets transport security requirements.
+   This is identical behavior to STARTTLS use in <xref target="RFC2595"/>.
+</t><t>
+   Another consideration for this protocol relates to denial-of-service
+   attacks.  A node may send a large amount of data over a TCP
+   connection, requiring the receiving node to handle the data, attempt
+   to stop the flood of data by sending a REFUSE_BUNDLE message, or
+   forcibly terminate the connection.  This burden could cause denial of
+   service on other, well-behaving connections.  There is also nothing
+   to prevent a malicious node from continually establishing connections
+   and repeatedly trying to send copious amounts of bundle data.  A
+   listening node MAY take countermeasures such as ignoring TCP SYN
+   messages, closing TCP connections as soon as they are established,
+   waiting before sending the contact header, sending a SHUTDOWN message
+   quickly or with a delay, etc.
+</t>
+</section>
+<section anchor="sec-8" title="IANA Considerations">
+<t>
+  In this section, registration procedures are as defined in <xref target="RFC5226"/>
+</t>
+<section anchor="sec-8.1" title="Port Number">
+<t>
+  Port number 4556 has been previously assigned as the default port for the
+  TCP convergence layer in <xref target="RFC7242"/>.
+  This assignment is unchanged by protocol version 4.
+</t>
+<texttable>
+  <ttcol>Parameter</ttcol><ttcol>Value</ttcol>
+  <c>Service Name:</c><c>dtn-bundle</c>
+  <c>Transport Protocol(s):</c><c>TCP</c>
+  <c>Assignee:</c><c>Simon Perreault &lt;simon@per.reau.lt&gt;</c>
+  <c>Contact:</c><c>Simon Perreault &lt;simon@per.reau.lt&gt;</c>
+  <c>Description:</c><c>DTN Bundle TCP CL Protocol</c>
+  <c>Reference:</c><c><xref target="RFC7242"/></c>
+  <c>Port Number:</c><c>4556</c>
+</texttable>
+</section>
+<section anchor="sec-8.2" title="Protocol Versions">
+<t>
+   IANA has created, under the &quot;Bundle Protocol&quot; registry, a sub-
+   registry titled &quot;Bundle Protocol TCP Convergence-Layer Version
+   Numbers&quot; and initialized it with the following table.
+   The registration procedure is RFC Required.
+</t>
+<texttable>
+  <ttcol>Value</ttcol><ttcol>Description</ttcol><ttcol>Reference</ttcol>
+  <c>0</c><c>Reserved</c><c><xref target="RFC7242"/></c>
+  <c>1</c><c>Reserved</c><c><xref target="RFC7242"/></c>
+  <c>2</c><c>Reserved</c><c><xref target="RFC7242"/></c>
+  <c>3</c><c>TCPCL</c><c><xref target="RFC7242"/></c>
+  <c>4</c><c>TCPCLbis</c><c>This RFC.</c>
+  <c>5-255</c><c>Unassigned</c>
+</texttable>
+</section>
+<section anchor="sec-8.3" title="Message Types">
+<t>
+   IANA has created, under the &quot;Bundle Protocol&quot; registry, a sub-
+   registry titled &quot;Bundle Protocol TCP Convergence-Layer Message Types&quot;
+   and initialized it with the contents below.  The registration
+   procedure is RFC Required.
+</t>
+<texttable title="Message Type Codes">
+  <ttcol>Code</ttcol><ttcol>Message Type</ttcol>
+  <c>0x0</c><c>Reserved</c>
+  <c>0x1</c><c>DATA_SEGMENT</c>
+  <c>0x2</c><c>ACK_SEGMENT</c>
+  <c>0x3</c><c>REFUSE_BUNDLE</c>
+  <c>0x4</c><c>KEEPALIVE</c>
+  <c>0x5</c><c>SHUTDOWN</c>
+  <c>0x6</c><c>LENGTH</c>
+  <c>0x7</c><c>REJECT</c>
+  <c>0x8</c><c>STARTTLS</c>
+  <c>0x9--0xf</c><c>Unassigned</c>
+</texttable>
+</section>
+<section anchor="sec-8.4" title="REFUSE_BUNDLE Reason Codes">
+<t>
+   IANA has created, under the &quot;Bundle Protocol&quot; registry, a sub-
+   registry titled &quot;Bundle Protocol TCP Convergence-Layer REFUSE_BUNDLE
+   Reason Codes&quot; and initialized it with the contents of Table 3.  The
+   registration procedure is RFC Required.
+</t>
+<texttable title="REFUSE_BUNDLE Reason Codes">
+  <ttcol>Code</ttcol><ttcol>Refusal Reason</ttcol>
+  <c>0x0</c><c>Unknown</c>
+  <c>0x1</c><c>Completed</c>
+  <c>0x2</c><c>No Resources</c>
+  <c>0x3</c><c>Retransmit</c>
+  <c>0x4--0x7</c><c>Unassigned</c>
+  <c>0x8--0xf</c><c>Reserved for future usage</c>
+</texttable>
+</section>
+
+<section anchor="sec-iana-shutdown-codes" title="SHUTDOWN Reason Codes">
+<t>
+   IANA has created, under the &quot;Bundle Protocol&quot; registry, a sub-
+   registry titled &quot;Bundle Protocol TCP Convergence-Layer SHUTDOWN
+   Reason Codes&quot; and initialized it with the contents of Table 4.  The
+   registration procedure is RFC Required.
+</t>
+<texttable title="SHUTDOWN Reason Codes">
+  <ttcol>Code</ttcol><ttcol>Shutdown Reason</ttcol>
+  <c>0x00</c><c>Idle timeout</c>
+  <c>0x01</c><c>Version mismatch</c>
+  <c>0x02</c><c>Busy</c>
+  <c>0x03</c><c>BP Version mismatch</c>
+  <c>0x04</c><c>TLS failure</c>
+  <c>0x05--0xFF</c><c>Unassigned</c>
+</texttable>
+</section>
+
+<section anchor="sec-iana-reject-codes" title="REJECT Reason Codes">
+<t>EDITOR NOTE: sub-registry to-be-created upon publication of this specification.</t>
+<t>
+   IANA will create, under the &quot;Bundle Protocol&quot; registry, a sub-
+   registry titled &quot;Bundle Protocol TCP Convergence-Layer REJECT
+   Reason Codes&quot; and initialized it with the contents of Table 4.  The
+   registration procedure is RFC Required.
+</t>
+<texttable title="REJECT Reason Codes">
+  <ttcol>Code</ttcol><ttcol>Rejection Reason</ttcol>
+  <c>0x00</c><c>reserved</c>
+  <c>0x01</c><c>Message Type Unknown</c>
+  <c>0x02</c><c>Message Unsupported</c>
+  <c>0x03</c><c>Message Unexpected</c>
+  <c>0x04-0xFF</c><c>Unassigned</c>
+</texttable>
+</section>
+
+</section>
+
+<section anchor="sec-9" title="Acknowledgments">
+<t>
+    This memo is based on comments on implementation of 
+    <xref target="RFC7242"/> provided from Scott Burleigh.
+</t>
+</section>
+</middle>
+
+  <back>
+    <references title="Normative References">
+      <?rfc include="reference.RFC.2119.xml"?>
+      <?rfc include="reference.RFC.5050.xml"?>
+      <?rfc include="reference.RFC.5226.xml"?>
+      <?rfc include="reference.RFC.5246.xml"?>
+      <?rfc include="reference.RFC.6256.xml"?>
+      <?rfc include="reference.RFC.7242.xml"?>
+      <?rfc include="reference.I-D.ietf-dtn-bpbis.xml"?>
+      <reference anchor="refs.IANA-BP">
+        <front>
+          <title>Bundle Protocol registry</title>
+          <author><organization>IANA</organization></author>
+          <date year="2016" month="May"/>
+        </front>
+      </reference>
+    </references>
+    <references title="Informative References">
+      <?rfc include="reference.RFC.2595.xml"?>
+      <?rfc include="reference.RFC.4838.xml"?>
+      <?rfc include="reference.RFC.6257.xml"?>
+      <?rfc include="reference.I-D.ietf-dtn-bpsec.xml"?>
+    </references>
+    
+    <section title="Significant changes from RFC7242">
+    <t>
+    The areas in which changes from <xref target="RFC7242"/> have
+    been made to existing messages are:
+    <list style="symbols">
+      <t>Added a bundle identification number to all bundle-related messages (LENGTH, DATA_SEGMENT, ACK_SEGMENT, REFUSE_BUNDLE).</t>
+      <t>Added bundle protocol version negotation to contact header.</t>
+    </list>
+    The areas in which extensions from <xref target="RFC7242"/> have been
+    made as new messages and codes are:
+    <list style="symbols">
+      <t>Added REJECT message to indicate an unknown or unhandled message was received.</t>
+      <t>Added STARTTLS message and connection security mechanism.</t>
+      <t>Added TLS failure SHUTDOWN reason code.</t>
+    </list>
+    </t>
+    </section>
+  </back>
+</rfc>
