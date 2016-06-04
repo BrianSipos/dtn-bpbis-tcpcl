@@ -99,3 +99,10 @@ class SdnvFieldLenField(SdnvField):
             x = self.extract(pkt)
             x = self.adjust(pkt,x)
         return SdnvField.i2m(self, pkt, x)
+
+class NoPayloadPacket(packet.Packet):
+    ''' A packet which never contains payload data.
+    '''
+    def extract_padding(self, s):
+        ''' No payload, all extra data is padding '''
+        return (None, s)

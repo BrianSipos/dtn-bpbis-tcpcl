@@ -1,41 +1,8 @@
+''' Items related to established connection messaging.
+'''
 
 from scapy import fields, packet
 from . import formats
-
-class NoPayloadPacket(packet.Packet):
-    ''' A packet which never contains payload data.
-    '''
-    def extract_padding(self, s):
-        ''' No payload, all extra data is padding '''
-        return (None, s)
-
-class Contact(NoPayloadPacket):
-    ''' Contact header pseudo-message. '''
-    #: Contact header magic head-data
-    MAGIC_HEAD = 'dtn!'
-    
-    FLAG_ENA_ACK    = 0x01
-    FLAG_ENA_FRAG   = 0x02
-    FLAG_ENA_REFUSE = 0x04
-    FLAG_ENA_LENGTH = 0x08
-    
-    fields_desc = [
-        fields.StrFixedLenField('magic', default=MAGIC_HEAD, length=4),
-        formats.UInt8Field('version', default=4),
-        fields.FlagsField('flags', default=0, size=8,
-                          # names in LSbit-first order
-                          names=['ENA_ACK', 'ENA_FRAG', 'ENA_REFUSE', 'ENA_LENGTH']),
-        formats.UInt16Field('keepalive', default=0),
-        
-        formats.SdnvFieldLenField('eid_length', default=None, length_of='eid_data'),
-        fields.StrLenField('eid_data', default='',
-                           length_from=lambda pkt: pkt.eid_length),
-        
-        formats.SdnvFieldLenField('bp_vers_count', default=None, count_of='bp_vers_list'),
-        fields.FieldListField('bp_vers_list', default=[4],
-                              field=formats.UInt8Field(None, default=None),
-                              count_from=lambda pkt: pkt.bp_vers_count),
-    ]
 
 class MessageHead(packet.Packet):
     ''' The common message header. '''
@@ -44,13 +11,13 @@ class MessageHead(packet.Packet):
         fields.BitField('flags', default=0, size=4),
     ]
 
-class Keepalive(NoPayloadPacket):
+class Keepalive(formats.NoPayloadPacket):
     ''' An empty KEEPALIVE message. '''
 
-class StartTls(NoPayloadPacket):
+class StartTls(formats.NoPayloadPacket):
     ''' An empty STARTTLS message. '''
 
-class Shutdown(NoPayloadPacket):
+class Shutdown(formats.NoPayloadPacket):
     ''' An flag-dependent SHUTDOWN message. '''
     #: MessageHead.flags mask
     FLAG_REASON = 0x2
@@ -76,7 +43,7 @@ class Shutdown(NoPayloadPacket):
         
     ]
 
-class RejectMsg(NoPayloadPacket):
+class RejectMsg(formats.NoPayloadPacket):
     ''' A REJECT with no payload. '''
     
     REASON_UNKNOWN = 1
@@ -95,7 +62,7 @@ class RejectMsg(NoPayloadPacket):
         fields.ByteEnumField('reason', default=None, enum=REASONS),
     ]
 
-class BundleLength(NoPayloadPacket):
+class BundleLength(formats.NoPayloadPacket):
     ''' A LENGTH with no payload. '''
     
     fields_desc = [
@@ -103,7 +70,7 @@ class BundleLength(NoPayloadPacket):
         formats.SdnvField('length', default=None),
     ]
 
-class RefuseBundle(NoPayloadPacket):
+class RefuseBundle(formats.NoPayloadPacket):
     ''' An REFUSE_BUNDLE with no payload. '''
     
     REASON_UNKNOWN    = 0x0
@@ -115,7 +82,7 @@ class RefuseBundle(NoPayloadPacket):
         formats.SdnvField('bundle_id', default=None),
     ]
 
-class DataSegment(NoPayloadPacket):
+class DataSegment(formats.NoPayloadPacket):
     ''' A DATA_SEGMENT with bundle data as payload. '''
     
     FLAG_START = 0x2
@@ -127,7 +94,7 @@ class DataSegment(NoPayloadPacket):
         fields.StrFixedLenField('data', '', length_from=lambda pkt: pkt.length),
     ]
 
-class AckSegment(NoPayloadPacket):
+class AckSegment(formats.NoPayloadPacket):
     ''' An ACK_SEGMENT with no payload. '''
     
     fields_desc = [

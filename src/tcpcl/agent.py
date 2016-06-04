@@ -8,12 +8,11 @@ import argparse
 import socket
 import ssl
 import glib
-import dbus
+import dbus.bus
 import dbus.service
-import uuid
 from dbus.mainloop.glib import DBusGMainLoop
 from scapy import packet
-from tcpcl import messages
+from tcpcl import contact, messages
 
 class Config(object):
     ''' Agent configuration.
@@ -24,12 +23,13 @@ class Config(object):
         An optional D-Bus connection object to register handlers on.
     '''
     def __init__(self):
-        self.eid = ''
         self.bus_conn = None
+        self.ssl_ctx = None
+        #self.tls_attempt = True
+        self.tls_require = True
+        self.eid = ''
         self.keepalive_time = 0
         self.idle_time = 0
-        self.tls_attempt = True
-        self.tls_require = True
         #: Maximum size of transmit segments in octets
         self.segment_size = 100#10240
 
@@ -37,9 +37,13 @@ class Connection(object):
     ''' Optionally secured socket connection.
     
     :param sock: The unsecured socket to wrap.
+    :param as_server: True if this is the server-side of the connection.
     '''
-    def __init__(self, sock):
+    def __init__(self, sock, as_server, peer_name):
         self.__logger = logging.getLogger(self.__class__.__name__)
+        self._on_close = None
+        self._as_server = as_server
+        self._peer_name = peer_name
         #: The raw socket
         self._s_notls = None
         #: Optionally secured socket
@@ -83,9 +87,16 @@ class Connection(object):
         self._s_notls = sock
         if self._s_notls is not None:
             self._avail_rx_notls_id = glib.io_add_watch(self._s_notls, glib.IO_IN, self._avail_rx_notls)
-            self._avail_rx_notls_id = glib.io_add_watch(self._s_notls, glib.IO_IN, self._avail_rx_notls)
+            #self._avail_tx_notls_id = glib.io_add_watch(self._s_notls, glib.IO_OUT, self._avail_tx_notls)
         
         return old
+    
+    def set_on_stop(self, func):
+        ''' Set a callback to be run when this connection is closed.
+        
+        :param func: The callback, which takes no arguments.
+        '''
+        self._on_close = func
     
     def close(self):
         ''' Close the entire connection cleanly.
@@ -109,6 +120,9 @@ class Connection(object):
         
         self._s_notls = None
         self._s_tls = None
+        
+        if self._on_close:
+            self._on_close()
     
     def secure(self, ssl_ctx):
         ''' Add a TLS connection layer (if not present).
@@ -120,16 +134,14 @@ class Connection(object):
         if self._s_tls:
             return
         
-        if self._from:
-            self._s_tls = self._config.ssl_ctx.wrap_socket(self._s_notls,
-                                                server_side=True,
-                                                do_handshake_on_connect=False)
-        elif self._to:
-            self._s_tls = self._config.ssl_ctx.wrap_socket(self._s_notls,
-                                                server_hostname=self._to[0],
-                                                do_handshake_on_connect=False)
+        if self._as_server:
+            self._s_tls = ssl_ctx.wrap_socket(self._s_notls,
+                                              server_side=True,
+                                              do_handshake_on_connect=False)
         else:
-            raise ValueError('Neither from nor to')
+            self._s_tls = ssl_ctx.wrap_socket(self._s_notls,
+                                              server_hostname=self._peer_name,
+                                              do_handshake_on_connect=False)
         
         self.__logger.debug('Negotiating TLS...')
         try:
@@ -230,6 +242,7 @@ class RejectError(Exception):
     :type reason: int
     '''
     def __init__(self, reason=None):
+        Exception.__init__('rejected')
         self.reason = reason
 
 class HandlerBase(Connection):
@@ -242,10 +255,11 @@ class HandlerBase(Connection):
         # negotiated parameters
         self._keepalive_time = 0
         self._idle_time = 0
-        self._do_send_ack = False
-        self._do_send_frag = False
-        self._do_send_refuse = False
-        self._do_send_length = False
+        self._send_segment_size = None
+        self._do_send_ack = None
+        self._do_send_frag = None
+        self._do_send_refuse = None
+        self._do_send_length = None
         
         self._keepalive_timer_id = None
         self._idle_timer_id = None
@@ -263,7 +277,13 @@ class HandlerBase(Connection):
         self._rbuf = ''
         
         # now set up connection
-        Connection.__init__(self, sock)
+        if fromaddr:
+            as_server = True
+            peer_name = fromaddr[0]
+        else:
+            as_server = False
+            peer_name = toaddr[0]
+        Connection.__init__(self, sock, as_server, peer_name)
     
     def is_server(self):
         return (self._from is not None)
@@ -316,7 +336,7 @@ class HandlerBase(Connection):
         if self._in_conn:
             msgcls = messages.MessageHead
         else:
-            msgcls = messages.Contact
+            msgcls = contact.Head
         # always append
         self._rbuf += data
         
@@ -350,15 +370,17 @@ class HandlerBase(Connection):
         '''
         self.__logger.info('RX: {0}'.format(repr(pkt)))
         
-        if isinstance(pkt, messages.Contact):
-            if pkt.magic != messages.Contact.MAGIC_HEAD:
+        if isinstance(pkt, contact.Head):
+            if pkt.magic != contact.MAGIC_HEAD:
                 raise ValueError('Contact header with bad magic: {0}'.format(pkt.magic.encode('hex')))
-            self._head_peer = pkt
+            if pkt.version != 4:
+                raise ValueError('Contact header with bad version: {0}'.format(pkt.version))
+            self._head_peer = pkt.payload
             self._in_conn = True
-            self.merge_contact()
+            self.merge_options()
             
             # Client initiates STARTTLS
-            if not self.is_server() and not self.is_secure() and self._config.tls_attempt:
+            if not self.is_server() and not self.is_secure() and self._tls_attempt:
                 self.send_message(messages.MessageHead()/messages.StartTls())
         else:
             # Some payloads are empty and scapy will not construct them
@@ -415,23 +437,48 @@ class HandlerBase(Connection):
             except RejectError as err:
                 self.send_reject(err.reason, pkt)
     
-    def merge_contact(self):
+    def send_contact_header(self):
+        optlist = [
+            contact.OptionHead()/contact.OptionEid(eid_data=self._config.eid.encode('utf8')),
+            contact.OptionHead()/contact.OptionTls(accept=contact.MessageRxField.FLAG_REQUIRE),
+            contact.OptionHead()/contact.OptionKeepalive(keepalive=self._config.keepalive_time),
+            contact.OptionHead()/contact.OptionMru(segment_size=self._config.segment_size),
+            #contact.OptionHead()/contact.OptionLength(flags=contact.MessageRxField.FLAG_ALLOW),
+            #contact.OptionHead()/contact.OptionAck(flags=contact.MessageRxField.FLAG_ALLOW),
+            #contact.OptionHead()/contact.OptionRefuse(flags=contact.MessageRxField.FLAG_ALLOW),
+            #flags='ENA_ACK+ENA_LENGTH+ENA_REFUSE',
+        ]
+        pkt = contact.Head()/contact.ContactV4(options=optlist)
+        self.send_message(pkt)
+        return pkt
+    
+    def merge_options(self):
         ''' Combine local and peer contact headers to contact configuration.
         '''
         self.__logger.debug('Contact negotiation')
         
-        self._keepalive_time = min(self._head_this.keepalive, self._head_peer.keepalive)
+        def send_policy(flag):
+            self.__logger.debug('flag %d', flag)
+            return (flag in (contact.MessageRxField.FLAG_ALLOW,
+                             contact.MessageRxField.FLAG_REQUIRE))
+        
+        self._tls_attempt = (send_policy(self._head_this.find_option(contact.OptionTls).accept)
+                             & send_policy(self._head_this.find_option(contact.OptionTls).accept))
+        
+        self._keepalive_time = min(self._head_this.find_option(contact.OptionKeepalive).keepalive,
+                                   self._head_peer.find_option(contact.OptionKeepalive).keepalive)
         self._idle_time = self._config.idle_time
         self._keepalive_reset()
         self._idle_reset()
         
-        # compare integer values
-        both_set = self._head_this.getfieldval('flags') & self._head_peer.getfieldval('flags')
-        self._do_send_ack = both_set & messages.Contact.FLAG_ENA_ACK
-        self._do_send_frag = both_set & messages.Contact.FLAG_ENA_FRAG
-        self._do_send_refuse = both_set & messages.Contact.FLAG_ENA_REFUSE
-        self._do_send_length = both_set & messages.Contact.FLAG_ENA_LENGTH
-        self.__logger.debug('flags 0b{0:b}'.format(both_set))
+        self._send_segment_size = min(self._config.segment_size,
+                                      self._head_peer.find_option(contact.OptionMru).segment_size)
+        self.__logger.debug('TX seg size {0}'.format(self._send_segment_size))
+        
+        self._do_send_length = send_policy(self._head_this.find_option(contact.OptionLength).accept)
+        self._do_send_ack = send_policy(self._head_this.find_option(contact.OptionAck).accept)
+        self._do_send_refuse = send_policy(self._head_this.find_option(contact.OptionRefuse).accept)
+        self._do_send_frag = False
     
     def send_message(self, pkt):
         ''' Send a full message (or contact header).
@@ -459,13 +506,6 @@ class HandlerBase(Connection):
             rej_load.rej_flags = pkt.flags
         self.send_message(messages.MessageHead()/rej_load)
     
-    def send_contact_header(self):
-        pkt = messages.Contact(flags='ENA_ACK+ENA_LENGTH+ENA_REFUSE',
-                               keepalive=self._config.keepalive_time,
-                               eid_data=self._config.eid.encode('utf8'))
-        self.send_message(pkt)
-        return pkt
-    
     def do_shutdown(self, reason=None):
         self._wait_shutdown = True
         flags = 0
@@ -478,7 +518,7 @@ class HandlerBase(Connection):
         ''' Main state machine of the agent contact. '''
         self._in_conn = False
         self._head_peer = None
-        self._head_this = self.send_contact_header()
+        self._head_this = self.send_contact_header().payload
     
     
     def recv_length(self, bundle_id, length):
@@ -609,8 +649,6 @@ class ContactHandler(HandlerBase, dbus.service.Object):
         self._tx_next_id += 1
         return bid
     
-    IFACE = 'org.ietf.dtn.tcpcl.Contact'
-    
     def _rx_setup(self, bundle_id):
         self._rx_bid = bundle_id
         self._rx_buf = ''
@@ -673,6 +711,19 @@ class ContactHandler(HandlerBase, dbus.service.Object):
         self.send_bundle_finished(bundle_id, 'refused with code {0}'.format(reason))
         self._tx_map.pop(bundle_id)
     
+    IFACE = 'org.ietf.dtn.tcpcl.Contact'
+    
+    @dbus.service.method(IFACE, in_signature='', out_signature='b')
+    def is_secure(self):
+        return Connection.is_secure(self)
+    
+    @dbus.service.method(IFACE, in_signature='', out_signature='')
+    def close(self):
+        if tuple(self.locations):
+            self.remove_from_connection()
+            
+        HandlerBase.close(self)
+    
     @dbus.service.method(IFACE, in_signature='ay', out_signature='s')
     def send_bundle_data(self, data):
         
@@ -719,7 +770,7 @@ class ContactHandler(HandlerBase, dbus.service.Object):
             
             import math
             octet_count = len(item.data)
-            seg_count = int(math.ceil(octet_count / float(self._config.segment_size)))
+            seg_count = int(math.ceil(octet_count / float(self._send_segment_size)))
             
             self.send_bundle_started(str(item.bundle_id))
             
@@ -728,8 +779,8 @@ class ContactHandler(HandlerBase, dbus.service.Object):
             
             for seg_ix in range(seg_count):
                 # Range of bundle to send
-                start_ix = self._config.segment_size * seg_ix
-                end_ix = min(octet_count, start_ix + self._config.segment_size)
+                start_ix = self._send_segment_size * seg_ix
+                end_ix = min(octet_count, start_ix + self._send_segment_size)
                 
                 flg = 0
                 if seg_ix == 0:
@@ -749,18 +800,14 @@ class Agent(dbus.service.Object):
         self.__logger = logging.getLogger(self.__class__.__name__)
         dbus.service.Object.__init__(self, **bus_kwargs)
         self._config = config
+        self._on_stop = None
         
         self._bindsock = None
         self._obj_id = 0
+        self._handlers = []
     
     def __del__(self):
         self.stop()
-    
-    def stop(self):
-        if self._bindsock:
-            self.__logger.info('Un-listening')
-            self._bindsock.shutdown(socket.SHUT_RDWR)
-            self._bindsock = None
     
     def _get_obj_path(self):
         hdl_id = self._obj_id
@@ -775,7 +822,37 @@ class Agent(dbus.service.Object):
         hdl = ContactHandler(hdl_kwargs=kwargs,
                            bus_kwargs=dict(conn=self._config.bus_conn, object_path=path))
         self.__logger.info('New handler at "{0}"'.format(path))
+        
+        self._handlers.append(hdl)
+        if not self._bindsock:
+            hdl.set_on_stop(lambda: self.stop())
+        
         return hdl
+    
+    IFACE = 'org.ietf.dtn.tcpcl.Agent'
+    
+    def set_on_stop(self, func):
+        ''' Set a callback to be run when this agent is stopped.
+        
+        :param func: The callback, which takes no arguments.
+        '''
+        self._on_stop = func
+    
+    @dbus.service.method(IFACE, in_signature='')
+    def stop(self):
+        if self._bindsock:
+            self.__logger.info('Un-listening')
+            self._bindsock.shutdown(socket.SHUT_RDWR)
+            self._bindsock = None
+        
+        for hdl in self._handlers:
+            hdl.close()
+        
+        if tuple(self.locations):
+            self.remove_from_connection()
+            
+        if self._on_stop:
+            self._on_stop()
     
     def listen(self, address, port):
         ''' Begin listening for incoming connections and defer handling
@@ -861,7 +938,7 @@ def main():
         if args.tls_cert:
             config.ssl_ctx.load_cert_chain(args.tls_cert, args.tls_key)
         if args.tls_dhparam:
-            ctx.load_dh_params(args.tls_dhparam)
+            config.ssl_ctx.load_dh_params(args.tls_dhparam)
     config.eid = args.eid
     if args.keepalive:
         config.keepalive_time = args.keepalive
@@ -885,6 +962,7 @@ def main():
         agent.connect(args.address, args.port)
     
     eloop = glib.MainLoop()
+    agent.set_on_stop(lambda: eloop.quit())
     try:
         eloop.run()
     except KeyboardInterrupt:
