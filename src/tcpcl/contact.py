@@ -114,7 +114,7 @@ class OptionTls(formats.NoPayloadPacket):
     fields_desc = [
         MessageRxField('accept', default=MessageRxField.FLAG_ALLOW),
     ]
-packet.bind_layers(OptionHead, OptionMru, type=0x0a)
+packet.bind_layers(OptionHead, OptionTls, type=0x0a)
 
 
 #: Header magic prefix-data
