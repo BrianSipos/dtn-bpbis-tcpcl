@@ -11,6 +11,9 @@ import glib
 import dbus.bus
 import dbus.service
 from dbus.mainloop.glib import DBusGMainLoop
+import StringIO
+import os
+import math
 from scapy import packet
 from tcpcl import contact, messages
 
@@ -31,28 +34,41 @@ class Config(object):
         self.keepalive_time = 0
         self.idle_time = 0
         #: Maximum size of transmit segments in octets
-        self.segment_size = 100#10240
+        self.segment_size = 10240
 
 class Connection(object):
     ''' Optionally secured socket connection.
+    This handles octet-level buffering and queuing.
     
     :param sock: The unsecured socket to wrap.
+    :type sock: :py:class:`socket.socket`
     :param as_server: True if this is the server-side of the connection.
+    :type as_server: bool
+    :param peer_name: The name of the socket peer.
+    :type peer_name: str
     '''
     def __init__(self, sock, as_server, peer_name):
         self.__logger = logging.getLogger(self.__class__.__name__)
         self._on_close = None
         self._as_server = as_server
         self._peer_name = peer_name
-        #: The raw socket
-        self._s_notls = None
-        #: Optionally secured socket
-        self._s_tls = None
         
-        #: listener for _s_notls socket
-        self._avail_rx_notls_id = None
-        #: optional listener for _s_tls socket
-        self._avail_rx_tls_id = None
+        #: Transmit buffer
+        self.__tx_buf = ''
+        
+        #: The raw socket
+        self.__s_notls = None
+        #: Optionally secured socket
+        self.__s_tls = None
+        
+        #: listener for __s_notls socket
+        self.__avail_rx_notls_id = None
+        self.__avail_tx_notls_id = None
+        self.__avail_tx_notls_pend = None
+        #: optional listener for __s_tls socket
+        self.__avail_rx_tls_id = None
+        self.__avail_tx_tls_id = None
+        self.__avail_tx_tls_pend = None
         
         self._replace_socket(sock)
     
@@ -61,17 +77,23 @@ class Connection(object):
         
         :return: True if operating with TLS.
         '''
-        return (self._s_tls is not None)
+        return (self.__s_tls is not None)
     
     def __unlisten_notls(self):
-        if self._avail_rx_notls_id is not None:
-            glib.source_remove(self._avail_rx_notls_id)
-            self._avail_rx_notls_id = None
+        if self.__avail_rx_notls_id is not None:
+            glib.source_remove(self.__avail_rx_notls_id)
+            self.__avail_rx_notls_id = None
+        if self.__avail_tx_notls_id is not None:
+            glib.source_remove(self.__avail_tx_notls_id)
+            self.__avail_tx_notls_id = None
     
     def __unlisten_tls(self):
-        if self._avail_rx_tls_id is not None:
-            glib.source_remove(self._avail_rx_tls_id)
-            self._avail_rx_tls_id = None
+        if self.__avail_rx_tls_id is not None:
+            glib.source_remove(self.__avail_rx_tls_id)
+            self.__avail_rx_tls_id = None
+        if self.__avail_tx_tls_id is not None:
+            glib.source_remove(self.__avail_tx_tls_id)
+            self.__avail_tx_tls_id = None
     
     def _replace_socket(self, sock):
         ''' Replace the socket used by this object.
@@ -81,17 +103,17 @@ class Connection(object):
         :type sock: :py:class:`socket.socket`
         :return: The old socket.
         '''
-        old = self._s_notls
+        old = self.__s_notls
         self.__unlisten_notls()
         
-        self._s_notls = sock
-        if self._s_notls is not None:
-            self._avail_rx_notls_id = glib.io_add_watch(self._s_notls, glib.IO_IN, self._avail_rx_notls)
-            #self._avail_tx_notls_id = glib.io_add_watch(self._s_notls, glib.IO_OUT, self._avail_tx_notls)
+        self.__s_notls = sock
+        if self.__s_notls is not None:
+            self.__s_notls.setblocking(0)
+            self.__avail_rx_notls_id = glib.io_add_watch(self.__s_notls, glib.IO_IN, self._avail_rx_notls)
         
         return old
     
-    def set_on_stop(self, func):
+    def set_on_close(self, func):
         ''' Set a callback to be run when this connection is closed.
         
         :param func: The callback, which takes no arguments.
@@ -101,7 +123,7 @@ class Connection(object):
     def close(self):
         ''' Close the entire connection cleanly.
         '''
-        if not self._s_notls:
+        if not self.__s_notls:
             return
         self.__logger.info('Closing connection')
         
@@ -109,7 +131,7 @@ class Connection(object):
         self.__unlisten_notls()
         
         # Best effort to close active socket
-        for sock in (self._s_tls, self._s_notls):
+        for sock in (self.__s_tls, self.__s_notls):
             if sock is None:
                 continue
             try:
@@ -118,8 +140,8 @@ class Connection(object):
                 pass
             sock.close()
         
-        self._s_notls = None
-        self._s_tls = None
+        self.__s_notls = None
+        self.__s_tls = None
         
         if self._on_close:
             self._on_close()
@@ -131,44 +153,50 @@ class Connection(object):
         :type ssl_ctx: :py:class:`ssl.SSLContext`
         :raise ssl.SSLError: If the negotiation fails.
         '''
-        if self._s_tls:
+        if self.__s_tls:
             return
         
+        # Pass socket control to TLS
+        self.__unlisten_notls()
+        self.__s_notls.setblocking(1)
+        
         if self._as_server:
-            self._s_tls = ssl_ctx.wrap_socket(self._s_notls,
+            s_tls = ssl_ctx.wrap_socket(self.__s_notls,
                                               server_side=True,
                                               do_handshake_on_connect=False)
         else:
-            self._s_tls = ssl_ctx.wrap_socket(self._s_notls,
+            s_tls = ssl_ctx.wrap_socket(self.__s_notls,
                                               server_hostname=self._peer_name,
                                               do_handshake_on_connect=False)
         
         self.__logger.debug('Negotiating TLS...')
         try:
-            self._s_tls.do_handshake()
+            s_tls.do_handshake()
         except ssl.SSLError as err:
             self.__logger.debug('TLS failed: {0}'.format(err))
             # leave non-TLS socket in place
-            #self._s_tls = None
+            #self.__s_tls = None
             self.unsecure()
             raise
-            
-        self.__logger.info('TLS secured with {0}'.format(self._s_tls.cipher()))
         
-        self._avail_rx_tls_id = glib.io_add_watch(self._s_tls, glib.IO_IN, self._avail_rx_tls)
+        self.__s_tls = s_tls
+        self.__logger.info('TLS secured with {0}'.format(self.__s_tls.cipher()))
+        
+        self.__s_tls.setblocking(0)
+        self.__avail_rx_tls_id = glib.io_add_watch(self.__s_tls, glib.IO_IN, self._avail_rx_tls)
     
     def unsecure(self):
         ''' Remove any TLS connection layer (if present).
         '''
-        if not self._s_tls:
+        if not self.__s_tls:
             return
         
         self.__logger.debug('Unsecuring TLS...')
         self.__unlisten_tls()
         
         # Keep the unsecured socket
-        new_sock = self._s_tls.unwrap()
-        self._s_tls = None
+        new_sock = self.__s_tls.unwrap()
+        self.__s_tls = None
         self._replace_socket(new_sock)
     
     def _conn_name(self):
@@ -178,62 +206,122 @@ class Connection(object):
         else:
             return 'plain'
     
+    CHUNK_SIZE = 10240
+    
     def _avail_rx_notls(self, *args, **kwargs):
-        ''' Callback for new :py:obj:`_s_notls` data. '''
-        if self._s_tls is not None:
+        ''' Callback for new :py:obj:`__s_notls` RX data. '''
+        if self.__s_tls is not None:
             return True
         
-        rx_data = self._s_notls.recv(1024)
-        if len(rx_data) == 0:
-            self.close()
-            return False
-        
-        self._rx_proxy(rx_data)
-        return True
+        return self._rx_proxy(self.__s_notls)
     
     def _avail_rx_tls(self, *args, **kwargs):
-        ''' Callback for new :py:obj:`_s_tls` data. '''
-        if self._s_tls is None:
+        ''' Callback for new :py:obj:`__s_tls` RX data. '''
+        if self.__s_tls is None:
             return True
         
-        rx_data = self._s_tls.recv(1024)
-        if len(rx_data) == 0:
+        return self._rx_proxy(self.__s_tls)
+    
+    def _rx_proxy(self, sock):
+        self.__logger.debug('RX proxy')
+        
+        data = sock.recv(self.CHUNK_SIZE)
+        if len(data) == 0:
             # Connection closed
             self.close()
             return False
         
-        self._rx_proxy(rx_data)
-        return True
-    
-    def _rx_proxy(self, data):
         self.__logger.debug('Received {0} octets ({1})'.format(len(data), self._conn_name()))
         self.recv_raw(data)
+        return True
     
     def recv_raw(self, data):
-        ''' Handler for received blocks of data.
+        ''' Handler for a received block of data.
+        Derived classes must overload this method to handle RX data.
         
         :param data: The received data.
         :type data: str
         '''
         pass
     
-    def send_raw(self, data):
-        ''' Send a block of data.
-        
-        :param data: The data to send.
-        :type data: str
-        :return: True if the data was sent.
-        :rtype: bool
-        '''
-        sock = self._s_tls or self._s_notls
-        if sock is None:
-            self.__logger.warning('Message on closed socket')
+    def _avail_tx_notls(self, *args, **kwargs):
+        ''' Callback for new :py:obj:`__s_notls` TX data. '''
+        self.__avail_tx_notls_pend = None
+        if self.__s_tls is not None or self.__s_notls is None:
             return False
         
-        self.__logger.debug('Sending message {0} octets ({1})'.format(len(data), self._conn_name()))
+        cont = self._tx_proxy(self.__s_notls)
+        if not cont:
+            self.__avail_tx_notls_id = None
+        return cont
+    
+    def _avail_tx_tls(self, *args, **kwargs):
+        ''' Callback for new :py:obj:`__s_tls` TX data. '''
+        self.__avail_tx_tls_pend = None
+        if self.__s_tls is None:
+            return False
         
-        sock.send(data)
-        return True
+        cont = self._tx_proxy(self.__s_tls)
+        if not cont:
+            self.__avail_tx_tls_id = None
+        return cont
+    
+    def _tx_proxy(self, sock):
+        ''' Process up to a single CHUNK_SIZE outgoing block.
+        '''
+        self.__logger.debug('TX proxy')
+        
+        # Pull messages into buffer
+        if len(self.__tx_buf) < self.CHUNK_SIZE:
+            data = self.send_raw(self.CHUNK_SIZE)
+            self.__tx_buf += data
+            up_empty = (len(data) == 0)
+        else:
+            up_empty = False
+    
+        # Flush chunks from the buffer
+        if len(self.__tx_buf) > 0:
+            data = self.__tx_buf[:self.CHUNK_SIZE]
+            self.__logger.debug('Sending message {0}/{1} octets ({2})'.format(len(data), len(self.__tx_buf), self._conn_name()))
+            tx_size = sock.send(data)
+            self.__logger.debug('Sent {0} octets'.format(tx_size))
+            self.__tx_buf = self.__tx_buf[tx_size:]
+            # send did not take all
+            #if tx_size < self.CHUNK_SIZE:
+            #    break
+            
+        buf_empty = (len(self.__tx_buf) == 0)
+        self.__logger.debug('TX remain {0} octets and {1}'.format(len(self.__tx_buf), not up_empty))
+        cont = (not buf_empty or not up_empty)
+        return cont
+    
+    def send_ready(self):
+        ''' Called to indicate that :py:meth:`send_raw` will return non-empty.
+        This will attempt immediate transmit of chunks if available, and
+        queue the rest for later.
+        '''
+        if self.__s_tls:
+            if self.__avail_tx_tls_id is None:
+                self.__avail_tx_tls_id = glib.io_add_watch(self.__s_tls, glib.IO_OUT, self._avail_tx_tls)
+            if self.__avail_tx_tls_pend is None:
+                self.__avail_tx_tls_pend = glib.idle_add(self._avail_tx_tls)
+        
+        else:
+            if self.__avail_tx_notls_id is None:
+                self.__avail_tx_notls_id = glib.io_add_watch(self.__s_notls, glib.IO_OUT, self._avail_tx_notls)
+            if self.__avail_tx_notls_pend is None:
+                self.__avail_tx_notls_pend = glib.idle_add(self._avail_tx_notls)
+    
+    def send_raw(self, size):
+        ''' Obtain a block of data to send.
+        Derived classes must overload this method to return TX data.
+        
+        :param size: The maximum size to obtain.
+        :type size: int
+        :return: The to-be-transmitted data.
+        :rtype: str
+        '''
+        return ''
 
 class RejectError(Exception):
     ''' Allow recv_ handlers to reject the message.
@@ -242,12 +330,19 @@ class RejectError(Exception):
     :type reason: int
     '''
     def __init__(self, reason=None):
-        Exception.__init__('rejected')
+        Exception.__init__(self, 'rejected')
         self.reason = reason
 
-class HandlerBase(Connection):
-    ''' Individual contact handler. '''
+class Messenger(Connection):
+    ''' Messaging layer of TCPCL.
+    This handles message-level buffering and queuing.
+    Messages are variable-length individually.
     
+    :param config: The messenger configuration struct.
+    :type config: :py:class:`Config`
+    :param sock: The (unsecured) connection socket to operate on.
+    :type sock: :py:class:`socket.socket`
+    '''
     def __init__(self, config, sock, fromaddr=None, toaddr=None):
         self.__logger = logging.getLogger(self.__class__.__name__)
         self._config = config
@@ -256,7 +351,8 @@ class HandlerBase(Connection):
         self._keepalive_time = 0
         self._idle_time = 0
         self._send_segment_size = None
-        self._do_send_ack = None
+        self._do_send_ack_inter = None
+        self._do_send_ack_final = None
         self._do_send_frag = None
         self._do_send_refuse = None
         self._do_send_length = None
@@ -274,7 +370,10 @@ class HandlerBase(Connection):
         
         self._from = fromaddr
         self._to = toaddr
-        self._rbuf = ''
+        #: Receive pre-message data buffer
+        self.__rx_buf = ''
+        #: Transmit post-message data buffer
+        self.__tx_buf = ''
         
         # now set up connection
         if fromaddr:
@@ -288,10 +387,35 @@ class HandlerBase(Connection):
     def is_server(self):
         return (self._from is not None)
     
+    def recv_buffer_used(self):
+        ''' Get the number of octets waiting in the receive buffer.
+        
+        :return: The buffer use (octets).
+        :rtype: int.
+        '''
+        return len(self.__rx_buf)
+    
+    def send_buffer_used(self):
+        ''' Get the number of octets waiting in the transmit buffer.
+        
+        :return: The buffer use (octets).
+        :rtype: int.
+        '''
+        return len(self.__tx_buf)
+    
+    def send_buffer_decreased(self, buf_use):
+        ''' A handler function to be used when message buffer data is
+        transmitted.
+        
+        :param buf_use: The current buffer use (octets).
+        :type buf_use: int
+        '''
+        pass
+    
     def close(self):
         self._idle_stop()
         self._keepalive_stop()
-        super(HandlerBase, self).close()
+        super(Messenger, self).close()
     
     def _keepalive_stop(self):
         ''' Inhibit keepalive timer. '''
@@ -333,37 +457,31 @@ class HandlerBase(Connection):
         ''' Attempt to extract a message from the current read buffer.
         '''
         self._idle_reset()
-        if self._in_conn:
-            msgcls = messages.MessageHead
-        else:
-            msgcls = contact.Head
         # always append
-        self._rbuf += data
+        self.__rx_buf += data
         
-        # Probe for full message (by reading back encoded data)
-        pkt = msgcls(self._rbuf)
-        pkt_data = str(pkt)
-        if not self._rbuf.startswith(pkt_data):
-            return
-        self.__logger.debug('Matched message {0} octets'.format(len(pkt_data)))
-        self.__logger.debug('RX data: {0}'.format(pkt_data.encode('hex')))
-        
-        # Keep final padding as future data
-        testload = pkt
+        # Handle as many messages as are present
         while True:
-            if testload is None or isinstance(testload, packet.NoPayload):
-                self._rbuf = ''
-                break
-            if isinstance(testload, packet.Padding):
-                self._rbuf = testload.load
-                break
+            if self._in_conn:
+                msgcls = messages.MessageHead
+            else:
+                msgcls = contact.Head
             
-            testload = testload.payload
-        self.__logger.debug('Remain {0} octets'.format(len(self._rbuf)))
-        
-        self.handle_message(pkt)
+            # Probe for full message (by reading back encoded data)
+            pkt = msgcls(self.__rx_buf)
+            pkt_data = str(pkt)
+            if not self.__rx_buf.startswith(pkt_data):
+                return
+            self.__logger.debug('Matched message {0} octets'.format(len(pkt_data)))
+            #self.__logger.debug('RX data: {0}'.format(pkt_data.encode('hex')))
+            
+            # Keep final padding as future data
+            self.__rx_buf = self.__rx_buf[len(pkt_data):]
+            self.__logger.debug('RX remain {0} octets'.format(len(self.__rx_buf)))
+            
+            self.recv_message(pkt)
     
-    def handle_message(self, pkt):
+    def recv_message(self, pkt):
         ''' Handle a received full message (or contact header).
         
         :param pkt: The message packet received.
@@ -403,6 +521,10 @@ class HandlerBase(Connection):
                     if self.is_server():
                         self.send_message(messages.MessageHead()/messages.StartTls())
                     
+                    # flush the buffers ahead of TLS
+                    while self.__tx_buf:
+                        self._avail_tx_notls()
+                    
                     # Either case, STARTTLS has been exchanged
                     try:
                         self.secure(self._config.ssl_ctx)
@@ -424,7 +546,9 @@ class HandlerBase(Connection):
                 elif msgcls == messages.BundleLength:
                     self.recv_length(pkt.payload.bundle_id, pkt.payload.length)
                 elif msgcls == messages.DataSegment:
-                    self.recv_segment(pkt.payload.bundle_id, pkt.payload.data, pkt.flags)
+                    self.recv_segment(bundle_id=pkt.payload.bundle_id,
+                                      data=pkt.payload.getfieldval('data'),
+                                      flags=pkt.getfieldval('flags'))
                 elif msgcls == messages.AckSegment:
                     self.recv_ack(pkt.payload.bundle_id, pkt.payload.length)
                 elif msgcls == messages.RefuseBundle:
@@ -476,9 +600,20 @@ class HandlerBase(Connection):
         self.__logger.debug('TX seg size {0}'.format(self._send_segment_size))
         
         self._do_send_length = send_policy(self._head_this.find_option(contact.OptionLength).accept)
-        self._do_send_ack = send_policy(self._head_this.find_option(contact.OptionAck).accept)
+        self._do_send_ack_inter = send_policy(self._head_this.find_option(contact.OptionAck).intermediate)
+        self._do_send_ack_final = send_policy(self._head_this.find_option(contact.OptionAck).final)
         self._do_send_refuse = send_policy(self._head_this.find_option(contact.OptionRefuse).accept)
         self._do_send_frag = False
+    
+    def send_raw(self, size):
+        ''' Pop some data from the TX queue.
+        '''
+        data = self.__tx_buf[:size]
+        self.__logger.debug('TX popping {0} of {1}'.format(len(data), len(self.__tx_buf)))
+        self.__tx_buf = self.__tx_buf[len(data):]
+        
+        self.send_buffer_decreased(len(self.__tx_buf))
+        return data
     
     def send_message(self, pkt):
         ''' Send a full message (or contact header).
@@ -487,8 +622,11 @@ class HandlerBase(Connection):
         '''
         self.__logger.info('TX: {0}'.format(repr(pkt)))
         pkt_data = str(pkt)
-        self.__logger.debug('TX data: {0}'.format(pkt_data.encode('hex')))
-        self.send_raw(pkt_data)
+        #self.__logger.debug('TX data: {0}'.format(pkt_data.encode('hex')))
+        
+        self.__tx_buf += pkt_data
+        self.send_ready()
+        
         self._keepalive_reset()
         self._idle_reset()
     
@@ -609,19 +747,19 @@ class BundleItem(object):
     '''
     def __init__(self):
         self.bundle_id = None
-        self.data = None
+        self.file = None
 
-class ContactHandler(HandlerBase, dbus.service.Object):
+class ContactHandler(Messenger, dbus.service.Object):
     ''' A bus interface to the contact message handler.
     
-    :param hdl_kwargs: Arguments to :py:cls:`HandlerBase` constructor.
+    :param hdl_kwargs: Arguments to :py:cls:`Messenger` constructor.
     :type hdl_kwargs: dict
     :param bus_kwargs: Arguments to :py:cls:`dbus.service.Object` constructor.
     :type bus_kwargs: dict
     '''
     def __init__(self, hdl_kwargs, bus_kwargs):
         self.__logger = logging.getLogger(self.__class__.__name__)
-        HandlerBase.__init__(self, **hdl_kwargs)
+        Messenger.__init__(self, **hdl_kwargs)
         dbus.service.Object.__init__(self, **bus_kwargs)
         # Transmit state
         #: Next sequential bundle ID
@@ -629,12 +767,17 @@ class ContactHandler(HandlerBase, dbus.service.Object):
         #: Pending TX bundles (as BundleItem)
         self._tx_bundles = []
         self._tx_map = {}
+        #: Active TX bundle
+        self._tx_tmp = None
+        #: Total segment count
+        self._tx_seg_num = None
+        #: Current segment index
+        self._tx_seg_ix = None
+        self._process_queue_pend = None
         
         # Receive state
-        #: Active RX bundle ID
-        self._rx_bid = None
-        #: Partial reception buffer
-        self._rx_buf = None
+        #: Active RX bundle
+        self._rx_tmp = None
         #: Full RX bundles pending delivery (as BundleItem)
         self._rx_bundles = []
         self._rx_map = {}
@@ -650,18 +793,19 @@ class ContactHandler(HandlerBase, dbus.service.Object):
         return bid
     
     def _rx_setup(self, bundle_id):
-        self._rx_bid = bundle_id
-        self._rx_buf = ''
+        self._rx_tmp = BundleItem()
+        self._rx_tmp.bundle_id = bundle_id
+        self._rx_tmp.file = StringIO.StringIO()
+        
         self.recv_bundle_started(str(bundle_id))
     
     def _rx_teardown(self):
-        self._rx_bid = None
-        self._rx_buf = None
+        self._rx_tmp = None
     
     def recv_length(self, bundle_id, length):
         print 'length', bundle_id, length
         # reject if length is received mid-bundle
-        if self._rx_buf or not self._do_send_length:
+        if self._rx_tmp or not self._do_send_length:
             raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
         self._rx_setup(bundle_id)
     
@@ -671,45 +815,55 @@ class ContactHandler(HandlerBase, dbus.service.Object):
         if flags & messages.DataSegment.FLAG_START:
             if self._do_send_length:
                 # Start without a prior LENGTH
-                if self._rx_bid is None:
+                if self._rx_tmp is None:
                     raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
             else:
                 # no LENGTH, this is start of RX
                 self._rx_setup(bundle_id)
         
-        elif self._rx_bid != bundle_id:
+        elif self._rx_tmp is None or self._rx_tmp.bundle_id != bundle_id:
             # Each ID in sequence after start must be identical
             raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
         
-        self._rx_buf += data
-        if self._do_send_ack:
-            self.send_ack(bundle_id, len(self._rx_buf))
+        self._rx_tmp.file.write(data)
         
         if flags & messages.DataSegment.FLAG_END:
-            print 'Finished RX', self._rx_buf.encode('hex')
-            item = BundleItem()
-            item.bundle_id = self._rx_bid
-            item.data = self._rx_buf
+            if self._do_send_ack_final:
+                self.send_ack(bundle_id, self._rx_tmp.file.tell())
+            
+            item = self._rx_tmp
             self._rx_bundles.append(item)
             self._rx_map[item.bundle_id] = item
             
-            self.recv_bundle_finished(str(bundle_id))
+            self.__logger.info('Finished RX size {0}'.format(item.file.tell()))
+            self.recv_bundle_finished(str(item.bundle_id))
             self._rx_teardown()
+        else:
+            if self._do_send_ack_inter:
+                self.send_ack(bundle_id, self._rx_tmp.file.tell())
     
     def recv_ack(self, bundle_id, length):
         print 'ack', bundle_id, length
-        if not self._do_send_ack:
-            raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
         
         item = self._tx_map[bundle_id]
-        if length == len(item.data):
+        if length == item.file.tell():
+            if not self._do_send_ack_final:
+                raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
+            
             self.send_bundle_finished(str(item.bundle_id), 'success')
             self._tx_map.pop(bundle_id)
+        else:
+            if not self._do_send_ack_inter:
+                raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
     
     def recv_refuse(self, bundle_id, reason):
         print 'refuse', bundle_id, reason
         self.send_bundle_finished(bundle_id, 'refused with code {0}'.format(reason))
         self._tx_map.pop(bundle_id)
+        
+        # interrupt in-progress
+        if self._tx_tmp is not None and self._tx_tmp.bundle_id == bundle_id:
+            self._tx_teardown()
     
     IFACE = 'org.ietf.dtn.tcpcl.Contact'
     
@@ -722,22 +876,37 @@ class ContactHandler(HandlerBase, dbus.service.Object):
         if tuple(self.locations):
             self.remove_from_connection()
             
-        HandlerBase.close(self)
+        Messenger.close(self)
     
     @dbus.service.method(IFACE, in_signature='ay', out_signature='s')
     def send_bundle_data(self, data):
+        ''' Send bundle data directly.
+        '''
         
         # byte array to str
         data = ''.join([chr(val) for val in data])
         
         item = BundleItem()
-        item.bundle_id = self.next_id()
-        item.data = data
+        item.file = StringIO.StringIO(data)
+        return str(self._add_queue_item(item))
+    
+    @dbus.service.method(IFACE, in_signature='s', out_signature='s')
+    def send_bundle_file(self, filepath):
+        ''' Send a bundle from the filesystem.
+        '''
+        item = BundleItem()
+        item.file = open(filepath, 'rb')
+        return str(self._add_queue_item(item))
+    
+    def _add_queue_item(self, item):
+        if item.bundle_id is None:
+            item.bundle_id = self.next_id()
+        
         self._tx_bundles.append(item)
         self._tx_map[item.bundle_id] = item
         
-        glib.idle_add(self._process_queue)
-        return str(item.bundle_id)
+        self._process_queue_trigger()
+        return item.bundle_id
     
     @dbus.service.signal(IFACE, signature='s')
     def send_bundle_started(self, bid):
@@ -756,42 +925,83 @@ class ContactHandler(HandlerBase, dbus.service.Object):
         pass
     
     @dbus.service.method(IFACE, in_signature='s', out_signature='ay')
-    def recv_bundle_pop(self, bid):
+    def recv_bundle_pop_data(self, bid):
         bid = int(bid)
         item = self._rx_map.pop(bid)
         self._rx_bundles.remove(item)
-        return item.data
+        item.file.seek(0)
+        return item.file.read()
+    
+    @dbus.service.method(IFACE, in_signature='ss', out_signature='')
+    def recv_bundle_pop_file(self, bid, filepath):
+        bid = int(bid)
+        item = self._rx_map.pop(bid)
+        self._rx_bundles.remove(item)
+        item.file.seek(0)
+        
+        import shutil
+        out_file = open(filepath, 'wb')
+        shutil.copyfileobj(item.file, out_file)
+    
+    def send_buffer_decreased(self, buf_use):
+        if self._send_segment_size is None:
+            return
+        
+        if buf_use < 2 * self._send_segment_size:
+            self._process_queue_trigger()
+    
+    def _tx_teardown(self):
+        ''' Clear the TX bundle state. '''
+        self._tx_tmp = None
+        self._tx_seg_ix = None
+        self._tx_seg_num = None
+    
+    def _process_queue_trigger(self):
+        if self._process_queue_pend is None:
+            self._process_queue_pend = glib.idle_add(self._process_queue)
     
     def _process_queue(self):
-        self.__logger.info('Processing queue of {0} items'.format(len(self._tx_bundles)))
+        ''' Perform the next TX segment if possible.
+        '''
+        self._process_queue_pend = None
+        self.__logger.debug('Processing queue of {0} items'.format(len(self._tx_bundles)))
         
-        while self._tx_bundles:
-            item = self._tx_bundles.pop(0)
+        # work from the head of the list
+        if self._tx_tmp is None:
+            if not self._tx_bundles:
+                # nothing to do
+                return
+            self._tx_tmp = self._tx_bundles.pop(0)
             
-            import math
-            octet_count = len(item.data)
-            seg_count = int(math.ceil(octet_count / float(self._send_segment_size)))
+            self._tx_tmp.file.seek(0, os.SEEK_END)
+            octet_count = self._tx_tmp.file.tell()
+            self._tx_tmp.file.seek(0)
+            self._tx_seg_num = math.ceil(octet_count / float(self._send_segment_size))
+            self._tx_seg_ix = 0
             
-            self.send_bundle_started(str(item.bundle_id))
-            
+            self.send_bundle_started(str(self._tx_tmp.bundle_id))
             if self._do_send_length:
-                self.send_length(item.bundle_id, octet_count)
+                self.send_length(self._tx_tmp.bundle_id, octet_count)
+        
+        # send next segment
+        data = self._tx_tmp.file.read(self._send_segment_size)
+        flg = 0
+        if self._tx_seg_ix == 0:
+            flg |= messages.DataSegment.FLAG_START
+        if self._tx_seg_ix == self._tx_seg_num - 1:
+            flg |= messages.DataSegment.FLAG_END
+        
+        # Next segment of data
+        self.send_segment(self._tx_tmp.bundle_id, data, flg)
+        self._tx_seg_ix += 1
+        
+        if flg & messages.DataSegment.FLAG_END:
+            if not self._do_send_ack_final:
+                self.send_bundle_finished(str(self._tx_tmp.bundle_id), 'unacknowledged')
+                self._tx_map.pop(self._tx_tmp.bundle_id)
             
-            for seg_ix in range(seg_count):
-                # Range of bundle to send
-                start_ix = self._send_segment_size * seg_ix
-                end_ix = min(octet_count, start_ix + self._send_segment_size)
-                
-                flg = 0
-                if seg_ix == 0:
-                    flg |= messages.DataSegment.FLAG_START
-                if seg_ix == seg_count - 1:
-                    flg |= messages.DataSegment.FLAG_END
-                
-                self.send_segment(item.bundle_id, item.data[start_ix:end_ix], flg)
-            
-            if not self._do_send_ack:
-                self.send_bundle_finished(str(item.bundle_id), 'unacknowledged')
+            # done sending segments regardless
+            self._tx_teardown()
 
 class Agent(dbus.service.Object):
     ''' Overall agent behavior. '''
@@ -825,13 +1035,13 @@ class Agent(dbus.service.Object):
         
         self._handlers.append(hdl)
         if not self._bindsock:
-            hdl.set_on_stop(lambda: self.stop())
+            hdl.set_on_close(lambda: self.stop())
         
         return hdl
     
     IFACE = 'org.ietf.dtn.tcpcl.Agent'
     
-    def set_on_stop(self, func):
+    def set_on_close(self, func):
         ''' Set a callback to be run when this agent is stopped.
         
         :param func: The callback, which takes no arguments.
@@ -962,7 +1172,7 @@ def main():
         agent.connect(args.address, args.port)
     
     eloop = glib.MainLoop()
-    agent.set_on_stop(lambda: eloop.quit())
+    agent.set_on_close(lambda: eloop.quit())
     try:
         eloop.run()
     except KeyboardInterrupt:

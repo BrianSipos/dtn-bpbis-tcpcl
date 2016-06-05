@@ -40,7 +40,8 @@ class OptionAck(formats.NoPayloadPacket):
     ''' Receiver handling of ACK_SEGMENT.
     '''
     fields_desc = [
-        MessageRxField('accept', default=MessageRxField.FLAG_ALLOW),
+        MessageRxField('intermediate', default=MessageRxField.FLAG_IGNORE),
+        MessageRxField('final', default=MessageRxField.FLAG_ALLOW),
     ]
 packet.bind_layers(OptionHead, OptionAck, type=0x02)
 
@@ -154,6 +155,12 @@ class ContactV4(formats.NoPayloadPacket):
         fields.PacketListField('options', default=[], cls=OptionHead,
                                count_from=lambda pkt: pkt.option_count)
     ]
+    
+    def post_dissection(self, pkt):
+        ''' remove padding from options list after disect() completes '''
+        if self.options:
+            formats.remove_padding(self.options[-1])
+        formats.remove_padding(self)
     
     def find_option(self, cls):
         valid = []

@@ -10,7 +10,11 @@ class MessageHead(packet.Packet):
         fields.BitField('msg_id', default=None, size=4),
         fields.BitField('flags', default=0, size=4),
     ]
-
+    
+    def post_dissection(self, pkt):
+        ''' remove padding from payload list after disect() completes '''
+        formats.remove_padding(self)
+    
 class Keepalive(formats.NoPayloadPacket):
     ''' An empty KEEPALIVE message. '''
 
@@ -91,7 +95,7 @@ class DataSegment(formats.NoPayloadPacket):
     fields_desc = [
         formats.SdnvField('bundle_id', default=None),
         formats.SdnvFieldLenField('length', default=None, length_of='data'),
-        fields.StrFixedLenField('data', '', length_from=lambda pkt: pkt.length),
+        formats.BlobField('data', '', length_from=lambda pkt: pkt.length),
     ]
 
 class AckSegment(formats.NoPayloadPacket):

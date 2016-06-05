@@ -100,9 +100,37 @@ class SdnvFieldLenField(SdnvField):
             x = self.adjust(pkt,x)
         return SdnvField.i2m(self, pkt, x)
 
+class BlobField(fields.StrFixedLenField):
+    ''' Overload i2h and i2repr to hide the actual data contents. '''
+    
+    def i2h(self, pkt, x):
+        if not x:
+            lenstr = 'empty'
+        else:
+            lenstr = '{0} octets'.format(len(x))
+        return '({0})'.format(lenstr)
+    
+    def i2repr(self, pkt, x):
+        return self.i2h(pkt, x)
+
 class NoPayloadPacket(packet.Packet):
     ''' A packet which never contains payload data.
     '''
     def extract_padding(self, s):
         ''' No payload, all extra data is padding '''
         return (None, s)
+
+def remove_padding(pkt):
+    ''' Traverse a packet and remove any trailing padding payload.
+    
+    :param pkt: The root packet to traverse.
+    '''
+    testload = pkt.payload
+    while True:
+        if testload is None or isinstance(testload, packet.NoPayload):
+            break
+        if isinstance(testload, packet.Padding):
+            testload.underlayer.remove_payload()
+            break
+        
+        testload = testload.payload
