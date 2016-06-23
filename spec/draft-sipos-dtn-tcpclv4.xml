@@ -75,9 +75,9 @@ The majority of this specification is unchanged from TCPCL version 3.
    its bearer with TCPCL as its convergence layer, both BP and TCPCL
    reside at the application layer of the Internet model.
  </t>
- <figure anchor="fig-tcpcl-ip-stack"
+<figure anchor="fig-tcpcl-ip-stack"
      title="The Locations of the Bundle Protocol and the TCP Convergence-Layer Protocol above the Internet Protocol Stack">
-   <artwork>
+<artwork>
       +-------------------------+
       |     DTN Application     | -\
       +-------------------------|   |
@@ -93,8 +93,8 @@ The majority of this specification is unchanged from TCPCL version 3.
       +-------------------------+
       |    Physical Medium      | ---&gt; Physical Layer
       +-------------------------+
-   </artwork>
- </figure>
+</artwork>
+</figure>
 <t>
    This document describes the format of the protocol data units passed
    between entities participating in TCPCL communications.  This
@@ -361,26 +361,18 @@ The majority of this specification is unchanged from TCPCL version 3.
 </t><t>
    The format for the Contact Header is as follows:
 </t>
- <figure anchor="fig-contact-header"
+<figure anchor="fig-contact-header"
      title="Contact Header Format">
-   <artwork>
-                        1 1 1 1 1 1 1 1 1 1 2 2 2 2 2 2 2 2 2 2 3 3
-    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-   +---------------+---------------+---------------+---------------+
-   |                          magic='dtn!'                         |
-   +---------------+---------------+---------------+---------------+
-   |     version   |     flags     |    Keepalive interval (U16)   |
-   +---------------+---------------+---------------+---------------+
-   |                     local EID length (SDNV)                   |
-   +---------------+---------------+---------------+---------------+
-   |                     local EID (byte string)                   |
-   |                                                               |
-   +---------------+---------------+---------------+---------------+
-   |                     BP version count (SDNV)                   |
-   +---------------+---------------+---------------+---------------+
-   |                BP version supported (sequence of byte)        |
-   |                                                               |
-   +---------------+---------------+---------------+---------------+
+<artwork align="center">
+                    1 1 1 1 1 1 1 1 1 1 2 2 2 2 2 2 2 2 2 2 3 3
+0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++---------------+---------------+---------------+---------------+
+|                          magic='dtn!'                         |
++---------------+---------------+---------------+---------------+
+|     version   |              Option count (SDNV)              |
++---------------+---------------+---------------+---------------+
+|                 Options list (sequence of TLV)                |
++---------------+---------------+---------------+---------------+
 </artwork>
 </figure>
 <t>
@@ -389,57 +381,73 @@ The majority of this specification is unchanged from TCPCL version 3.
 <list style="hanging">
 <t hangText="magic:">
     A four-byte field that always contains the byte sequence 0x64
-    0x74 0x6e 0x21, i.e., the text string &quot;dtn!&quot; in US-ASCII.
+    0x74 0x6e 0x21, i.e., the text string &quot;dtn!&quot; in US-ASCII
+    (and UTF-8).
 </t><t hangText="version:">
     A one-byte field value containing the value 4 (current
     version of the protocol).
-</t><t hangText="flags:">
-    A one-byte field containing optional connection flags.  The
-    first four bits are unused and MUST be set to zero upon
-    transmission and MUST be ignored upon reception.  The last four
-    bits are interpreted as shown in Table 1 below.
-</t><t hangText="Keepalive Interval">
-    A two-byte unsigned integer (U16) field containing the number
-    of seconds between exchanges of KEEPALIVE messages on the
-    connection (see <xref target="sec-keepalive"/>).  This value is in network byte
-    order, as are all other multi-byte fields described in this
-    protocol.
-</t><t hangText="local EID length:">
-    A variable-length SDNV field containing the length
-    of the endpoint identifier (EID) for some singleton endpoint in
-    which the sending node is a member.  A four-byte SDNV is
-    depicted for clarity of the figure.
-</t><t hangText="local EID:">
-    A byte string containing the UTF-8 encoded EID of some singleton
-    endpoint in which the sending node is a member, in the canonical
-    format of &lt;scheme name&gt;:&lt;scheme-specific part&gt;.
-    An eight-byte EID is shown for clarity of the figure.
-</t><t hangText="BP version count:">
-    A count of the number of "BP version supported" values to follow.
-    The order of the sequence is not significant, but a canonical order is
-    ascending by numeric value.
-</t><t hangText="BP version supported:">
-    An individual Bundle Protocol version number (encoded as a single byte)
-    supported by the BP node sending the header.
+</t><t hangText="Option count:">
+    A SDNV-encoded count of connection options to follow.
+</t><t hangText="Option list:">
+    A sequence of type-length-value (TLV) encoded connection options as shown
+    in <xref target="fig-connection-option"/> and described in
+    <xref target="sec-connection-option"/>
 </t>
 </list>
 </t>
-<texttable anchor="fig-contact-flags" title="Contact Header Flags">
-  <ttcol>Value (bits)</ttcol><ttcol>Meaning</ttcol>
-  <c>00000001</c><c>Request acknowledgment of bundle segments.</c>
-  <c>00000010</c><c>Request enabling of reactive fragmentation.</c>
-  <c>00000100</c><c>Indicate support for bundle refusal.
-    This flag MUST NOT be set to '1' unless support for acknowledgments
-    is also indicated.</c>
-  <c>00001000</c><c>Request sending of LENGTH messages.</c>
-</texttable>
 <t>
-   The manner in which values are configured and chosen for the various
-   flags and parameters in the contact header is implementation
-   dependent.
+    Each option within a contact header represents the configuration of the
+    peer which has sent the contact header.
+    The manner in which options are configured and chosen for the various
+    parameters in the contact header is implementation dependent.
 </t><t>
 </t>
+<section anchor="sec-connection-option" title="Connection Option Encoding">
+<t>
+    Each of the contact header Options SHALL be encoded as a sequence of
+    TLV data as shown in <xref target="fig-connection-option"/>.
+    <list style="hanging">
+    <t hangText="Option Type:">
+    An SDNV-encoded field which SHALL determine the encoding and
+    interpretation of the option value.
+    </t>
+    <t hangText="Value Length:">
+    An SDNV-encoded field which SHALL define the length (in octets) of 
+    the Value Data to follow.
+    The Value Length does not include the length of the Option Type or 
+    Value Length fields themselves.
+    </t>
+    <t hangText="Value Data:">
+    The encoded type-dependent data of the option.
+    </t>
+    </list>
+</t><t>
+    The order of items within the Option list SHALL not be significant.
+    Each option type SHALL be present no more than one time in a Contact Header.
+    Each option type SHALL be considered to have a default value if not
+    present in a contact header.
+    The option type defines how the particular Value Data is encoded and 
+    interpreted.
+    If a TCPCL peer receives an Option Type which is unknown to it, the peer
+    may send a SHUTDOWN and terminate the connection.
+    Otherwise, the peer SHALL ignore the option and continue contact header
+    processing.
+</t>
+<figure anchor="fig-connection-option"
+     title="Connection Option Format">
+<artwork align="center">
++-----------------------+
+|  Option Type (SDNV)   |
++-----------------------+
+|  Value Length (SDNV)  |
++-----------------------+
+| Value Data (variable) |
++-----------------------+
+</artwork>
+</figure>
 </section>
+</section>
+
 <section anchor="sec-contact-negotiate"
     title="Validation and Parameter Negotiation">
 <t>
@@ -457,8 +465,8 @@ The majority of this specification is unchanged from TCPCL version 3.
 </t><t>
    If a node receives a contact header containing a version that is
    greater than the current version of the protocol that the node
-   implements, then the node SHOULD interpret all fields and messages as
-   it would normally.  If a node receives a contact header with a
+   implements, then the node SHALL terminate the connection.
+   If a node receives a contact header with a
    version that is lower than the version of the protocol that the node
    implements, the node may either terminate the connection due to the
    version mismatch or may adapt its operation to conform to the older
@@ -466,42 +474,105 @@ The majority of this specification is unchanged from TCPCL version 3.
 </t><t>
    A node calculates the parameters for a TCPCL connection by
    negotiating the values from its own preferences (conveyed by the
-   contact header it sent) with the preferences of the peer node
-   (expressed in the contact header that it received).  This negotiation
-   MUST proceed in the following manner:
+   contact header it sent to the peer) with the preferences of the peer node
+   (expressed in the contact header that it received from the peer).
 </t><t>
-<list style="symbols">
+    The negotatiated parameters defined by this specification are listed in
+    <xref target="tab-connection-option-types"/> and described in the following
+    paragraphs.
+</t>
+<texttable anchor="tab-connection-option-types"
+    title="Connection Option Types">
+  <ttcol>Type</ttcol><ttcol>Code</ttcol><ttcol>Description</ttcol>
+  <c>Handle LENGTH</c><c>0x1</c><c>Determine how peer handles LENGTH messages.</c>
+  <c>Acknowledge Intermediate</c><c>0x2</c><c>Determine how peer handles acknowledgment of non-final bundle segments.</c>
+  <c>Acknowledge Bundle</c><c>0x3</c><c>Determine how peer handles acknowledgement of final bundle segments and bundle refusal.</c>
+  <c>Keepalive</c><c>0x4</c><c>The maximum keepalive interval of the peer.</c>
+  <c>Peer EID</c><c>0x5</c><c>The Endpoint ID of the peer.</c>
+  <c>BP Versions</c><c>0x6</c><c>The set of BP versions supported by the peer.</c>
+  <c>Segment MRU</c><c>0x7</c><c>The largest segment length supported by the peer.</c>
+  <c>Handle TLS</c><c>0x8</c><c>Determine how peer handles STARTTLS messages.</c>
+</texttable>
 <t>
-    The parameter for requesting acknowledgment of bundle segments is
-    set to true iff the corresponding flag is set in both contact
-    headers.
-</t><t>
-    The parameter for enabling reactive fragmentation is set to true
-    iff the corresponding flag is set in both contact headers.
-</t><t>
-    The bundle refusal capability is set to true if the corresponding
-    flag is set in both contact headers and if segment acknowledgment
-    has been enabled.
-</t><t>
-    The keepalive_interval parameter is set to the minimum value from
+<list style="hanging">
+<t hangText="Handle LENGTH:">
+    This parameter is a value enumerated by <xref target="tab-handle-enum"/>
+    and encoded as a single octet.
+    The value determines whether LENGTH messages (as described in 
+    <xref target="sec-LENGTH"/>) are handled by this peer.
+    </t><t>
+    If the value is IGNORE then the LENGTH message SHOULD NOT be sent to this
+    peer.
+    If the value is ALLOW then the LENGTH message SHOULD be sent to this peer.
+    If the value is REQUIRE then the LENGTH message SHALL be sent to this peer.
+    The default Handle LENGTH value is ALLOW.
+</t><t hangText="Acknowledge Intermediate:">
+    This parameter is a value enumerated by <xref target="tab-handle-enum"/>
+    and encoded as a single octet.
+    The value determines how any non-final ACK_SEGMENT (i.e. one with its E flag 
+    not set as described in <xref target="sec-ACK_SEGMENT"/>) is handled by this peer.
+    </t><t>
+    If the value is IGNORE then any non-final ACK_SEGMENT message SHOULD NOT be sent to this peer.
+    If the value is ALLOW then any non-final ACK_SEGMENT message SHOULD be sent to this peer.
+    If the value is REQUIRE then any non-final ACK_SEGMENT message SHALL be sent to this peer.
+    The default Acknowledge Intermediate value is ALLOW.
+</t><t hangText="Acknowledge Bundle:">
+    This parameter is a value enumerated by <xref target="tab-handle-enum"/>
+    and encoded as a single octet.
+    The value determines how any final ACK_SEGMENT (i.e. one with its E flag 
+    set as described in <xref target="sec-ACK_SEGMENT"/>) is handled by this peer.
+    This value also determines how any REFUSE_BUNDLE message is handled by
+    this peer.
+    </t><t>
+    If the value is IGNORE then any final ACK_SEGMENT or REFUSE_BUNDLE message SHOULD NOT be sent to this peer.
+    If the value is ALLOW then any final ACK_SEGMENT or REFUSE_BUNDLE message SHOULD be sent to this peer.
+    If the value is REQUIRE then any final ACK_SEGMENT or REFUSE_BUNDLE message SHALL be sent to this peer.
+    The default Acknowledge Bundle value is ALLOW.
+</t><t hangText="Keepalive:">
+    This parameter is encoded as a two-octet unsigned integer in network
+    byte order (U16).
+    The value is the maximum keepalive time interval (in seconds) for this peer.
+    The negotiated keepalive interval is set to the minimum value from
     both contact headers.  If one or both contact headers contains the
     value zero, then the keepalive feature (described in <xref target="sec-keepalive"/>)
     is disabled.
-</t><t>
-    The flag requesting sending of LENGTH messages is handled as
-    described in <xref target="sec-5.5"/>.
-</t><t>
-    The set of supported BP versions is the intersection of the BP versions
-    indicated by both of the contact headers.
+    The default Keepalive value is zero.
+</t><t hangText="Peer EID:">
+    This parameter is a byte string containing the UTF-8 encoded EID of some
+    singleton endpoint in which the sending node is a member, in the canonical
+    format of &lt;scheme name&gt;:&lt;scheme-specific part&gt;.
+    The default Peer EID value is the empty string.
+</t><t hangText="BP Versions:">
+    This parameter is a sequence of bytes, each containing an individual 
+    Bundle Protocol version number supported by this peer.
+    The set of supported BP versions of the connection is the intersection of
+    the BP versions indicated by both of the contact headers.
+    </t><t>
     If interoperating with a TCPCL Version 3 node, a TCPCL Version 4 node MAY
     assume that the TCPCL Version 3 node supports exactly one BP Version:
     0x06 of <xref target="RFC5050"/>.
     If there is no common supported BP version then the connection SHOULD
-    be shutdown with reason "BP Version mismatch", 
+    be shutdown with reason "Contact Failure", 
     as no possible bundle exchange can occur.
+    Otherwise, the default BP Versions value is the single version 4 (this specification).
+</t><t hangText="Segment MRU:">
+    This parameter is an SDNV-encoded integer.
+    The value indicates the maximum Data Length within of DATA_SEGMENT which
+    this peer will accept, or zero if there is no maximum length.
+    Any DATA_SEGMENT send to this peer SHALL have a data payload no longer 
+    than this peer's maximum length.
+    The default Segment MRU value is zero.
 </t>
 </list>
-</t><t>
+</t>
+<texttable anchor="tab-handle-enum"
+    title="Receiver Handle Enumeration">
+  <ttcol>Name</ttcol><ttcol>Code</ttcol><ttcol>Description</ttcol>
+  <c>IGNORE</c><c>0x01</c><c>The peer sending this option will ignore any such messages.</c>
+  <c>ALLOW</c><c>0x02</c><c>The peer sending this option will process any such messages and act upon the data.</c>
+  <c>REQUIRE</c><c>0x03</c><c>The peer sending this option will refuse to operate without such messages.</c>
+</texttable>
+<t>
    Once this process of parameter negotiation is completed, the protocol
    defines no additional mechanism to change the parameters of an
    established connection; to effect such a change, the connection MUST
@@ -530,7 +601,7 @@ The majority of this specification is unchanged from TCPCL version 3.
                             +-+-+-+-+-+-+-+-+
 </artwork></figure>
 <t>
-   type:  Indicates the type of the message as per Table 2 below
+   type:  Indicates the type of the message as per <xref target="tab-msg-types"/> below.
 </t><t>
    flags:  Optional flags defined based on message type.
 </t><t>
@@ -541,15 +612,15 @@ The majority of this specification is unchanged from TCPCL version 3.
   <c>DATA_SEGMENT</c><c>0x1</c><c>Indicates the transmission of a segment of 
   bundle data, as described in <xref target="sec-5.2"/>.</c>
   <c>ACK_SEGMENT</c><c>0x2</c><c>Acknowledges reception of a data segment, as 
-  described in <xref target="sec-5.3"/>.</c>
+  described in <xref target="sec-ACK_SEGMENT"/>.</c>
   <c>REFUSE_BUNDLE</c><c>0x3</c><c>Indicates that the transmission of the 
-  current bundle shall be stopped, as described in <xref target="sec-5.4"/>.</c>
+  current bundle SHALL be stopped, as described in <xref target="sec-REFUSE_BUNDLE"/>.</c>
   <c>KEEPALIVE</c><c>0x4</c><c>KEEPALIVE message for the connection, 
   as described in <xref target="sec-keepalive"/>.</c>
   <c>SHUTDOWN</c><c>0x5</c><c>Indicates that one of the nodes participating in 
   the connection wishes to cleanly terminate the connection, 
   as described in <xref target="sec-6"/>.</c>
-  <c>LENGTH</c><c>0x6</c><c>Contains the length (in bytes) of the next bundle, as described in <xref target="sec-5.5"/>.</c>
+  <c>LENGTH</c><c>0x6</c><c>Contains the length (in bytes) of the next bundle, as described in <xref target="sec-LENGTH"/>.</c>
 </texttable>
 </section>
 
@@ -698,7 +769,8 @@ the client/requester role is represented by the prefix "C" and the
 server/responder role is represented by the prefix "S".
 Unordered or "simultaneous" actions are shown as "C/S".
       </t>
-<figure anchor="fig-tls-example" title="A simple visual example of TCPCL TLS Establishment between two nodes"><artwork>
+<figure anchor="fig-tls-example" title="A simple visual example of TCPCL TLS Establishment between two nodes">
+<artwork>
               Node A                              Node B
               ======                              ======
     
@@ -767,8 +839,10 @@ REFUSE_BUNDLE message SHOULD be sent in response.
 
 <section anchor="sec-5.2" title="Bundle Data Transmission (DATA_SEGMENT)">
 <t>
-   Each bundle is transmitted in one or more data segments.  The format
-   of a DATA_SEGMENT message follows:
+   Each bundle is transmitted in one or more data segments.
+   The format of a DATA_SEGMENT message follows in 
+   <xref target="fig-msg-data-segment"/> and its use of header flags is 
+   shown in <xref target="fig-flags-data-segment"/>.
 </t>
 <figure anchor="fig-msg-data-segment" title="Format of DATA_SEGMENT Messages">
 <artwork align="center">
@@ -788,7 +862,8 @@ REFUSE_BUNDLE message SHOULD be sent in response.
 +-+-+-+-+
 |0|0|S|E|
 +-+-+-+-+
-</artwork></figure>
+</artwork>
+</figure>
 <t>
    The type portion of the message header contains the value 0x1.
 </t><t>
@@ -824,7 +899,7 @@ REFUSE_BUNDLE message SHOULD be sent in response.
    sends a segment with the 'E' bit set.
 </t>
 </section>
-<section anchor="sec-5.3" title="Bundle Acknowledgments (ACK_SEGMENT)">
+<section anchor="sec-ACK_SEGMENT" title="Bundle Acknowledgments (ACK_SEGMENT)">
 <t>
    Although the TCP transport provides reliable transfer of data between
    transport peers, the typical BSD sockets interface provides no means
@@ -838,11 +913,14 @@ REFUSE_BUNDLE message SHOULD be sent in response.
    receiving node transmits acknowledgments of reception of data
    segments.  This feature is enabled if, and only if, during the
    exchange of contact headers, both parties set the flag to indicate
-   that segment acknowledgments are enabled (see <xref target="sec-contact-header"/>).  If so,
-   then the receiver MUST transmit a bundle acknowledgment message when
-   it successfully receives each data segment.
+   that intermediate or final acknowledgments are enabled
+   (see <xref target="sec-contact-header"/>).
 </t><t>
-   The format of a bundle acknowledgment is as follows:
+   The format of an ACK_SEGMENT message follows in 
+   <xref target="fig-msg-ack-segment"/> and its use of header flags is 
+   the same as for DATA_SEGMENT (shown in <xref target="fig-flags-data-segment"/>).
+   The flags of an ACK_SEGMENT message SHALL be identical to the flags of the
+   DATA_SEGMENT message for which it is a reply.
 </t>
 <figure anchor="fig-msg-ack-segment" title="Format of ACK_SEGMENT Messages">
 <artwork align="center">
@@ -870,17 +948,16 @@ REFUSE_BUNDLE message SHOULD be sent in response.
 </t><t>
 </t>
 </section>
-<section anchor="sec-5.4" title="Bundle Refusal (REFUSE_BUNDLE)">
+<section anchor="sec-REFUSE_BUNDLE" title="Bundle Refusal (REFUSE_BUNDLE)">
 <t>
    As bundles may be large, the TCPCL supports an optional mechanisms by
    which a receiving node may indicate to the sender that it does not
    want to receive the corresponding bundle.
 </t><t>
-   To do so, upon receiving a DATA_SEGMENT message, the node MAY
+   To do so, upon receiving a LENGTH or DATA_SEGMENT message, the node MAY
    transmit a REFUSE_BUNDLE message.  As data segments and
    acknowledgments may cross on the wire, the bundle that is being
-   refused is implicitly identified by the sequence in which
-   acknowledgements and refusals are received.
+   refused SHALL be identified by the Bundle ID of the refusal.
 </t><t>
    The format of the  message is as follows:
 </t>
@@ -903,7 +980,7 @@ REFUSE_BUNDLE message SHOULD be sent in response.
    The RCode field, which stands for &quot;reason code&quot;, contains a value
    indicating why the bundle was refused.  The following table contains
    semantics for some values.  Other values may be registered with IANA,
-   as defined in <xref target="sec-8"/>.
+   as defined in <xref target="sec-IANA"/>.
 </t>
 <texttable anchor="tab-rcode-values" title="REFUSE_BUNDLE Reason Codes">
   <ttcol>Name</ttcol><ttcol>RCode</ttcol><ttcol>Semantics</ttcol>
@@ -938,7 +1015,7 @@ REFUSE_BUNDLE message SHOULD be sent in response.
    the 'S' bit set to '1', indicating the start of a new bundle.
 </t>
 </section>
-<section anchor="sec-5.5" title="Bundle Length (LENGTH)">
+<section anchor="sec-LENGTH" title="Bundle Length (LENGTH)">
 <t>
    The LENGTH message contains the total length, in bytes, of the next
    bundle, formatted as an SDNV.  Its purpose is to allow nodes to
@@ -1019,9 +1096,9 @@ REFUSE_BUNDLE message SHOULD be sent in response.
 <texttable anchor="tab-shutdown-reasons" title="SHUTDOWN Reason Codes">
   <ttcol>Name</ttcol><ttcol>Code</ttcol><ttcol>Description</ttcol>
   <c>Idle timeout</c><c>0x00</c><c>The connection is being closed due to idleness.</c>
-  <c>CL Version mismatch</c><c>0x01</c><c>The node cannot conform to the specified TCPCL protocol version.</c>
+  <c>Version mismatch</c><c>0x01</c><c>The node cannot conform to the specified TCPCL protocol version.</c>
   <c>Busy</c><c>0x02</c><c>The node is too busy to handle the current connection.</c>
-  <c>BP Version mismatch</c><c>0x03</c><c>The node cannot negotiate a common BP protocol version.</c>
+  <c>Contact Failure</c><c>0x03</c><c>The node cannot interpret or negotiate contact header option.</c>
   <c>TLS failure</c><c>0x04</c><c>The node failed to negotiate TLS session and cannot continue the connection.</c>
 </texttable>
 <t>
@@ -1130,7 +1207,7 @@ REFUSE_BUNDLE message SHOULD be sent in response.
    quickly or with a delay, etc.
 </t>
 </section>
-<section anchor="sec-8" title="IANA Considerations">
+<section anchor="sec-IANA" title="IANA Considerations">
 <t>
   In this section, registration procedures are as defined in <xref target="RFC5226"/>
 </t>
@@ -1164,11 +1241,12 @@ REFUSE_BUNDLE message SHOULD be sent in response.
   <c>1</c><c>Reserved</c><c><xref target="RFC7242"/></c>
   <c>2</c><c>Reserved</c><c><xref target="RFC7242"/></c>
   <c>3</c><c>TCPCL</c><c><xref target="RFC7242"/></c>
-  <c>4</c><c>TCPCLbis</c><c>This RFC.</c>
+  <c>4</c><c>TCPCLbis</c><c>This specification.</c>
   <c>5-255</c><c>Unassigned</c>
 </texttable>
 </section>
-<section anchor="sec-8.3" title="Message Types">
+
+<section anchor="sec-iana-message-types" title="Message Types">
 <t>
    IANA has created, under the &quot;Bundle Protocol&quot; registry, a sub-
    registry titled &quot;Bundle Protocol TCP Convergence-Layer Message Types&quot;
@@ -1189,6 +1267,32 @@ REFUSE_BUNDLE message SHOULD be sent in response.
   <c>0x9--0xf</c><c>Unassigned</c>
 </texttable>
 </section>
+
+<section anchor="sec-iana-option-types" title="Connection Option Types">
+<t>
+   IANA will createe, under the &quot;Bundle Protocol&quot; registry, a sub-
+   registry titled &quot;Bundle Protocol TCP Convergence-Layer Option Types&quot;
+   and initialize it with the contents below.
+   The registration procedure is RFC Required for values less than 2^14 (16384).
+   Values greater than or equal to 2^14 (16384) are to be used for experimental
+   option types.
+</t>
+<texttable title="Message Type Codes">
+  <ttcol>Code</ttcol><ttcol>Option Type</ttcol>
+  <c>0x0</c><c>Reserved</c>
+  <c>0x1</c><c>Handle LENGTH</c>
+  <c>0x2</c><c>Acknowledge Intermediate</c>
+  <c>0x3</c><c>Acknowledge Bundle</c>
+  <c>0x4</c><c>Keepalive</c>
+  <c>0x5</c><c>Peer EID</c>
+  <c>0x6</c><c>BP Versions</c>
+  <c>0x7</c><c>Segment MRU</c>
+  <c>0x8</c><c>Handle TLS</c>
+  <c>0x9--0x3ffe</c><c>Unassigned</c>
+  <c>0x3fff--</c><c>Experimental</c>
+</texttable>
+</section>
+
 <section anchor="sec-8.4" title="REFUSE_BUNDLE Reason Codes">
 <t>
    IANA has created, under the &quot;Bundle Protocol&quot; registry, a sub-
@@ -1219,7 +1323,7 @@ REFUSE_BUNDLE message SHOULD be sent in response.
   <c>0x00</c><c>Idle timeout</c>
   <c>0x01</c><c>Version mismatch</c>
   <c>0x02</c><c>Busy</c>
-  <c>0x03</c><c>BP Version mismatch</c>
+  <c>0x03</c><c>Contact Failure</c>
   <c>0x04</c><c>TLS failure</c>
   <c>0x05--0xFF</c><c>Unassigned</c>
 </texttable>
@@ -1260,7 +1364,6 @@ REFUSE_BUNDLE message SHOULD be sent in response.
       <?rfc include="reference.RFC.5226.xml"?>
       <?rfc include="reference.RFC.5246.xml"?>
       <?rfc include="reference.RFC.6256.xml"?>
-      <?rfc include="reference.RFC.7242.xml"?>
       <?rfc include="reference.I-D.ietf-dtn-bpbis.xml"?>
       <reference anchor="refs.IANA-BP">
         <front>
@@ -1274,6 +1377,7 @@ REFUSE_BUNDLE message SHOULD be sent in response.
       <?rfc include="reference.RFC.2595.xml"?>
       <?rfc include="reference.RFC.4838.xml"?>
       <?rfc include="reference.RFC.6257.xml"?>
+      <?rfc include="reference.RFC.7242.xml"?>
       <?rfc include="reference.I-D.ietf-dtn-bpsec.xml"?>
     </references>
     
@@ -1284,10 +1388,14 @@ REFUSE_BUNDLE message SHOULD be sent in response.
     <list style="symbols">
       <t>Added a bundle identification number to all bundle-related messages (LENGTH, DATA_SEGMENT, ACK_SEGMENT, REFUSE_BUNDLE).</t>
       <t>Added bundle protocol version negotation to contact header.</t>
+      <t>Use flags in ACK_SEGMENT to mirror flags from DATA_SEGMENT.</t>
     </list>
     The areas in which extensions from <xref target="RFC7242"/> have been
     made as new messages and codes are:
     <list style="symbols">
+      <t>Changed contact header negotation from single-octet bit flags to extensible TLV-encoded options.</t>
+      <t>Added contact option to negotiate maximum segment size (per each direction).</t>
+      <t>Added contact option to negotiate acceptable Bundle Protoocl versions.</t>
       <t>Added REJECT message to indicate an unknown or unhandled message was received.</t>
       <t>Added STARTTLS message and connection security mechanism.</t>
       <t>Added TLS failure SHUTDOWN reason code.</t>
