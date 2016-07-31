@@ -9,7 +9,7 @@
 <?rfc toc="yes"?>
 <rfc ipr="trust200902" 
      category="exp"
-     docName="draft-sipos-dtn-tcpclv4-01"
+     docName="draft-sipos-dtn-tcpclv4-02"
      obsoletes="RFC7242">
   <front>
     <title abbrev="DTN TCPCLv4">
@@ -21,16 +21,61 @@
       </organization>
       <address>
         <postal>
-        <street>1229 19th Street NW</street>
-        <city>Wasington</city>
-        <region>DC</region>
-        <code>20036</code>
-        <country>US</country>
+          <street>1229 19th Street NW</street>
+          <city>Wasington</city>
+          <region>DC</region>
+          <code>20036</code>
+          <country>US</country>
         </postal>
         <email>BSipos@rkf-eng.com</email>
       </address>
     </author>
-    <date year="2016" month="June" day="23"/>
+    <author initials="M." surname="Demmer" fullname="Michael Demmer">
+      <organization abbrev="UC Berkeley">
+        University of California, Berkeley
+      </organization>
+      <address>
+        <postal>
+          <street>Computer Science Division</street>
+          <street>445 Soda Hall</street>
+          <city>Berkeley</city>
+          <region>CA</region>
+          <code>94720-1776</code>
+          <country>US</country>
+        </postal>
+        <email>demmer@cs.berkeley.edu</email>
+      </address>
+    </author>
+    <author initials="J." surname="Ott" fullname="Joerg Ott">
+      <organization>
+        Aalto University
+      </organization>
+      <address>
+        <postal>
+          <street>Department of Communications and Networking</street>
+          <street>PO Box 13000</street>
+          <city>Aalto</city>
+          <code>02015</code>
+          <country>Finland</country>
+        </postal>
+        <email>jo@netlab.tkk.fi</email>
+      </address>
+    </author>
+    <author initials="S." surname="Perreault" fullname="Simon Perreault">
+      <organization>
+      </organization>
+      <address>
+        <postal>
+          <street></street>
+          <city>Quebec</city>
+          <region>QC</region>
+          <country>Canada</country>
+        </postal>
+        <email>simon@per.reau.lt</email>
+      </address>
+    </author>
+    <date year="2016" month="August" day="1"/>
+    <area>Transport</area>
     <workgroup>Delay Tolerant Networking</workgroup>
 
     <abstract>
@@ -1163,12 +1208,13 @@ REFUSE_BUNDLE message SHOULD be sent in response.
    header exchange.  It would be possible for a node to fake this value
    and present the identity of a singleton endpoint in which the node is
    not a member, essentially masquerading as another DTN node.  If this
-   identifier is used without further verification as a means to
+   identifier is used outside of a TLS-secured session or 
+   without further verification as a means to
    determine which bundles are transmitted over the connection, then the
    node that has falsified its identity may be able to obtain bundles
    that it should not have.  Therefore, a node SHALL NOT use the
    endpoint identifier conveyed in the TCPCL connection message to
-   derive a peer node's identity unless it can ascertain it via other
+   derive a peer node's identity unless it can corroborate it via other
    means.
 </t><t>
    These concerns may be mitigated through the use of the Bundle
