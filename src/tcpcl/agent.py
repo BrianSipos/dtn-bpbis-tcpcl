@@ -7,7 +7,7 @@ import logging
 import argparse
 import socket
 import ssl
-import glib
+from gi.repository import GLib as glib
 import dbus.bus
 import dbus.service
 from dbus.mainloop.glib import DBusGMainLoop
@@ -353,7 +353,6 @@ class Messenger(Connection):
         self._send_segment_size = None
         self._do_send_ack_inter = None
         self._do_send_ack_final = None
-        self._do_send_frag = None
         self._do_send_refuse = None
         self._do_send_length = None
         
@@ -497,9 +496,30 @@ class Messenger(Connection):
             self._in_conn = True
             self.merge_options()
             
-            # Client initiates STARTTLS
-            if not self.is_server() and not self.is_secure() and self._tls_attempt:
-                self.send_message(messages.MessageHead()/messages.StartTls())
+            # Boths sides immediately try TLS, Client initiates handshake
+            if not self.is_secure() and self._tls_attempt:
+                
+                # flush the buffers ahead of TLS
+                while self.__tx_buf:
+                    self._avail_tx_notls()
+                
+                # Either case, TLS handshake begins
+                try:
+                    self.secure(self._config.ssl_ctx)
+                except ssl.SSLError as err:
+                    pass
+                
+                if self.is_secure():
+                    # Re-negotiate contact
+                    self._in_conn = False
+                    self.send_contact_header()
+                else:
+                    # TLS negotiation failure
+                    if self._config.tls_require:
+                        self.do_shutdown(messages.Shutdown.REASON_TLS_FAIL)
+                    else:
+                        raise RejectError(messages.RejectMsg.REASON_UNSUPPORTED)
+        
         else:
             # Some payloads are empty and scapy will not construct them
             msgcls = pkt.guess_payload_class('')
@@ -515,32 +535,6 @@ class Messenger(Connection):
                 elif msgcls in (messages.Keepalive, messages.RejectMsg):
                     # No need to respond at this level
                     pass
-                
-                elif msgcls == messages.StartTls:
-                    # Server response to STARTTLS
-                    if self.is_server():
-                        self.send_message(messages.MessageHead()/messages.StartTls())
-                    
-                    # flush the buffers ahead of TLS
-                    while self.__tx_buf:
-                        self._avail_tx_notls()
-                    
-                    # Either case, STARTTLS has been exchanged
-                    try:
-                        self.secure(self._config.ssl_ctx)
-                    except ssl.SSLError as err:
-                        pass
-                    
-                    if self.is_secure():
-                        # Re-negotiate contact
-                        self._in_conn = False
-                        self.send_contact_header()
-                    else:
-                        # TLS negotiation failure
-                        if self._config.tls_require:
-                            self.do_shutdown(messages.Shutdown.REASON_TLS_FAIL)
-                        else:
-                            raise RejectError(messages.RejectMsg.REASON_UNSUPPORTED)
                 
                 # Delegated handlers
                 elif msgcls == messages.BundleLength:
@@ -562,17 +556,15 @@ class Messenger(Connection):
                 self.send_reject(err.reason, pkt)
     
     def send_contact_header(self):
-        optlist = [
-            contact.OptionHead()/contact.OptionEid(eid_data=self._config.eid.encode('utf8')),
-            contact.OptionHead()/contact.OptionTls(accept=contact.MessageRxField.FLAG_REQUIRE),
-            contact.OptionHead()/contact.OptionKeepalive(keepalive=self._config.keepalive_time),
-            contact.OptionHead()/contact.OptionMru(segment_size=self._config.segment_size),
-            #contact.OptionHead()/contact.OptionLength(flags=contact.MessageRxField.FLAG_ALLOW),
-            #contact.OptionHead()/contact.OptionAck(flags=contact.MessageRxField.FLAG_ALLOW),
-            #contact.OptionHead()/contact.OptionRefuse(flags=contact.MessageRxField.FLAG_ALLOW),
-            #flags='ENA_ACK+ENA_LENGTH+ENA_REFUSE',
-        ]
-        pkt = contact.Head()/contact.ContactV4(options=optlist)
+        options = dict(
+            flags='CAN_TLS',
+            keepalive=self._config.keepalive_time,
+            segment_mru=self._config.segment_size,
+        )
+        if self.is_secure():
+            options['eid_data'] = self._config.eid.encode('utf8')
+        
+        pkt = contact.Head()/contact.ContactV4(**options)
         self.send_message(pkt)
         return pkt
     
@@ -581,29 +573,23 @@ class Messenger(Connection):
         '''
         self.__logger.debug('Contact negotiation')
         
-        def send_policy(flag):
-            self.__logger.debug('flag %d', flag)
-            return (flag in (contact.MessageRxField.FLAG_ALLOW,
-                             contact.MessageRxField.FLAG_REQUIRE))
+        self._tls_attempt = ((self._head_this.flags & contact.ContactV4.FLAG_CAN_TLS)
+                             and (self._head_this.flags & contact.ContactV4.FLAG_CAN_TLS))
         
-        self._tls_attempt = (send_policy(self._head_this.find_option(contact.OptionTls).accept)
-                             & send_policy(self._head_this.find_option(contact.OptionTls).accept))
-        
-        self._keepalive_time = min(self._head_this.find_option(contact.OptionKeepalive).keepalive,
-                                   self._head_peer.find_option(contact.OptionKeepalive).keepalive)
+        self._keepalive_time = min(self._head_this.keepalive,
+                                   self._head_peer.keepalive)
         self._idle_time = self._config.idle_time
         self._keepalive_reset()
         self._idle_reset()
         
         self._send_segment_size = min(self._config.segment_size,
-                                      self._head_peer.find_option(contact.OptionMru).segment_size)
+                                      self._head_peer.segment_mru)
         self.__logger.debug('TX seg size {0}'.format(self._send_segment_size))
         
-        self._do_send_length = send_policy(self._head_this.find_option(contact.OptionLength).accept)
-        self._do_send_ack_inter = send_policy(self._head_this.find_option(contact.OptionAck).intermediate)
-        self._do_send_ack_final = send_policy(self._head_this.find_option(contact.OptionAck).final)
-        self._do_send_refuse = send_policy(self._head_this.find_option(contact.OptionRefuse).accept)
-        self._do_send_frag = False
+        self._do_send_length = True
+        self._do_send_ack_inter = True
+        self._do_send_ack_final = True
+        self._do_send_refuse = True
     
     def send_raw(self, size):
         ''' Pop some data from the TX queue.
@@ -803,14 +789,14 @@ class ContactHandler(Messenger, dbus.service.Object):
         self._rx_tmp = None
     
     def recv_length(self, bundle_id, length):
-        print 'length', bundle_id, length
+        self.__logger.debug('length {0} {1}'.format(bundle_id, length))
         # reject if length is received mid-bundle
         if self._rx_tmp or not self._do_send_length:
             raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
         self._rx_setup(bundle_id)
     
     def recv_segment(self, bundle_id, data, flags):
-        print 'data', bundle_id, flags
+        self.__logger.debug('data {0} {1}'.format(bundle_id, flags))
         
         if flags & messages.DataSegment.FLAG_START:
             if self._do_send_length:
@@ -843,7 +829,7 @@ class ContactHandler(Messenger, dbus.service.Object):
                 self.send_ack(bundle_id, self._rx_tmp.file.tell())
     
     def recv_ack(self, bundle_id, length):
-        print 'ack', bundle_id, length
+        self.__logger.debug('ack {0} {1}'.format(bundle_id, length))
         
         item = self._tx_map[bundle_id]
         if length == item.file.tell():
@@ -857,7 +843,7 @@ class ContactHandler(Messenger, dbus.service.Object):
                 raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
     
     def recv_refuse(self, bundle_id, reason):
-        print 'refuse', bundle_id, reason
+        self.__logger.debug('refuse {0} {1}'.format(bundle_id, reason))
         self.send_bundle_finished(bundle_id, 'refused with code {0}'.format(reason))
         self._tx_map.pop(bundle_id)
         
@@ -1141,7 +1127,7 @@ def main():
         logging.info('Registered as "{0}"'.format(bus_serv.get_name()))
     
     if True:
-        config.ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
+        config.ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
         config.ssl_ctx.set_ciphers(ssl._DEFAULT_CIPHERS)
         if args.tls_ca:
             config.ssl_ctx.load_verify_locations(args.tls_ca)

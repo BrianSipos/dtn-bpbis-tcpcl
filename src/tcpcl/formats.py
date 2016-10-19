@@ -17,6 +17,21 @@ class UInt16Field(fields.Field):
     def __init__(self, name, default):
         fields.Field.__init__(self, name, default, '!H')
 
+class UInt64Field(fields.Field):
+    ''' Unsigned 64-bit value. '''
+    def __init__(self, name, default):
+        fields.Field.__init__(self, name, default, '!Q')
+
+class UInt16FieldLenField(fields.FieldLenField):
+    def __init__(self, *args, **kwargs):
+        kwargs['fmt'] = '!H'
+        fields.FieldLenField.__init__(self, *args, **kwargs)
+
+class UInt64FieldLenField(fields.FieldLenField):
+    def __init__(self, *args, **kwargs):
+        kwargs['fmt'] = '!Q'
+        fields.FieldLenField.__init__(self, *args, **kwargs)
+
 class SdnvField(fields.Field):
     ''' Represent a single independent SDNV-encoded integer.
     

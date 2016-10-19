@@ -18,9 +18,6 @@ class MessageHead(packet.Packet):
 class Keepalive(formats.NoPayloadPacket):
     ''' An empty KEEPALIVE message. '''
 
-class StartTls(formats.NoPayloadPacket):
-    ''' An empty STARTTLS message. '''
-
 class Shutdown(formats.NoPayloadPacket):
     ''' An flag-dependent SHUTDOWN message. '''
     #: MessageHead.flags mask
@@ -28,15 +25,17 @@ class Shutdown(formats.NoPayloadPacket):
     #: MessageHead.flags mask
     FLAG_DELAY = 0x1
     
+    #: Disconnected because of idleness
     REASON_IDLE = 0
+    #: Disconnected because TLS negotiation failed
     REASON_TLS_FAIL = 4
     
     REASONS = {
-        0: 'IDLE',
+        REASON_IDLE: 'IDLE',
         1: 'CL_MISMATCH',
         2: 'BUSY',
         3: 'BP_MISMATCH',
-        4: 'TLS_FAIL',
+        REASON_TLS_FAIL: 'TLS_FAIL',
     }
     
     fields_desc = [
@@ -70,8 +69,8 @@ class BundleLength(formats.NoPayloadPacket):
     ''' A LENGTH with no payload. '''
     
     fields_desc = [
-        formats.SdnvField('bundle_id', default=None),
-        formats.SdnvField('length', default=None),
+        formats.UInt64Field('transfer_id', default=None),
+        formats.UInt64Field('length', default=None),
     ]
 
 class RefuseBundle(formats.NoPayloadPacket):
@@ -83,7 +82,7 @@ class RefuseBundle(formats.NoPayloadPacket):
     REASON_RETRANSMIT = 0x3
     
     fields_desc = [
-        formats.SdnvField('bundle_id', default=None),
+        formats.UInt64Field('transfer_id', default=None),
     ]
 
 class DataSegment(formats.NoPayloadPacket):
@@ -93,8 +92,8 @@ class DataSegment(formats.NoPayloadPacket):
     FLAG_END   = 0x1
     
     fields_desc = [
-        formats.SdnvField('bundle_id', default=None),
-        formats.SdnvFieldLenField('length', default=None, length_of='data'),
+        formats.UInt64Field('transfer_id', default=None),
+        formats.UInt64FieldLenField('length', default=None, length_of='data'),
         formats.BlobField('data', '', length_from=lambda pkt: pkt.length),
     ]
 
@@ -102,8 +101,8 @@ class AckSegment(formats.NoPayloadPacket):
     ''' An ACK_SEGMENT with no payload. '''
     
     fields_desc = [
-        formats.SdnvField('bundle_id', default=None),
-        formats.SdnvField('length', default=None),
+        formats.UInt64Field('transfer_id', default=None),
+        formats.UInt64Field('length', default=None),
     ]
 
 packet.bind_layers(MessageHead, DataSegment, msg_id=0x1)
@@ -113,4 +112,3 @@ packet.bind_layers(MessageHead, Keepalive, msg_id=0x4)
 packet.bind_layers(MessageHead, Shutdown, msg_id=0x5)
 packet.bind_layers(MessageHead, BundleLength, msg_id=0x6)
 packet.bind_layers(MessageHead, RejectMsg, msg_id=0x7)
-packet.bind_layers(MessageHead, StartTls, msg_id=0x8)
