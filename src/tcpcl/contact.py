@@ -48,7 +48,7 @@ class ContactV4(formats.NoPayloadPacket):
                           names=['CAN_TLS']),
         formats.UInt16Field('keepalive', default=0),
         formats.UInt64Field('segment_mru', default=SIZE_MAX),
-        formats.UInt64Field('bundle_mru', default=SIZE_MAX),
+        formats.UInt64Field('transfer_mru', default=SIZE_MAX),
         
         formats.UInt16FieldLenField('eid_length', default=None,
                                     length_of='eid_data'),
