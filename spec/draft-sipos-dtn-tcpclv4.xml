@@ -452,6 +452,7 @@ The majority of this specification is unchanged from TCPCL version 3.
     data size to be received in this session.
     Any bundle transfer sent to this peer SHALL have a Total bundle data 
     payload no longer than the peer's Transfer MRU.
+    This value can be used to perform proactive bundle fragmentation.
     The two endpoints of a single session MAY have different Transfer MRUs, and
     no relation between the two is required.
 </t><t hangText="EID Length and EID Data:">
