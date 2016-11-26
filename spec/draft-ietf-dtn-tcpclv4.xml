@@ -74,7 +74,7 @@
         <email>simon@per.reau.lt</email>
       </address>
     </author>
-    <date year="2016" month="October" day="19"/>
+    <date year="2016" month="November" day="27"/>
     <area>Transport</area>
     <workgroup>Delay Tolerant Networking</workgroup>
 
@@ -1284,6 +1284,7 @@ relation between Transfer IDs originating from each side of the TCPCL session.
       <?rfc include="reference.RFC.5050.xml"?>
       <?rfc include="reference.RFC.5226.xml"?>
       <?rfc include="reference.RFC.5246.xml"?>
+      <?rfc include="reference.RFC.7525.xml"?>
       <?rfc include="reference.I-D.ietf-dtn-bpbis.xml"?>
       <reference anchor="refs.IANA-BP">
         <front>
@@ -1298,7 +1299,6 @@ relation between Transfer IDs originating from each side of the TCPCL session.
       <?rfc include="reference.RFC.4838.xml"?>
       <?rfc include="reference.RFC.6257.xml"?>
       <?rfc include="reference.RFC.7242.xml"?>
-      <?rfc include="reference.RFC.7525.xml"?>
       <?rfc include="reference.I-D.ietf-dtn-bpsec.xml"?>
     </references>
     
