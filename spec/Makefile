@@ -9,8 +9,8 @@
 	xml2rfc --html -o $@ $<
 
 OUTFILES = \
-	draft-sipos-dtn-tcpclv4.html \
-	draft-sipos-dtn-tcpclv4.txt
+	draft-ietf-dtn-tcpclv4.html \
+	draft-ietf-dtn-tcpclv4.txt
 
 all: $(OUTFILES)
 
