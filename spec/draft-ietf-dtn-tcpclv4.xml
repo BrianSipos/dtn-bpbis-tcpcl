@@ -713,7 +713,7 @@ The message header fields are as follows:
 </t>
 </section>
 
-<section anchor="sec-MSG_REJECT" title="Message Rejection">
+<section anchor="sec-MSG_REJECT" title="Message Rejection (MSG_REJECT)">
 <t>
     If a TCPCL endpoint receives a message which is unknown to it (possibly due
     to an unhandled protocol mismatch) or is inappropriate for the current 
@@ -1215,7 +1215,7 @@ The fields of the SHUTDOWN message are:
    values of the reason code are:
 </t>
 <texttable anchor="tab-shutdown-reasons" title="SHUTDOWN Reason Codes">
-  <ttcol>Name</ttcol><ttcol>Code</ttcol><ttcol>Description</ttcol>
+  <ttcol>Name</ttcol><ttcol>Description</ttcol>
   <c>Idle timeout</c><c>The session is being closed due to idleness.</c>
   <c>Version mismatch</c><c>The node cannot conform to the specified TCPCL protocol version.</c>
   <c>Busy</c><c>The node is too busy to handle the current session.</c>
@@ -1387,7 +1387,7 @@ The fields of the SHUTDOWN message are:
    IANA will create, under the &quot;Bundle Protocol&quot; registry,
    a sub-registry titled 
    &quot;Bundle Protocol TCP Convergence-Layer Version 4 Header Extension Types&quot;
-   and initialized it with the contents of <xref target="tab-iana-message-types"/>.
+   and initialized it with the contents of <xref target="tab-iana-header-extension-type"/>.
    The registration procedure is RFC Required within the lower range 0x0001--0x3fff.
    Values in the range 0x8000--0xffff are resrved for use on private networks
    for functions not published to the IANA.
@@ -1419,7 +1419,7 @@ The fields of the SHUTDOWN message are:
   <c>0x05</c><c>SHUTDOWN</c>
   <c>0x06</c><c>XFER_INIT</c>
   <c>0x07</c><c>MSG_REJECT</c>
-  <c>TBD--0xf</c><c>Unassigned</c>
+  <c>0x08--0xf</c><c>Unassigned</c>
 </texttable>
 </section>
 
