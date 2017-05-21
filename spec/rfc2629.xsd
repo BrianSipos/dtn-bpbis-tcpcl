@@ -98,6 +98,10 @@
             <xs:enumeration value="trust200811"/>
             <xs:enumeration value="noModificationTrust200811"/>
             <xs:enumeration value="noDerivativesTrust200811"/>
+            <xs:enumeration value="trust200902"/>
+            <xs:enumeration value="noModificationTrust200902"/>
+            <xs:enumeration value="noDerivativesTrust200902"/>
+            <xs:enumeration value="pre5378Trust200902"/>
           </xs:restriction>
         </xs:simpleType>
       </xs:attribute>
