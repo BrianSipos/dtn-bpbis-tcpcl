@@ -115,7 +115,8 @@ class SdnvFieldLenField(SdnvField):
             x = self.adjust(pkt,x)
         return SdnvField.i2m(self, pkt, x)
 
-class BlobField(fields.StrFixedLenField):
+#class BlobField(fields.StrFixedLenField):
+class BlobField(fields.StrLenField):
     ''' Overload i2h and i2repr to hide the actual data contents. '''
     
     def i2h(self, pkt, x):

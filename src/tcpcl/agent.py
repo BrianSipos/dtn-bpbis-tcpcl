@@ -17,6 +17,12 @@ import math
 from scapy import packet
 from tcpcl import contact, messages
 
+def combine_flags(names):
+    if len(names):
+        return '+'.join(names)
+    else:
+        return 0
+
 class Config(object):
     ''' Agent configuration.
     
@@ -537,16 +543,16 @@ class Messenger(Connection):
                     pass
                 
                 # Delegated handlers
-                elif msgcls == messages.BundleLength:
-                    self.recv_length(pkt.payload.bundle_id, pkt.payload.length)
-                elif msgcls == messages.DataSegment:
-                    self.recv_segment(bundle_id=pkt.payload.bundle_id,
+                elif msgcls == messages.TransferInit:
+                    self.recv_length(pkt.payload.transfer_id, pkt.payload.length)
+                elif msgcls == messages.TransferSegment:
+                    self.recv_segment(transfer_id=pkt.payload.transfer_id,
                                       data=pkt.payload.getfieldval('data'),
                                       flags=pkt.getfieldval('flags'))
-                elif msgcls == messages.AckSegment:
-                    self.recv_ack(pkt.payload.bundle_id, pkt.payload.length)
-                elif msgcls == messages.RefuseBundle:
-                    self.recv_refuse(pkt.payload.bundle_id, pkt.flags)
+                elif msgcls == messages.TransferAck:
+                    self.recv_ack(pkt.payload.transfer_id, pkt.payload.length)
+                elif msgcls == messages.TransferRefuse:
+                    self.recv_refuse(pkt.payload.transfer_id, pkt.flags)
                 
                 else:
                     # Bad RX message
@@ -556,8 +562,12 @@ class Messenger(Connection):
                 self.send_reject(err.reason, pkt)
     
     def send_contact_header(self):
+        flag_names = []
+        if self._config.ssl_ctx:
+            flag_names.append('CAN_TLS')
+        
         options = dict(
-            flags='CAN_TLS',
+            flags=combine_flags(flag_names),
             keepalive=self._config.keepalive_time,
             segment_mru=self._config.segment_size,
         )
@@ -632,11 +642,12 @@ class Messenger(Connection):
     
     def do_shutdown(self, reason=None):
         self._wait_shutdown = True
-        flags = 0
+        flg_names = []
         if reason is not None:
-            flags |= messages.Shutdown.FLAG_REASON
-        self.send_message(messages.MessageHead(flags=flags)
-                          / messages.Shutdown(reason=reason))
+            flg_names.append('R')
+        
+        self.send_message(messages.MessageHead()
+                          / messages.Shutdown(flags=combine_flags(flg_names), reason=reason))
     
     def start(self):
         ''' Main state machine of the agent contact. '''
@@ -645,94 +656,96 @@ class Messenger(Connection):
         self._head_this = self.send_contact_header().payload
     
     
-    def recv_length(self, bundle_id, length):
+    def recv_length(self, transfer_id, length):
         ''' Handle reception of LENGTH message.
         
-        :param bundle_id: The bundle ID number.
-        :type bundle_id: int
+        :param transfer_id: The bundle ID number.
+        :type transfer_id: int
         :param length: The bundle length.
         :type length: int
         '''
-    def recv_segment(self, bundle_id, data, flags):
+    def recv_segment(self, transfer_id, data, flags):
         ''' Handle reception of DATA_SEGMENT message.
         
-        :param bundle_id: The bundle ID number.
-        :type bundle_id: int
+        :param transfer_id: The bundle ID number.
+        :type transfer_id: int
         :param data: The segment data.
         :type data: str
         '''
-    def recv_ack(self, bundle_id, length):
+    def recv_ack(self, transfer_id, length):
         ''' Handle reception of DATA_ACKNOWLEDGE message.
         
-        :param bundle_id: The bundle ID number.
-        :type bundle_id: int
+        :param transfer_id: The bundle ID number.
+        :type transfer_id: int
         :param length: The acknowledged length.
         :type length: int
         '''
-    def recv_refuse(self, bundle_id, reason):
+    def recv_refuse(self, transfer_id, reason):
         ''' Handle reception of REFUSE message.
         
-        :param bundle_id: The bundle ID number.
-        :type bundle_id: int
+        :param transfer_id: The bundle ID number.
+        :type transfer_id: int
         :param reason: The refusal reason code.
         :type reason: int
         '''
     
-    def send_length(self, bundle_id, length):
+    def send_length(self, transfer_id, length):
         ''' Send a LENGTH message.
         
-        :param bundle_id: The bundle ID number.
-        :type bundle_id: int
+        :param transfer_id: The bundle ID number.
+        :type transfer_id: int
         :param length: The bundle length.
         :type length: int
         '''
         self.send_message(messages.MessageHead()/
-                          messages.BundleLength(bundle_id=bundle_id,
+                          messages.TransferInit(transfer_id=transfer_id,
                                                 length=length))
         
-    def send_segment(self, bundle_id, data, flg):
+    def send_segment(self, transfer_id, data, flg):
         ''' Send a DATA_SEGMENT message.
         
-        :param bundle_id: The bundle ID number.
-        :type bundle_id: int
+        :param transfer_id: The bundle ID number.
+        :type transfer_id: int
         :param data: The segment data.
         :type data: str
-        :param flg: Data flags for :py:class:`DataSegment`
+        :param flg: Data flags for :py:class:`TransferSegment`
         :type flg: int
         '''
-        self.send_message(messages.MessageHead(flags=flg)/
-                          messages.DataSegment(bundle_id=bundle_id,
-                                               data=data))
+        self.send_message(messages.MessageHead()/
+                          messages.TransferSegment(transfer_id=transfer_id,
+                                                   flags=flg,
+                                                   data=data))
         
-    def send_ack(self, bundle_id, length):
+    def send_ack(self, transfer_id, length):
         ''' Send a DATA_ACKNOWLEDGE message.
         
-        :param bundle_id: The bundle ID number.
-        :type bundle_id: int
+        :param transfer_id: The bundle ID number.
+        :type transfer_id: int
         :param length: The acknowledged length.
         :type length: int
         '''
         self.send_message(messages.MessageHead()/
-                          messages.AckSegment(bundle_id=bundle_id,
-                                              length=length))
+                          messages.TransferAck(transfer_id=transfer_id,
+                                               length=length))
     
-    def send_refuse(self, bundle_id, reason):
+    def send_refuse(self, transfer_id, reason):
         ''' Send a REFUSE message.
         
-        :param bundle_id: The bundle ID number.
-        :type bundle_id: int
+        :param transfer_id: The bundle ID number.
+        :type transfer_id: int
         :param reason: The refusal reason code.
         :type reason: int
         '''
-        self.send_message(messages.MessageHead(flags=reason)/
-                          messages.RefuseBundle(bundle_id=bundle_id))
+        self.send_message(messages.MessageHead()/
+                          messages.TransferRefuse(transfer_id=transfer_id,
+                                                  flags=reason))
     
 
 class BundleItem(object):
     ''' State for RX and TX full bundles.
     '''
     def __init__(self):
-        self.bundle_id = None
+        self.transfer_id = None
         self.file = None
 
 class ContactHandler(Messenger, dbus.service.Object):
@@ -752,6 +765,7 @@ class ContactHandler(Messenger, dbus.service.Object):
         self._tx_next_id = 1
         #: Pending TX bundles (as BundleItem)
         self._tx_bundles = []
+        #: Names of pending TX bundles
         self._tx_map = {}
         #: Active TX bundle
         self._tx_tmp = None
@@ -766,6 +780,7 @@ class ContactHandler(Messenger, dbus.service.Object):
         self._rx_tmp = None
         #: Full RX bundles pending delivery (as BundleItem)
         self._rx_bundles = []
+        #: Names of pending RX bundles
         self._rx_map = {}
     
     def next_id(self):
@@ -778,77 +793,77 @@ class ContactHandler(Messenger, dbus.service.Object):
         self._tx_next_id += 1
         return bid
     
-    def _rx_setup(self, bundle_id):
+    def _rx_setup(self, transfer_id):
         self._rx_tmp = BundleItem()
-        self._rx_tmp.bundle_id = bundle_id
+        self._rx_tmp.transfer_id = transfer_id
         self._rx_tmp.file = StringIO.StringIO()
         
-        self.recv_bundle_started(str(bundle_id))
+        self.recv_bundle_started(str(transfer_id))
     
     def _rx_teardown(self):
         self._rx_tmp = None
     
-    def recv_length(self, bundle_id, length):
-        self.__logger.debug('length {0} {1}'.format(bundle_id, length))
+    def recv_length(self, transfer_id, length):
+        self.__logger.debug('length {0} {1}'.format(transfer_id, length))
         # reject if length is received mid-bundle
         if self._rx_tmp or not self._do_send_length:
             raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
-        self._rx_setup(bundle_id)
+        self._rx_setup(transfer_id)
     
-    def recv_segment(self, bundle_id, data, flags):
-        self.__logger.debug('data {0} {1}'.format(bundle_id, flags))
+    def recv_segment(self, transfer_id, data, flags):
+        self.__logger.debug('data {0} {1}'.format(transfer_id, flags))
         
-        if flags & messages.DataSegment.FLAG_START:
+        if flags & messages.TransferSegment.FLAG_START:
             if self._do_send_length:
                 # Start without a prior LENGTH
                 if self._rx_tmp is None:
                     raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
             else:
                 # no LENGTH, this is start of RX
-                self._rx_setup(bundle_id)
+                self._rx_setup(transfer_id)
         
-        elif self._rx_tmp is None or self._rx_tmp.bundle_id != bundle_id:
+        elif self._rx_tmp is None or self._rx_tmp.transfer_id != transfer_id:
             # Each ID in sequence after start must be identical
             raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
         
         self._rx_tmp.file.write(data)
         
-        if flags & messages.DataSegment.FLAG_END:
+        if flags & messages.TransferSegment.FLAG_END:
             if self._do_send_ack_final:
-                self.send_ack(bundle_id, self._rx_tmp.file.tell())
+                self.send_ack(transfer_id, self._rx_tmp.file.tell())
             
             item = self._rx_tmp
             self._rx_bundles.append(item)
-            self._rx_map[item.bundle_id] = item
+            self._rx_map[item.transfer_id] = item
             
             self.__logger.info('Finished RX size {0}'.format(item.file.tell()))
-            self.recv_bundle_finished(str(item.bundle_id))
+            self.recv_bundle_finished(str(item.transfer_id))
             self._rx_teardown()
         else:
             if self._do_send_ack_inter:
-                self.send_ack(bundle_id, self._rx_tmp.file.tell())
+                self.send_ack(transfer_id, self._rx_tmp.file.tell())
     
-    def recv_ack(self, bundle_id, length):
-        self.__logger.debug('ack {0} {1}'.format(bundle_id, length))
+    def recv_ack(self, transfer_id, length):
+        self.__logger.debug('ack {0} {1}'.format(transfer_id, length))
         
-        item = self._tx_map[bundle_id]
+        item = self._tx_map[transfer_id]
         if length == item.file.tell():
             if not self._do_send_ack_final:
                 raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
             
-            self.send_bundle_finished(str(item.bundle_id), 'success')
-            self._tx_map.pop(bundle_id)
+            self.send_bundle_finished(str(item.transfer_id), 'success')
+            self._tx_map.pop(transfer_id)
         else:
             if not self._do_send_ack_inter:
                 raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
     
-    def recv_refuse(self, bundle_id, reason):
-        self.__logger.debug('refuse {0} {1}'.format(bundle_id, reason))
-        self.send_bundle_finished(bundle_id, 'refused with code {0}'.format(reason))
-        self._tx_map.pop(bundle_id)
+    def recv_refuse(self, transfer_id, reason):
+        self.__logger.debug('refuse {0} {1}'.format(transfer_id, reason))
+        self.send_bundle_finished(transfer_id, 'refused with code {0}'.format(reason))
+        self._tx_map.pop(transfer_id)
         
         # interrupt in-progress
-        if self._tx_tmp is not None and self._tx_tmp.bundle_id == bundle_id:
+        if self._tx_tmp is not None and self._tx_tmp.transfer_id == transfer_id:
             self._tx_teardown()
     
     IFACE = 'org.ietf.dtn.tcpcl.Contact'
@@ -885,14 +900,18 @@ class ContactHandler(Messenger, dbus.service.Object):
         return str(self._add_queue_item(item))
     
     def _add_queue_item(self, item):
-        if item.bundle_id is None:
-            item.bundle_id = self.next_id()
+        if item.transfer_id is None:
+            item.transfer_id = self.next_id()
         
         self._tx_bundles.append(item)
-        self._tx_map[item.bundle_id] = item
+        self._tx_map[item.transfer_id] = item
         
         self._process_queue_trigger()
-        return item.bundle_id
+        return item.transfer_id
+    
+    @dbus.service.method(IFACE, in_signature='', out_signature='as')
+    def send_bundle_get_queue(self):
+        return dbus.Array([str(bid) for bid in self._tx_map.keys()])
     
     @dbus.service.signal(IFACE, signature='s')
     def send_bundle_started(self, bid):
@@ -909,6 +928,10 @@ class ContactHandler(Messenger, dbus.service.Object):
     @dbus.service.signal(IFACE, signature='s')
     def recv_bundle_finished(self, bid):
         pass
+    
+    @dbus.service.method(IFACE, in_signature='', out_signature='as')
+    def recv_bundle_get_queue(self):
+        return dbus.Array([str(bid) for bid in self._rx_map.keys()])
     
     @dbus.service.method(IFACE, in_signature='s', out_signature='ay')
     def recv_bundle_pop_data(self, bid):
@@ -965,26 +988,26 @@ class ContactHandler(Messenger, dbus.service.Object):
             self._tx_seg_num = math.ceil(octet_count / float(self._send_segment_size))
             self._tx_seg_ix = 0
             
-            self.send_bundle_started(str(self._tx_tmp.bundle_id))
+            self.send_bundle_started(str(self._tx_tmp.transfer_id))
             if self._do_send_length:
-                self.send_length(self._tx_tmp.bundle_id, octet_count)
+                self.send_length(self._tx_tmp.transfer_id, octet_count)
         
         # send next segment
         data = self._tx_tmp.file.read(self._send_segment_size)
         flg = 0
         if self._tx_seg_ix == 0:
-            flg |= messages.DataSegment.FLAG_START
+            flg |= messages.TransferSegment.FLAG_START
         if self._tx_seg_ix == self._tx_seg_num - 1:
-            flg |= messages.DataSegment.FLAG_END
+            flg |= messages.TransferSegment.FLAG_END
         
         # Next segment of data
-        self.send_segment(self._tx_tmp.bundle_id, data, flg)
+        self.send_segment(self._tx_tmp.transfer_id, data, flg)
         self._tx_seg_ix += 1
         
-        if flg & messages.DataSegment.FLAG_END:
+        if flg & messages.TransferSegment.FLAG_END:
             if not self._do_send_ack_final:
-                self.send_bundle_finished(str(self._tx_tmp.bundle_id), 'unacknowledged')
-                self._tx_map.pop(self._tx_tmp.bundle_id)
+                self.send_bundle_finished(str(self._tx_tmp.transfer_id), 'unacknowledged')
+                self._tx_map.pop(self._tx_tmp.transfer_id)
             
             # done sending segments regardless
             self._tx_teardown()
@@ -1096,6 +1119,7 @@ def main():
     parser.add_argument('--keepalive', type=int, help='Keepalive time in seconds')
     parser.add_argument('--idle', type=int, help='Idle time in seconds')
     parser.add_argument('--bus-service', type=str, help='D-Bus service name')
+    parser.add_argument('--tls-disable', dest='tls_enable', default=True, action='store_false', help='Disallow use of TLS on this endpoint')
     parser.add_argument('--tls-ca', type=str, help='Filename for CA chain')
     parser.add_argument('--tls-cert', type=str, help='Filename for X.509 certificate')
     parser.add_argument('--tls-key', type=str, help='Filename for X.509 private key')
@@ -1126,7 +1150,7 @@ def main():
         bus_serv = dbus.service.BusName(bus=config.bus_conn, name=args.bus_service, do_not_queue=True)
         logging.info('Registered as "{0}"'.format(bus_serv.get_name()))
     
-    if True:
+    if args.tls_enable:
         config.ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
         config.ssl_ctx.set_ciphers(ssl._DEFAULT_CIPHERS)
         if args.tls_ca:
@@ -1135,9 +1159,12 @@ def main():
             config.ssl_ctx.load_cert_chain(args.tls_cert, args.tls_key)
         if args.tls_dhparam:
             config.ssl_ctx.load_dh_params(args.tls_dhparam)
+    
     config.eid = args.eid
+    
     if args.keepalive:
         config.keepalive_time = args.keepalive
+    
     if args.idle:
         config.idle_time = args.idle
     else:
@@ -1149,12 +1176,13 @@ def main():
         #onfig.ssl_ctx.check_hostname = False
         agent.listen(args.address, args.port)
     elif args.action == 'connect':
-        if False:
-            config.ssl_ctx.verify_mode = ssl.CERT_REQUIRED
-            config.ssl_ctx.check_hostname = True
-        else:
-            config.ssl_ctx.verify_mode = ssl.CERT_NONE
-            config.ssl_ctx.check_hostname = False
+        if args.tls_enable:
+            if False:
+                config.ssl_ctx.verify_mode = ssl.CERT_REQUIRED
+                config.ssl_ctx.check_hostname = True
+            else:
+                config.ssl_ctx.verify_mode = ssl.CERT_NONE
+                config.ssl_ctx.check_hostname = False
         agent.connect(args.address, args.port)
     
     eloop = glib.MainLoop()
