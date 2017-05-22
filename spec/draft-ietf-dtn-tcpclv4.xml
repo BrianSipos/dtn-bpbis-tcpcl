@@ -9,7 +9,7 @@
 <?rfc toc="yes"?>
 <rfc ipr="trust200902" 
      category="std"
-     docName="draft-ietf-dtn-tcpclv4-03"
+     docName="draft-ietf-dtn-tcpclv4-02"
      obsoletes="7242">
   <front>
     <title abbrev="DTN TCPCLv4">
