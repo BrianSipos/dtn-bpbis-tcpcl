@@ -10,7 +10,7 @@ class TestContact(unittest.TestCase):
     def testSerialize(self):
         pkt = contact.Head()/contact.ContactV4()
         self.assertEqual(str(pkt).encode('hex'),
-                         MAGIC_HEX + '04' + '00' + '0000' + 'ffffffffffffffff' + 'ffffffffffffffff' + '0000')
+                         MAGIC_HEX + '04' + '00' + '0000' + 'ffffffffffffffff' + 'ffffffffffffffff' + '0000' + '0000000000000000')
         
         pkt = contact.Head()/contact.ContactV4(
             keepalive=300,
@@ -20,7 +20,20 @@ class TestContact(unittest.TestCase):
         )
         pkt.show()
         self.assertEqual(str(pkt).encode('hex'), 
-                         MAGIC_HEX + '04' + '00' + '012c' + '0000000000000400' + '0000000000002800' + '0005' + 'hello'.encode('hex'))
+                         MAGIC_HEX + '04' + '00' + '012c' + '0000000000000400' + '0000000000002800' + '0005' + 'hello'.encode('hex') + '0000000000000000')
+        
+        pkt = contact.Head()/contact.ContactV4(
+            keepalive=300,
+            eid_data=u'hello'.encode('utf8'),
+            segment_mru=1024,
+            transfer_mru=10240,
+            ext_items=[
+                contact.ContactV4ExtendHeader(flags='CRITICAL')/contact.DummyExtend(data='hithere')
+            ],
+        )
+        pkt.show2()
+        self.assertEqual(str(pkt).encode('hex'), 
+                         MAGIC_HEX + '04' + '00' + '012c' + '0000000000000400' + '0000000000002800' + '0005' + 'hello'.encode('hex') + '000000000000000e' + '01' + '8000' + '00000007' + '68697468657265')
     
     def testDeserialize(self):
         pkt = contact.Head((MAGIC_HEX + '0400').decode('hex'))

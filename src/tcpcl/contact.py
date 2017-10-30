@@ -9,6 +9,7 @@ from . import formats
 MAGIC_HEAD = 'dtn!'
 
 class Head(packet.Packet):
+    ''' Front elements common to the TCPCL contact headers. '''
     fields_desc = [
         fields.StrFixedLenField('magic', default=MAGIC_HEAD, length=4),
         formats.UInt8Field('version', default=None),
@@ -34,6 +35,25 @@ class ContactV3(formats.NoPayloadPacket):
     ]
 packet.bind_layers(Head, ContactV3, version=3)
 
+class ContactV4ExtendHeader(packet.Packet):
+    ''' TCPCLv4 Extension item header. '''
+    
+    fields_desc = [
+        fields.FlagsField('flags', default=0, size=8,
+                          # names in LSbit-first order
+                          names=['CRITICAL']),
+        formats.UInt16Field('type', default=None),
+        formats.UInt32PayloadLenField('length', default=None),
+    ]
+
+class DummyExtend(packet.Packet):
+    ''' Proof-of-concept extension type with dummy payload. '''
+    
+    fields_desc = [
+        fields.StrField('data', default='')
+    ]
+packet.bind_layers(ContactV4ExtendHeader, DummyExtend, type=0x8000)
+
 class ContactV4(formats.NoPayloadPacket):
     ''' TCPCLv4 Contact header pseudo-message. '''
     
@@ -54,5 +74,11 @@ class ContactV4(formats.NoPayloadPacket):
                                     length_of='eid_data'),
         fields.StrLenField('eid_data', default='',
                            length_from=lambda pkt: pkt.eid_length),
+        
+        formats.UInt64FieldLenField('ext_size', default=None,
+                                    length_of='ext_items'),
+        fields.PacketListField('ext_items', default=[],
+                               cls=ContactV4ExtendHeader,
+                               length_from=lambda pkt: pkt.ext_size),
     ]
 packet.bind_layers(Head, ContactV4, version=4)

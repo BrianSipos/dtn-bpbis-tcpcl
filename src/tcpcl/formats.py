@@ -23,14 +23,22 @@ class UInt64Field(fields.Field):
         fields.Field.__init__(self, name, default, '!Q')
 
 class UInt16FieldLenField(fields.FieldLenField):
+    ''' Unsigned 16-bit value. '''
     def __init__(self, *args, **kwargs):
         kwargs['fmt'] = '!H'
         fields.FieldLenField.__init__(self, *args, **kwargs)
 
 class UInt64FieldLenField(fields.FieldLenField):
+    ''' Unsigned 64-bit value. '''
     def __init__(self, *args, **kwargs):
         kwargs['fmt'] = '!Q'
         fields.FieldLenField.__init__(self, *args, **kwargs)
+
+class UInt32PayloadLenField(fields.LenField):
+    ''' Unsigned 32-bit value. '''
+    def __init__(self, *args, **kwargs):
+        kwargs['fmt'] = '!I'
+        fields.LenField.__init__(self, *args, **kwargs)
 
 class SdnvField(fields.Field):
     ''' Represent a single independent SDNV-encoded integer.
