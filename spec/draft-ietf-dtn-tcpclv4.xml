@@ -270,8 +270,8 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
    thus save transmission capacity for other bundles.
 </t><t>
    For sessions that are idle, a KEEPALIVE message is
-   sent at a negotiated interval.  This is used to convey liveness
-   information.
+   sent at a negotiated interval.
+   This is used to convey node liveness information.
 </t><t>
    Finally, before sessions close, a SHUTDOWN message is sent to the
    session peer.  After sending a SHUTDOWN message, the sender of this
@@ -438,7 +438,11 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
 +---------------+---------------+---------------+---------------+
 |                        EID Data contd.                        |
 +---------------+---------------+---------------+---------------+
-|            TCPCLv4 Header Extension Items...                  |
+|                  Header Extension Length...                   |
++---------------+---------------+---------------+---------------+
+|                          contd.                               |
++---------------+---------------+---------------+---------------+
+|                   Header Extension Items...                   |
 +---------------+---------------+---------------+---------------+
 </artwork>
 </figure>
@@ -459,14 +463,15 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
     A one-octet field of single-bit flags, interpreted according to the 
     descriptions in <xref target="tab-session-flags"/>.
 </t><t hangText="Keepalive Interval:">
-    A 16-bit unsigned integer indicating the longest allowable interval 
-    in seconds between KEEPALIVE messages received in this session.
+    A 16-bit unsigned integer indicating the longest allowable interval,
+    in seconds, between any message being received in this session and a
+    subsequent KEEPALIVE message being received.
 </t><t hangText="Segment MRU:">
     A 64-bit unsigned integer indicating the largest allowable single-segment
     data payload size to be received in this session.
     Any XFER_SEGMENT sent to this peer SHALL have a data payload no longer 
     than the peer's Segment MRU.
-    The two endpoints of a single session MAY have different Segment MRUs, and
+    The two nodes of a single session MAY have different Segment MRUs, and
     no relation between the two is required.
 </t><t hangText="Transfer MRU:">
     A 64-bit unsigned integer indicating the largest allowable total-bundle
@@ -474,7 +479,7 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
     Any bundle transfer sent to this peer SHALL have a Total bundle data 
     payload no longer than the peer's Transfer MRU.
     This value can be used to perform proactive bundle fragmentation.
-    The two endpoints of a single session MAY have different Transfer MRUs, and
+    The two nodes of a single session MAY have different Transfer MRUs, and
     no relation between the two is required.
 </t><t hangText="EID Length and EID Data:">
     Together these fields represent a variable-length text string.
@@ -482,15 +487,17 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
     octets of EID Data to follow.
     A zero EID Length SHALL be used to indicate the lack of EID rather than a
     truly empty EID.
-    This case allows an endpoint to avoid exposing EID information on an
+    This case allows an node to avoid exposing EID information on an
     untrusted network.
     A non-zero-length EID Data SHALL contain the UTF-8 encoded EID of some
     singleton endpoint in which the sending node is a member, in the canonical
     format of &lt;scheme name&gt;:&lt;scheme-specific part&gt;.
     This EID encoding is consistent with <xref target="I-D.ietf-dtn-bpbis"/>.
-</t><t hangText="Header Extension Values:">
-    The remaining items of the contact header represent protocol extension data
+</t><t hangText="Header Extension Length Header Extension Items:">
+    Together these fields represent protocol extension data
     not defined by this specification.
+    The Header Extension Length is the total number of octets to follow which
+    are used to encode the Header Extension Item list.
     The encoding of each Header Extension Item is identical form as described
     in <xref target="sec-header-extension"/>.
 </t>
@@ -513,10 +520,10 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
 <t hangText="Flags:">
     A one-octet field containing generic bit flags about the item,
     which are listed in <xref target="tab-header-extension-flags"/>.
-    If a TCPCL endpoint receives an extension item with an unknown Item Type
-    and the CRITICAL flag set, the endpoint SHALL close the
+    If a TCPCL node receives an extension item with an unknown Item Type
+    and the CRITICAL flag set, the node SHALL close the
     TCPCL session with SHUTDOWN reason code of &quot;Contact Failure&quot;.
-    If the CRITICAL flag is not set, an endpoint SHALL skip over and ignore
+    If the CRITICAL flag is not set, an node SHALL skip over and ignore
     any item with an unkonwn Item Type.
 </t><t hangText="Item Type:">
     A 16-bit unsigned integer field containing the type of the extension item.
@@ -610,28 +617,123 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
     There is no logical minimum value for the keepalive interval, but when
     used for many sessions on an open, shared network a short interval could
     lead to excessive traffic.
-    For shared network use, endpoints SHOULD choose a keepalive interval
+    For shared network use, nodes SHOULD choose a keepalive interval
     no shorter than 30 seconds.
     There is no logical maximum value for the keepalive interval, but an
     idle TCP connection is liable for closure by the host operating system
     if the keepalive time is longer than tens-of-minutes.
-    Endpoints SHOULD choose a keepalive interval no longer than 10 minutes
+    Nodes SHOULD choose a keepalive interval no longer than 10 minutes
     (600 seconds).
 </t><t hangText="Enable TLS:">
-    Negotiation of the Enable TLS parameter is performed by taking
-    the logical AND of the two contact headers' CAN_TLS flags.
-    If the negotiated Enable TLS value is true then TLS negotiation feature
-    (described in <xref target="sec-session-security"/>) begins
-    immediately following the contact header exchange.
+  Negotiation of the Enable TLS parameter is performed by taking
+  the logical AND of the two contact headers' CAN_TLS flags.
+  If the negotiated Enable TLS value is true then TLS negotiation feature
+  (described in <xref target="sec-session-security"/>) begins
+  immediately following the contact header exchange.
+  The security policy on either node MAY forbid the establishment of
+  a TCPCL session for any Enable TLS result (or for any combination of local
+  or peer CAN_TLS flag), in which
+  case the node SHALL shutdown the session with a reason code
+  of &quot;Contact Failure&quot;.
+  For example, one node may disallow TCPCL sessions without TLS, while a second
+  node may disallow sessions with TLS.
+  Also note that this Contact Failure (of the header negotiation)
+  is different than a TLS Failure (after an agreed-upon Enable TLS state).
 </t>
 </list>
 </t>
 <t>
-   Once this process of parameter negotiation is completed, the protocol
-   defines no additional mechanism to change the parameters of an
-   established session; to effect such a change, the session MUST
-   be terminated and a new session established.
+  Once this process of parameter negotiation is completed (which includes a
+  possible completed TLS handshakede of the connection to use TLS),
+  this protocol
+  defines no additional mechanism to change the parameters of an
+  established session; to effect such a change, the TCPCL session MUST
+  be terminated and a new session established.
 </t>
+</section>
+
+<section anchor="sec-session-security" title="Session Security">
+<t>
+  This version of the TCPCL supports establishing a Transport
+  Layer Security (TLS) session within an existing TCP connection.
+  Negotation of whether or not to initiate TLS within a TCPCL session is 
+  part of the contact header as described in <xref target="sec-contact-negotiate"/>.
+  The TLS handshake, if it occurs, is considered to be part of the contact
+  negotiation before the TCPCL session itself is established.
+  Specifics about sensitive data exposure are discussed in
+  <xref target="sec-security"/>.
+</t><t>
+  When TLS is used within the TCPCL it affects the entire session.
+  By convention, this protocol uses the node which initiated the
+  underlying TCP connection as the &quot;client&quot; role 
+  of the TLS handshake request.
+  Once a TLS session is established within TCPCL, there is no mechanism
+  provided to end the TLS session and downgrade the session.
+  If a non-TLS session is desired after a TLS session is started then
+  the entire TCPCL session MUST be shutdown first.
+</t>
+<t>
+  After negotiating an Enable TLS parameter of true, and before any other
+  TCPCL messages are sent within the session, the session nodes SHALL 
+  begin a TLS handshake in accordance with <xref target="RFC5246"/>.
+  The parameters within each TLS negotation are implementation dependent but
+  any TCPCL node SHOULD follow all recommended best practices of
+  <xref target="RFC7525"/>.
+</t>
+      <section title="TLS Handshake Result">
+        <t>
+If a TLS handshake cannot negotiate a TLS session, both nodes of the TCPCL
+session SHALL cause a TCPCL shutdown with reason "TLS Failure".
+        </t>
+        <t>
+After a TLS session is successfuly established, both TCPCL nodes SHALL
+re-exchange TCPCL Contact Header messages.
+Any information cached from the prior Contact Header exchange SHALL be
+discarded.
+This re-exchange avoids man-in-the-middle attack in identical fashion to
+<xref target="RFC2595"/>.
+Each re-exchange header CAN_TLS flag SHALL be identical to the original header
+CAN_TLS flag from the same node.
+The CAN_TLS logic (TLS negotiation) SHALL NOT apply during header re-exchange.
+This reinforces the fact that there is no TLS downgrade mechanism.
+        </t>
+      </section>
+    <section title="Example TLS Initiation">
+      <t>
+A summary of a typical CAN_TLS usage is shown in the sequence in 
+<xref target="fig-tls-example"/> below.
+      </t>
+<figure anchor="fig-tls-example" title="A simple visual example of TCPCL TLS Establishment between two nodes">
+<artwork>
+              Node A                              Node B
+              ======                              ======
+    
+    +-------------------------+         
+    |  Open TCP Connnection   | -&gt;   
+    +-------------------------+         +-------------------------+
+                                     &lt;- |   Accept Connection     |
+                                        +-------------------------+
+    
+    +-------------------------+         +-------------------------+
+    |     Contact Header      | -&gt;   &lt;- |     Contact Header      |
+    +-------------------------+         +-------------------------+
+    
+    +-------------------------+         +-------------------------+
+    |     TLS Negotiation     | -&gt;   &lt;- |     TLS Negotiation     |
+    |       (as client)       |         |       (as server)       |
+    +-------------------------+         +-------------------------+
+    
+    +-------------------------+         +-------------------------+
+    |     Contact Header      | -&gt;   &lt;- |     Contact Header      |
+    +-------------------------+         +-------------------------+
+    
+                    ... secured TCPCL messaging ...
+    
+    +-------------------------+         +-------------------------+
+    |       SHUTDOWN          | -&gt;   &lt;- |         SHUTDOWN        |
+    +-------------------------+         +-------------------------+
+</artwork></figure>
+  </section>
 </section>
 </section>
 
@@ -715,7 +817,7 @@ The message header fields are as follows:
 
 <section anchor="sec-MSG_REJECT" title="Message Rejection (MSG_REJECT)">
 <t>
-    If a TCPCL endpoint receives a message which is unknown to it (possibly due
+    If a TCPCL node receives a message which is unknown to it (possibly due
     to an unhandled protocol mismatch) or is inappropriate for the current 
     session state (e.g. a KEEPALIVE message received after contact header
     negotation has disabled that feature), there is a protocol-level
@@ -750,98 +852,22 @@ The fields of the MSG_REJECT message are:
 <texttable anchor="tab-reject-reasons" title="MSG_REJECT Reason Codes">
   <ttcol>Name</ttcol><ttcol>Code</ttcol><ttcol>Description</ttcol>
   <c>Message Type Unknown</c><c>0x01</c><c>A message was received with
-  a Message Type code unknown to the TCPCL endpoint.</c>
+  a Message Type code unknown to the TCPCL node.</c>
   <c>Message Unsupported</c><c>0x02</c><c>A message was received but
-  the TCPCL endpoint cannot comply with the message contents.</c>
+  the TCPCL node cannot comply with the message contents.</c>
   <c>Message Unexpected</c><c>0x03</c><c>A message was received while the
   session is in a state in which the message is not expected.</c>
 </texttable>
 </section>
 </section>
 
-<section anchor="sec-session-security" title="Session Security">
-<t>
-  This version of the TCPCL supports establishing a session-level Transport
-  Layer Security (TLS) session within an existing TCPCL session.
-  Negotation of whether or not to initiate TLS within TCPCL session is 
-  part of the contact header as described in <xref target="sec-contact-negotiate"/>.
-</t><t>
-  When TLS is used within the TCPCL it affects the entire session.
-  By convention, this protocol uses the endpoint which initiated the
-  underlying TCP connection as the &quot;client&quot; role 
-  of the TLS handshake request.
-  Once a TLS session is established within TCPCL, there is no mechanism
-  provided to end the TLS session and downgrade the session.
-  If a non-TLS session is desired after a TLS session is started then
-  the entire TCPCL session MUST be shutdown first.
-</t>
-<t>
-  After negotiating an Enable TLS parameter of true, and before any other
-  TCPCL messages are sent within the session, the session endpoints SHALL 
-  begin a TLS handshake in accordance with <xref target="RFC5246"/>.
-  The parameters within each TLS negotation are implementation dependent but
-  any TCPCL endpoint SHOULD follow all recommended best practices of
-  <xref target="RFC7525"/>.
-</t>
-      <section title="TLS Handshake Result">
-        <t>
-If a TLS handshake cannot negotiate a TLS session, both endpoints of the TCPCL
-session SHALL cause a TCPCL shutdown with reason "TLS negotiation failed".
-        </t>
-        <t>
-After a TLS session is successfuly established, both TCPCL endpoints SHALL
-re-exchange TCPCL Contact Header messages.
-Any information cached from the prior Contact Header exchange SHALL be
-discarded.
-This re-exchange avoids man-in-the-middle attack in identical fashion to
-<xref target="RFC2595"/>.
-        </t>
-      </section>
-    <section title="Example TLS Initiation">
-      <t>
-A summary of a typical CAN_TLS usage is shown in the sequence in 
-<xref target="fig-tls-example"/> below.
-      </t>
-<figure anchor="fig-tls-example" title="A simple visual example of TCPCL TLS Establishment between two nodes">
-<artwork>
-              Node A                              Node B
-              ======                              ======
-    
-    +-------------------------+         
-    |  Open TCP Connnection   | -&gt;   
-    +-------------------------+         +-------------------------+
-                                     &lt;- |   Accept Connection     |
-                                        +-------------------------+
-    
-    +-------------------------+         +-------------------------+
-    |     Contact Header      | -&gt;   &lt;- |     Contact Header      |
-    +-------------------------+         +-------------------------+
-    
-    +-------------------------+         +-------------------------+
-    |     TLS Negotiation     | -&gt;   &lt;- |     TLS Negotiation     |
-    |       (as client)       |         |       (as server)       |
-    +-------------------------+         +-------------------------+
-    
-    +-------------------------+         +-------------------------+
-    |     Contact Header      | -&gt;   &lt;- |     Contact Header      |
-    +-------------------------+         +-------------------------+
-    
-                    ... secured TCPCL messaging ...
-    
-    +-------------------------+         +-------------------------+
-    |       SHUTDOWN          | -&gt;   &lt;- |         SHUTDOWN        |
-    +-------------------------+         +-------------------------+
-</artwork></figure>
-  </section>
-</section>
-
 <section anchor="sec-transfer" title="Bundle Transfer">
 <t>
-All of the message in this section are directly associated with tranfering
-a bundle between TCPCL endpoints.
+All of the message in this section are directly associated with transfering
+a bundle between TCPCL nodes.
 </t><t>
 A single TCPCL transfer results in a bundle (handled by the convergence layer
-as opaque data) being exchanged from one endpoint to the other.
+as opaque data) being exchanged from one node to the other.
 In TCPCL a transfer is accomplished by dividing a single bundle up into 
 &quot;segments&quot; based on the receving-side Segment MRU
 (see <xref target="sec-contact-header"/>).
@@ -862,19 +888,19 @@ TCPCL transfer. Each transfer entails the sending of a XFER_INIT message
 and some number of XFER_SEGMENT and XFER_ACK messages; all are correlated
 by the same Transfer ID.
 </t><t>
-Transfer IDs from each endpoint SHALL be unique within a single TCPCL session.
-The initial Transfer ID from each endpoint SHALL have value zero.
+Transfer IDs from each node SHALL be unique within a single TCPCL session.
+The initial Transfer ID from each node SHALL have value zero.
 Subsequent Transfer ID values SHALL be incremented from the prior Transfer ID
 value by one.
-Upon exhaustion of the entire 64-bit Transfer ID space, the sending endpoint
+Upon exhaustion of the entire 64-bit Transfer ID space, the sending node
 SHALL terminate the session with SHUTDOWN reason code "Resource Exhaustion".
 </t><t>
-For bidirectional bundle transfers, a TCPCL endpoint SHOULD NOT rely on any
+For bidirectional bundle transfers, a TCPCL node SHOULD NOT rely on any
 relation between Transfer IDs originating from each side of the TCPCL session.
 </t>
 </section>
 
-<section anchor="sec-XFER_INIT" title="Transfer initialization (XFER_INIT)">
+<section anchor="sec-XFER_INIT" title="Transfer Initialization (XFER_INIT)">
 <t>
    The XFER_INIT message contains the total length, in octets, of the bundle data
    in the associated transfer.
@@ -916,8 +942,8 @@ The fields of the XFER_INIT message are:
 </list>
 </t>
 <t>
-   XFER_INIT messages SHALL be sent immediately before transmission of any
-   XFER_SEGMENT messages.
+   An XFER_INIT message SHALL be sent immediately before transmission of any
+   XFER_SEGMENT messages for each Transfer ID.
    XFER_INIT messages MUST NOT be sent unless the next XFER_SEGMENT message 
    has the 'START' bit set to &quot;1&quot;
    (i.e., just before the start of a new transfer).
@@ -926,11 +952,6 @@ The fields of the XFER_INIT message are:
    XFER_INIT message without waiting for the next XFER_SEGMENT message.
    The sender MUST be prepared for this and MUST associate the refusal
    with the correct bundle via the Transfer ID fields.
-</t><t>
-   Upon reception of a XFER_INIT message
-   not immediately before the start of a starting XFER_SEGMENT
-   the reciever SHALL send a MSG_REJECT message with a Reason Code of
-   "Message Unexpected".
 </t>
 </section>
 
@@ -993,9 +1014,9 @@ The fields of the XFER_SEGMENT message are:
    Once a transfer of a bundle has commenced, the node MUST only
    send segments containing sequential portions of that bundle until it
    sends a segment with the 'END' bit set.
-   No interleaving of multiple transfers from the same endpoint is possible
+   No interleaving of multiple transfers from the same node is possible
    within a single TCPCL session.
-   Simultaneous transfers between two endpoints MAY be achieved using multiple
+   Simultaneous transfers between two nodes MAY be achieved using multiple
    TCPCL sessions.
 </t>
 </section>
@@ -1075,8 +1096,8 @@ The fields of the XFER_ACK message are:
    refused SHALL be identified by the Transfer ID of the refusal.
 </t><t>
    There is no required relation between the Transfer MRU of a TCPCL
-   endpoint (which is supposed to represent a firm limitation of what the
-   endpoint will accept) and sending of a XFER_REFUSE message.
+   node (which is supposed to represent a firm limitation of what the
+   node will accept) and sending of a XFER_REFUSE message.
    A XFER_REFUSE can be used in cases where the agent's bundle storage is
    temporarily depleted or somehow constrained.
    A XFER_REFUSE can also be used after the bundle header or any bundle data
@@ -1110,12 +1131,9 @@ The fields of the XFER_REFUSE message are:
 <texttable anchor="tab-rcode-values" title="XFER_REFUSE Reason Codes">
   <ttcol>Name</ttcol><ttcol>Semantics</ttcol>
   <c>Unknown</c><c>Reason for refusal is unknown or not specified.</c>
-  <c>Completed</c><c>The receiver now has the complete bundle. The sender MAY now 
-  consider the bundle as completely received.</c>
-  <c>No Resources</c><c>The receiver's resources are exhausted. The sender SHOULD apply 
-  reactive bundle fragmentation before retrying.</c>
-  <c>Retransmit</c><c>The receiver has encountered a problem that requires the bundle 
-  to be retransmitted in its entirety.</c>
+  <c>Completed</c><c>The receiver already has the complete bundle. The sender MAY consider the bundle as completely received.</c>
+  <c>No Resources</c><c>The receiver's resources are exhausted. The sender SHOULD apply reactive bundle fragmentation before retrying.</c>
+  <c>Retransmit</c><c>The receiver has encountered a problem that requires the bundle to be retransmitted in its entirety.</c>
 </texttable>
 <t>
    The receiver MUST, for each transfer preceding the one to be refused,
@@ -1159,13 +1177,13 @@ The fields of the XFER_REFUSE message are:
    A transmitting node SHALL treat a SHUTDOWN message received mid-transfer
    (i.e. before the final acknowledgement) as a failure of the transfer.
 </t><t>
-   After transmitting a SHUTDOWN message, an endpoint MAY immediately close
+   After transmitting a SHUTDOWN message, an node MAY immediately close
    the associated TCP connection.
    Once the SHUTDOWN message is sent, any further received data on the TCP
    connection SHOULD be ignored.
    Any delay between request to terminate the TCP connection and actual
    closing of the connection (a &quot;half-closed&quot; state) MAY be ignored
-   by the TCPCL endpoint.
+   by the TCPCL node.
 </t><t>
    The format of the SHUTDOWN message is as follows:
 </t>
@@ -1196,7 +1214,7 @@ The fields of the SHUTDOWN message are:
 </t>
 <t hangText="Reconnection Delay:">
     A 16-bit unsigned integer indicating the desired delay until further
-    TCPCL sessions to the sending endpoint.
+    TCPCL sessions to the sending node.
     The Reconnection Delay is present or absent as indicated by one of the flags.
 </t>
 </list>
@@ -1220,7 +1238,7 @@ The fields of the SHUTDOWN message are:
   <c>Version mismatch</c><c>The node cannot conform to the specified TCPCL protocol version.</c>
   <c>Busy</c><c>The node is too busy to handle the current session.</c>
   <c>Contact Failure</c><c>The node cannot interpret or negotiate contact header option.</c>
-  <c>TLS failure</c><c>The node failed to negotiate TLS session and cannot continue the session.</c>
+  <c>TLS Failure</c><c>The node failed to negotiate TLS session and cannot continue the session.</c>
   <c>Resource Exhaustion</c><c>The node has run into some resoure limit and cannot continue the session.</c>
 </texttable>
 <t>
@@ -1253,12 +1271,14 @@ The fields of the SHUTDOWN message are:
    to indicate when the peer is allowed to attempt another session
    setup.
 </t><t>
-   If a session is to be terminated before another protocol message
+   If a session is to be terminated before a protocol message
    has completed being sent, then the node MUST NOT transmit the SHUTDOWN
    message but still SHOULD close the TCP connection.
-   This means that a SHUTDOWN cannot be used to preempt any other TCPCL
-   messaging in-progress (particularly important when large segment sizes
-   are being transmitted).
+   Each TCPCL message is contiguous in the octet stream and has no ability
+   to be cut short and/or preempted by an other message.
+   This is particularly important when large segment sizes
+   are being transmitted; either entire XFER_SEGMENT is sent before a SHUTDOWN
+   message or the connection is simply termiated mid-XFER_SEGMENT.
 </t>
 </section>
 <section anchor="sec-idle-shutdown" title="Idle Session Shutdown">
@@ -1349,7 +1369,7 @@ The fields of the SHUTDOWN message are:
   Port number 4556 has been previously assigned as the default port for the
   TCP convergence layer in <xref target="RFC7242"/>.
   This assignment is unchanged by protocol version 4.
-  Each TCPCL endpoint identifies its TCPCL protocol version in its initial 
+  Each TCPCL node identifies its TCPCL protocol version in its initial 
   contact (see <xref target="sec-iana-protonum"/>), so there is no ambiguity about what protocol is being used.
 </t>
 <texttable>
@@ -1389,7 +1409,7 @@ The fields of the SHUTDOWN message are:
    &quot;Bundle Protocol TCP Convergence-Layer Version 4 Header Extension Types&quot;
    and initialized it with the contents of <xref target="tab-iana-header-extension-type"/>.
    The registration procedure is RFC Required within the lower range 0x0001--0x3fff.
-   Values in the range 0x8000--0xffff are resrved for use on private networks
+   Values in the range 0x8000--0xffff are reserved for use on private networks
    for functions not published to the IANA.
 </t>
 <texttable anchor="tab-iana-header-extension-type" title="Header Extension Type Codes">
@@ -1500,13 +1520,6 @@ The fields of the SHUTDOWN message are:
       <?rfc include="reference.RFC.5246.xml"?>
       <?rfc include="reference.RFC.7525.xml"?>
       <?rfc include="reference.I-D.ietf-dtn-bpbis.xml"?>
-      <reference anchor="refs.IANA-BP">
-        <front>
-          <title>Bundle Protocol registry</title>
-          <author><organization>IANA</organization></author>
-          <date year="2016" month="May"/>
-        </front>
-      </reference>
     </references>
     <references title="Informative References">
       <?rfc include="reference.RFC.2595.xml"?>
