@@ -175,7 +175,16 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
    This section contains definitions that are interpreted to be specific
    to the operation of the TCPCL protocol, as described below.
 <list style="hanging">
-<t hangText="TCP Connection:">
+<t hangText="TCPCL Node:">
+  A TCPCL node refers to either side of an negotiating or in-service TCPCL
+  Session.
+  For most TCPCL behavior, the two nodes are symmetric and there is no
+  protocol distinction between them.
+  Some specific behavior, particularly during negotiation, distinguishes
+  between the connecting node and the connected-to node.
+  For the remainder of this document, the term &quot;node&quot;
+  without the prefix &quot;TCPCL&quot; refers to a TCPCL node.
+</t><t hangText="TCP Connection:">
   A TCP connection refers to a transport connection
   using TCP as the transport protocol.
 </t><t hangText="TCPCL Session:">
@@ -190,9 +199,8 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
   connection ends, due either to one or both nodes actively
   terminating the TCP connection or due to network errors causing
   a failure of the TCP connection. 
-  For the remainder of this
-  document, the term &quot;session&quot; without the prefix &quot;TCPCL&quot;
-  refer to a TCPCL session.
+  For the remainder of this document, the term &quot;session&quot;
+  without the prefix &quot;TCPCL&quot; refers to a TCPCL session.
 </t><t hangText="Session parameters:">
   The session parameters are a set of
   values used to affect the operation of the TCPCL for a given
@@ -574,30 +582,35 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
 <section anchor="sec-contact-negotiate"
     title="Validation and Parameter Negotiation">
 <t>
-   Upon reception of the contact header, each node follows the following
-   procedures to ensure the validity of the TCPCL session and to
-   negotiate values for the session parameters.
+  Upon reception of the contact header, each node follows the following
+  procedures to ensure the validity of the TCPCL session and to
+  negotiate values for the session parameters.
 </t><t>
-   If the magic string is not present or is not valid, the connection
-   MUST be terminated.  The intent of the magic string is to provide
-   some protection against an inadvertent TCP connection by a different
-   protocol than the one described in this document.  To prevent a flood
-   of repeated connections from a misconfigured application, a node MAY
-   elect to hold an invalid connection open and idle for some time
-   before closing it.
+  If the magic string is not present or is not valid, the connection
+  MUST be terminated.  The intent of the magic string is to provide
+  some protection against an inadvertent TCP connection by a different
+  protocol than the one described in this document.  To prevent a flood
+  of repeated connections from a misconfigured application, a node MAY
+  elect to hold an invalid connection open and idle for some time
+  before closing it.
 </t><t>
-   If a node receives a contact header containing a version that is
-   greater than the current version of the protocol that the node
-   implements, then the node SHALL shutdown the session with a reason code
-   of "Version mismatch".
-   If a node receives a contact header with a
-   version that is lower than the version of the protocol that the node
-   implements, the node MAY either terminate the session (with a reason code
-   of "Version mismatch"). Otherwise, the node MAY adapt its operation to 
-   conform to the older version of the protocol.
-   This decision is an implementation matter.
-   When establishing the TCPCL session, a node SHOULD send the contact header
-   for the latest version of TCPCL that it can use.
+  A connecting TCPCL node SHALL send the highest TCPCL protocol
+  version on a first session attempt for a TCPCL peer.
+  If a connecting node receives a SHUTDOWN message with reason of
+  "Version Mismatch", that node MAY attempt further TCPCL sessions with the
+  peer using earlier protocol version numbers in decreasing order.
+  Managing multi-TCPCL-session state such as this is an implementation matter.
+</t><t>
+  If a node receives a contact header containing a version that is
+  greater than the current version of the protocol that the node
+  implements, then the node SHALL shutdown the session with a reason code
+  of "Version mismatch".
+  If a node receives a contact header with a
+  version that is lower than the version of the protocol that the node
+  implements, the node MAY either terminate the session (with a reason code
+  of "Version mismatch"). Otherwise, the node MAY adapt its operation to 
+  conform to the older version of the protocol.
+  The decision of version fall-back is an implementation matter.
 </t><t>
   A node calculates the parameters for a TCPCL session by
   negotiating the values from its own preferences (conveyed by the
