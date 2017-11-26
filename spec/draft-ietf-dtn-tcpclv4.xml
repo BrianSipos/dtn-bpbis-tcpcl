@@ -85,7 +85,9 @@ This document describes a revised protocol for the TCP-based convergence
 layer (TCPCL) for Delay-Tolerant Networking (DTN).
 The protocol revision is based on implementation issues in the original
 TCPCL Version 3 and updates to the Bundle Protocol contents,
-encodings, and convergence layer requirements in Bundle Protocl Version 7.
+encodings, and convergence layer requirements in Bundle Protocol Version 7.
+Specifically, the TCPCLv4 uses CBOR-encoded BPv7 bundles as its service data
+unit being transported and provides a reliable transport of such bundles.
 Several new IANA registries are defined for TCPCLv4 which define some
 behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
       </t>
@@ -118,9 +120,10 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
    referred to as TCPCL.
 </t><t>
    The locations of the TCPCL and the BP in the Internet model protocol
-   stack are shown in Figure 1.  In particular, when BP is using TCP as
-   its bearer with TCPCL as its convergence layer, both BP and TCPCL
-   reside at the application layer of the Internet model.
+   stack (described in <xref target="RFC1122"/>) are shown in Figure 1.
+   In particular, when BP is using TCP as its bearer with TCPCL as its 
+   convergence layer, both BP and TCPCL reside at the application layer 
+   of the Internet model.
  </t>
 <figure anchor="fig-tcpcl-ip-stack"
      title="The Locations of the Bundle Protocol and the TCP Convergence-Layer Protocol above the Internet Protocol Stack">
@@ -130,17 +133,15 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
       +-------------------------|   |
       |  Bundle Protocol (BP)   |   -&gt; Application Layer
       +-------------------------+   |
-      | TCP Conv. Layer (TCPCL) | -/
-      +-------------------------+
-      |     TLS (optional)      | ---&gt; Presentation Layer
+      | TCP Conv. Layer (TCPCL) |   |
+      +-------------------------+   |
+      |     TLS (optional)      | -/
       +-------------------------+
       |          TCP            | ---&gt; Transport Layer
       +-------------------------+
-      |           IP            | ---&gt; Network Layer
+      |       IPv4/IPv6         | ---&gt; Network Layer
       +-------------------------+
       |   Link-Layer Protocol   | ---&gt; Link Layer
-      +-------------------------+
-      |    Physical Medium      | ---&gt; Physical Layer
       +-------------------------+
 </artwork>
 </figure>
@@ -209,40 +210,53 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
   dependent. However, the mechanism by which two bundle nodes
   exchange and negotiate the values to be used for a given session
   is described in <xref target="sec-contact-negotiate"/>.
-</t><t hangText="Transfer">
+</t><t hangText="Transfer:">
   Transfer refers to the procedures and mechanisms
   (described below) for conveyance of an individual bundle from one node to
   another.
   Each transfer within TCPCLv4 is identified by a Transfer ID number
   which is unique only to a single direction within a single Session.
+</t><t hangText="Reason Codes:">
+  The TCPCL uses numeric codes to encode specific reasons for individual 
+  failure/error message types.
+  This limits the expressiveness of TCPCL error encodings, but simplifies the
+  encoding of errors and allows an application policy to attempt recovery from
+  expected 'failure' modes (e.g. if a Session cannot be established with USE_TLS
+  disabled because of a Contact Failure shutdown, a re-attempt can be made 
+  with USE_TLS enabled).
 </t>
 </list></t>
 </section>
 </section>
 <section anchor="sec-prococol" title="General Protocol Description">
 <t>
-   The service of this protocol is the transmission of DTN bundles over
-   TCP.  This document specifies the encapsulation of bundles,
+   The service of this protocol is the transmission of DTN bundles via
+   the Transmission Control Protocol (TCP).
+   This document specifies the encapsulation of bundles,
    procedures for TCP setup and teardown, and a set of messages and node
-   requirements.  The general operation of the protocol is as follows.
-</t><t>
+   requirements.
+   The general operation of the protocol is as follows.
+</t>
+<section anchor="sec-protocol-session" title="TCPCL Session Overview">
+<t>
    First, one node establishes a TCPCL session to the other by
-   initiating a TCP connection.  After setup of the TCP connection is
+   initiating a TCP connection in accordance with <xref target="RFC0793"/>.
+   After setup of the TCP connection is
    complete, an initial contact header is exchanged in both directions
    to set parameters of the TCPCL session and exchange a singleton
    endpoint identifier for each node (not the singleton Endpoint
    Identifier (EID) of any application running on the node) to denote
    the bundle-layer identity of each DTN node.  This is used to assist
-   in routing and forwarding messages, e.g., to prevent loops.
+   in routing and forwarding messages (e.g. to prevent loops).
 </t><t>
    Once the TCPCL session is established and configured in this way,
-   bundles can be transferred in either direction.  Each transfer is
-   performed in one or more logical segments of data.
-   Each logical data segment consists of a XFER_SEGMENT message header and flags,
-   a count of the length of the segment, and finally the
-   octet range of the bundle data.
-   The choice of the length to use for segments is an implementation matter
-   (but must be within the Segment MRU size of <xref target="sec-contact-header"/>).
+   bundles can be transferred in either direction.
+   Each transfer is performed by an initialization (XFER_INIT) message followed
+   by one or more logical segments of data within an  XFER_SEGMENT message.
+   The choice of the length to use for segments is an implementation matter,
+   but each segment must be no larger than the receiving node's maximum 
+   receive unit (MRU)
+   (see the field "Segment MRU" of <xref target="sec-contact-header"/>).
    The first segment for a bundle MUST set the 'START' flag, 
    and the last one MUST set the 'end' flag in the XFER_SEGMENT message flags.
 </t><t>
@@ -282,13 +296,15 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
    This is used to convey node liveness information.
 </t><t>
    Finally, before sessions close, a SHUTDOWN message is sent to the
-   session peer.  After sending a SHUTDOWN message, the sender of this
+   session peer.
+   A SHUTDOWN message MAY also be used to refuse a session setup by a
+   peer (see <xref target="sec-contact-negotiate"/>).
+   After sending a SHUTDOWN message, the sender of the
    message MAY send further acknowledgments (XFER_ACK or
-   XFER_REFUSE) but no further data messages (XFER_SEGMENT).  A
-   SHUTDOWN message MAY also be used to refuse a session setup by a
-   peer.
+   XFER_REFUSE) but no further data messages (XFER_INIT or XFER_SEGMENT).
+   After receving a SHUTDOWN message and when no transfers are in-progress
+   (i.e. have unacknowledged segemnts)
 </t>
-<section anchor="sec-protocol-bidir" title="Bidirectional Use of TCPCL Sessions">
 <t>
    There are specific messages for sending and receiving operations (in
    addition to session setup/teardown).  TCPCL is symmetric, i.e.,
@@ -296,14 +312,13 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
    side's bundle transfer does not have to complete before the other
    side can start sending data segments on its own.  Hence, the protocol
    allows for a bi-directional mode of communication.
-</t><t>
    Note that in the case of concurrent bidirectional transmission,
    acknowledgment segments MAY be interleaved with data segments.
 </t>
 </section>
 <section anchor="sec-protocol-example" title="Example Message Exchange">
 <t>
-   The following figure visually depicts the protocol exchange for a
+   The following figure depicts the protocol exchange for a
    simple session, showing the session establishment and the
    transmission of a single bundle split into three data segments (of
    lengths &quot;L1&quot;, &quot;L2&quot;, and &quot;L3&quot;) from Node A to Node B.
@@ -320,7 +335,7 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
    No errors or rejections are shown in this example.
 </t>
 <figure anchor="fig-contact-example"
-    title="A SL1e Visual Example of the Flow of Protocol Messages on a Single TCP Session between Two Nodes (A and B)">
+    title="An Example of the Flow of Protocol Messages on a Single TCP Session between Two Nodes (A and B)">
 <artwork>
               Node A                              Node B
               ======                              ======
@@ -378,11 +393,11 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
    To establish a TCPCL session, a node MUST first establish a TCP
    connection with the intended peer node, typically by using the
    services provided by the operating system.
-   Destination port number 4556 has been assigned by IANA as the well-known
-   port number for the TCP convergence layer.
+   Destination port number 4556 has been assigned by IANA as the Registered
+   Port number for the TCP convergence layer.
    Other destination port numbers MAY be used per local configuration.
-   Determining a peer's destination port number (if different from the well-known 
-   TCPCL port) is up to the implementation.
+   Determining a peer's destination port number (if different from the 
+   registered TCPCL port number) is up to the implementation.
    Any source port number MAY be used for TCPCL sessions.
    Typically an operating system assigned number in the TCP Ephemeral range
    (49152--65535) is used.
@@ -535,7 +550,6 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
     any item with an unkonwn Item Type.
 </t><t hangText="Item Type:">
     A 16-bit unsigned integer field containing the type of the extension item.
-    Each type 
     This specification does not define any extension types directly, but does
     allocate an IANA registry for such codes
     (see <xref target="sec-iana-header-extension-type"/>).
@@ -775,13 +789,10 @@ A summary of a typical CAN_TLS usage is shown in the sequence in
 The message header fields are as follows:
 <list style="hanging">
 <t hangText="Message Type:">
-    Indicates the type of the message as per <xref target="tab-msg-types"/> below.
+  Indicates the type of the message as per <xref target="tab-msg-types"/> below.
+  Encoded values are listed in <xref target="sec-iana-message-types"/>.
 </t>
 </list>
-</t>
-<t>
-   The message types defined in this specificaiton are listed in <xref target="tab-msg-types"/>.
-   Encoded values are listed in <xref target="sec-iana-message-types"/>.
 </t>
 <texttable anchor="tab-msg-types" title="TCPCL Message Types">
   <ttcol>Type</ttcol><ttcol>Description</ttcol>
@@ -882,7 +893,7 @@ a bundle between TCPCL nodes.
 A single TCPCL transfer results in a bundle (handled by the convergence layer
 as opaque data) being exchanged from one node to the other.
 In TCPCL a transfer is accomplished by dividing a single bundle up into 
-&quot;segments&quot; based on the receving-side Segment MRU
+&quot;segments&quot; based on the receiving-side Segment MRU
 (see <xref target="sec-contact-header"/>).
 </t><t>
 A single transfer (and by extension a single segment) SHALL NOT contain data
@@ -1080,10 +1091,10 @@ The fields of the XFER_ACK message are:
 </t>
 
 <t>
-   A receving TCPCL endpoing SHALL send an XFER_ACK message in response to
+   A receiving TCPCL endpoing SHALL send an XFER_ACK message in response to
    each received XFER_SEGMENT message.
    The flags portion of the XFER_ACK header SHALL be set to match the
-   corresponding DATA_SEGEMNT message being acknowledged.
+   corresponding DATA_SEGMENT message being acknowledged.
    The acknowledged length of each XFER_ACK contains the sum of the 
    data length fields of all XFER_SEGMENT messages received so far in the
    course of the indicated transfer.
@@ -1099,10 +1110,8 @@ The fields of the XFER_ACK message are:
 </section>
 <section anchor="sec-XFER_REFUSE" title="Transfer Refusal (XFER_REFUSE)">
 <t>
-   As bundles can be large, the TCPCL supports an optional mechanism by
-   which a receiving node MAY indicate to the sender that it does not
-   want to receive the corresponding bundle.
-</t><t>
+   The TCPCL supports an mechanism by which a receiving node can indicate to
+   the sender that it does not want to receive the corresponding bundle.
    To do so, upon receiving a XFER_INIT or XFER_SEGMENT message, the node MAY
    transmit a XFER_REFUSE message.  As data segments and
    acknowledgments MAY cross on the wire, the bundle that is being
@@ -1306,8 +1315,6 @@ The fields of the SHUTDOWN message are:
    that amount of time, then either node MAY terminate the session by
    transmitting a SHUTDOWN message indicating the reason code of 'Idle
    timeout' (as described in <xref target="tab-shutdown-reasons"/>).
-   After receiving a SHUTDOWN
-   message in response, both sides MAY close the TCP connection.
 </t>
 </section>
 </section>
@@ -1527,6 +1534,8 @@ The fields of the SHUTDOWN message are:
 
   <back>
     <references title="Normative References">
+      <?rfc include="reference.RFC.0793.xml"?>
+      <?rfc include="reference.RFC.1122.xml"?>
       <?rfc include="reference.RFC.2119.xml"?>
       <?rfc include="reference.RFC.5050.xml"?>
       <?rfc include="reference.RFC.5226.xml"?>
