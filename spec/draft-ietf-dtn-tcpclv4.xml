@@ -9,7 +9,7 @@
 <?rfc toc="yes"?>
 <rfc ipr="trust200902" 
      category="std"
-     docName="draft-ietf-dtn-tcpclv4-03"
+     docName="draft-ietf-dtn-tcpclv4-04"
      obsoletes="7242">
   <front>
     <title abbrev="DTN TCPCLv4">
@@ -75,7 +75,7 @@
         <email>simon@per.reau.lt</email>
       </address>
     </author>
-    <date year="2017" month="Nov" day="13"/>
+    <date year="2017" month="Dec" day="10"/>
     <area>Transport</area>
     <workgroup>Delay Tolerant Networking</workgroup>
 
