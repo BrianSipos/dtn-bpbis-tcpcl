@@ -9,7 +9,7 @@
 <?rfc toc="yes"?>
 <rfc ipr="trust200902" 
      category="std"
-     docName="draft-ietf-dtn-tcpclv4-04"
+     docName="draft-ietf-dtn-tcpclv4-05"
      obsoletes="7242">
   <front>
     <title abbrev="DTN TCPCLv4">
@@ -75,7 +75,7 @@
         <email>simon@per.reau.lt</email>
       </address>
     </author>
-    <date year="2017" month="Dec" day="10"/>
+    <date year="2017" month="Dec" day="14"/>
     <area>Transport</area>
     <workgroup>Delay Tolerant Networking</workgroup>
 
@@ -216,6 +216,11 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
   another.
   Each transfer within TCPCLv4 is identified by a Transfer ID number
   which is unique only to a single direction within a single Session.
+</t><t hangText="Idle Session:">
+  A TCPCL session is idle while the only messages being transmitted or received
+  are KEEPALIVE messages.
+</t><t hangText="Lively Session:">
+  A TCPCL session is lively while any messages are being transmitted or received.
 </t><t hangText="Reason Codes:">
   The TCPCL uses numeric codes to encode specific reasons for individual 
   failure/error message types.
@@ -293,17 +298,20 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
 </t><t>
    For sessions that are idle, a KEEPALIVE message is
    sent at a negotiated interval.
-   This is used to convey node liveness information.
+   This is used to convey node liveliqness information during otherwise 
+   message-less time intervals.
 </t><t>
    Finally, before sessions close, a SHUTDOWN message is sent to the
-   session peer.
-   A SHUTDOWN message MAY also be used to refuse a session setup by a
+   session peer (see <xref target="sec-SHUTDOWN"/>).
+   After sending a SHUTDOWN message, the peer can not initiate any further 
+   transfers and the session enters a closing-down phase.
+   After receiving a SHUTDOWN message and when no transfers are in-progress
+   (i.e. have pending or unacknowledged segments), the receiving peer can
+   close the session without chance of lost transfers.
+   A SHUTDOWN message can also be used to refuse a session setup by a
    peer (see <xref target="sec-contact-negotiate"/>).
-   After sending a SHUTDOWN message, the sender of the
-   message MAY send further acknowledgments (XFER_ACK or
-   XFER_REFUSE) but no further data messages (XFER_INIT or XFER_SEGMENT).
-   After receving a SHUTDOWN message and when no transfers are in-progress
-   (i.e. have unacknowledged segemnts)
+   It is an implementation matter to determine whether or not to close a
+   TCPCL session while there are no transfers queued or in-progress.
 </t>
 <t>
    There are specific messages for sending and receiving operations (in
@@ -486,9 +494,11 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
     A one-octet field of single-bit flags, interpreted according to the 
     descriptions in <xref target="tab-session-flags"/>.
 </t><t hangText="Keepalive Interval:">
-    A 16-bit unsigned integer indicating the longest allowable interval,
-    in seconds, between any message being received in this session and a
-    subsequent KEEPALIVE message being received.
+    A 16-bit unsigned integer indicating the interval,
+    in seconds, between any subsequent messages being transmitted by the peer.
+    The peer receiving this contact header uses this interval to determine
+    how long to wait after any last-message transmission and a necessary 
+    subsequent KEEPALIVE message transmission.
 </t><t hangText="Segment MRU:">
     A 64-bit unsigned integer indicating the largest allowable single-segment
     data payload size to be received in this session.
@@ -547,7 +557,7 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
     and the CRITICAL flag set, the node SHALL close the
     TCPCL session with SHUTDOWN reason code of &quot;Contact Failure&quot;.
     If the CRITICAL flag is not set, an node SHALL skip over and ignore
-    any item with an unkonwn Item Type.
+    any item with an unknown Item Type.
 </t><t hangText="Item Type:">
     A 16-bit unsigned integer field containing the type of the extension item.
     This specification does not define any extension types directly, but does
@@ -630,7 +640,7 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
   negotiating the values from its own preferences (conveyed by the
   contact header it sent to the peer) with the preferences of the peer node
   (expressed in the contact header that it received from the peer).
-  The negotatiated parameters defined by this specification are 
+  The negotiated parameters defined by this specification are 
   described in the following paragraphs.
 </t>
 <t>
@@ -671,7 +681,7 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
 </t>
 <t>
   Once this process of parameter negotiation is completed (which includes a
-  possible completed TLS handshakede of the connection to use TLS),
+  possible completed TLS handshake of the connection to use TLS),
   this protocol
   defines no additional mechanism to change the parameters of an
   established session; to effect such a change, the TCPCL session MUST
@@ -683,7 +693,7 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
 <t>
   This version of the TCPCL supports establishing a Transport
   Layer Security (TLS) session within an existing TCP connection.
-  Negotation of whether or not to initiate TLS within a TCPCL session is 
+  Negotiation of whether or not to initiate TLS within a TCPCL session is 
   part of the contact header as described in <xref target="sec-contact-negotiate"/>.
   The TLS handshake, if it occurs, is considered to be part of the contact
   negotiation before the TCPCL session itself is established.
@@ -703,7 +713,7 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
   After negotiating an Enable TLS parameter of true, and before any other
   TCPCL messages are sent within the session, the session nodes SHALL 
   begin a TLS handshake in accordance with <xref target="RFC5246"/>.
-  The parameters within each TLS negotation are implementation dependent but
+  The parameters within each TLS nqion are implementation dependent but
   any TCPCL node SHOULD follow all recommended best practices of
   <xref target="RFC7525"/>.
 </t>
@@ -713,7 +723,7 @@ If a TLS handshake cannot negotiate a TLS session, both nodes of the TCPCL
 session SHALL cause a TCPCL shutdown with reason "TLS Failure".
         </t>
         <t>
-After a TLS session is successfuly established, both TCPCL nodes SHALL
+After a TLS session is successfully established, both TCPCL nodes SHALL
 re-exchange TCPCL Contact Header messages.
 Any information cached from the prior Contact Header exchange SHALL be
 discarded.
@@ -829,7 +839,8 @@ The message header fields are as follows:
    If no message (KEEPALIVE or other) has been received for at least
    twice the Keepalive Interval, then either party MAY terminate the
    session by transmitting a one-octet SHUTDOWN message (as described in
-   <xref target="sec-SHUTDOWN"/>, with reason code "Idle Timeout") and by closing the session.
+   <xref target="sec-SHUTDOWN"/>) with reason code "Idle Timeout",
+   and by closing the session.
 </t><t>
    Note: The Keepalive Interval SHOULD not be chosen too short as TCP
    retransmissions MAY occur in case of packet loss.  Those will have to
@@ -844,7 +855,7 @@ The message header fields are as follows:
     If a TCPCL node receives a message which is unknown to it (possibly due
     to an unhandled protocol mismatch) or is inappropriate for the current 
     session state (e.g. a KEEPALIVE message received after contact header
-    negotation has disabled that feature), there is a protocol-level
+    negotiation has disabled that feature), there is a protocol-level
     message to signal this condition in the form of a MSG_REJECT reply.
 </t><t>
     The format of a MSG_REJECT message follows:
@@ -887,7 +898,7 @@ The fields of the MSG_REJECT message are:
 
 <section anchor="sec-transfer" title="Bundle Transfer">
 <t>
-All of the message in this section are directly associated with transfering
+All of the message in this section are directly associated with transferring
 a bundle between TCPCL nodes.
 </t><t>
 A single TCPCL transfer results in a bundle (handled by the convergence layer
@@ -1194,10 +1205,13 @@ The fields of the XFER_REFUSE message are:
    To cleanly shut down a session, a SHUTDOWN message MUST be
    transmitted by either node at any point following complete
    transmission of any other message.
+   After sending a SHUTDOWN message, the sender of the
+   message MAY send further acknowledgments (XFER_ACK or
+   XFER_REFUSE) but no further data messages (XFER_INIT or XFER_SEGMENT).
    A receiving node SHOULD acknowledge all received data segments
    before sending a SHUTDOWN message to end the session.
    A transmitting node SHALL treat a SHUTDOWN message received mid-transfer
-   (i.e. before the final acknowledgement) as a failure of the transfer.
+   (i.e. before the final acknowledgment) as a failure of the transfer.
 </t><t>
    After transmitting a SHUTDOWN message, an node MAY immediately close
    the associated TCP connection.
@@ -1261,7 +1275,7 @@ The fields of the SHUTDOWN message are:
   <c>Busy</c><c>The node is too busy to handle the current session.</c>
   <c>Contact Failure</c><c>The node cannot interpret or negotiate contact header option.</c>
   <c>TLS Failure</c><c>The node failed to negotiate TLS session and cannot continue the session.</c>
-  <c>Resource Exhaustion</c><c>The node has run into some resoure limit and cannot continue the session.</c>
+  <c>Resource Exhaustion</c><c>The node has run into some resource limit and cannot continue the session.</c>
 </texttable>
 <t>
    It is also possible to convey a requested reconnection delay to
@@ -1300,7 +1314,7 @@ The fields of the SHUTDOWN message are:
    to be cut short and/or preempted by an other message.
    This is particularly important when large segment sizes
    are being transmitted; either entire XFER_SEGMENT is sent before a SHUTDOWN
-   message or the connection is simply termiated mid-XFER_SEGMENT.
+   message or the connection is simply terminated mid-XFER_SEGMENT.
 </t>
 </section>
 <section anchor="sec-idle-shutdown" title="Idle Session Shutdown">
@@ -1310,8 +1324,8 @@ The fields of the SHUTDOWN message are:
    idle sessions, if they are to be closed at all, is an
    implementation and configuration matter.
 </t><t>
-   If there is a configured time to close idle links and if no bundle
-   data (other than KEEPALIVE messages) has been received for at least
+   If there is a configured time to close idle links and if no TCPCL messages
+   (other than KEEPALIVE messages) has been received for at least
    that amount of time, then either node MAY terminate the session by
    transmitting a SHUTDOWN message indicating the reason code of 'Idle
    timeout' (as described in <xref target="tab-shutdown-reasons"/>).
@@ -1333,8 +1347,8 @@ The fields of the SHUTDOWN message are:
    Therefore, a node SHALL NOT use the EID value of an unsecured contact header
    to derive a peer node's identity unless it can corroborate it via other
    means.
-   When TCPCL session security is mandatory, an endpoint SHALL transmit initial
-   unsecured contact header values indicated in
+   When TCPCL session security mandated by a TCPCL peer, that peer SHALL 
+   transmit initial unsecured contact header values indicated in
    <xref target="tab-empty-contact"/> in order. These values avoid unnecessarily
    leaking endpoing parameters and will be ignored when secure contact header
    re-exchange occurs.
@@ -1345,7 +1359,7 @@ The fields of the SHUTDOWN message are:
   <c>Keepalive Interval</c><c>Zero, indicating no keepalive.</c>
   <c>Segment MRU</c><c>Zero, indicating all segments are refused.</c>
   <c>Transfer MRU</c><c>Zero, indicating all transfers are refused.</c>
-  <c>EID</c><c>Empty, indating lack of EID.</c>
+  <c>EID</c><c>Empty, indicating lack of EID.</c>
 </texttable>
 <t>
    TCPCL can be used to provide point-to-point transport security, but does
@@ -1570,7 +1584,7 @@ The fields of the SHUTDOWN message are:
     The areas in which extensions from <xref target="RFC7242"/> have been
     made as new messages and codes are:
     <list style="symbols">
-      <t>Added contact negotation failure SHUTDOWN reason code.</t>
+      <t>Added contact negotiation failure SHUTDOWN reason code.</t>
       <t>Added MSG_REJECT message to indicate an unknown or unhandled message was received.</t>
       <t>Added TLS session security mechanism.</t>
       <t>Added TLS failure SHUTDOWN reason code.</t>
