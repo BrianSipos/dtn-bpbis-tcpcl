@@ -9,7 +9,7 @@
 <?rfc toc="yes"?>
 <rfc ipr="trust200902" 
      category="std"
-     docName="draft-ietf-dtn-tcpclv4-05"
+     docName="draft-ietf-dtn-tcpclv4-06"
      obsoletes="7242">
   <front>
     <title abbrev="DTN TCPCLv4">
@@ -75,7 +75,7 @@
         <email>simon@per.reau.lt</email>
       </address>
     </author>
-    <date year="2017" month="Dec" day="14"/>
+    <date year="2018" month="Jan" day="28"/>
     <area>Transport</area>
     <workgroup>Delay Tolerant Networking</workgroup>
 
@@ -107,17 +107,20 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
 </t><t>
    An important goal of the DTN architecture is to accommodate a wide
    range of networking technologies and environments.  The protocol used
-   for DTN communications is the revised Bundle Protocol (BP)
+   for DTN communications is the Bundle Protocol Version 7 (BPv7)
    <xref target="I-D.ietf-dtn-bpbis"/>, an
    application-layer protocol that is used to construct a store-and-forward
-   overlay network.  As described in the Bundle Protocol
-   specification <xref target="I-D.ietf-dtn-bpbis"/>,
-   it requires the services of a &quot;convergence-
-   layer adapter&quot; (CLA) to send and receive bundles using the service of
-   some &quot;native&quot; link, network, or Internet protocol.  This document
-   describes one such convergence-layer adapter that uses the well-known
-   Transmission Control Protocol (TCP).  This convergence layer is
-   referred to as TCPCL.
+   overlay network.
+   BPv7 requires the services of a &quot;convergence-layer adapter&quot; (CLA)
+   to send and receive bundles using the service of
+   some &quot;native&quot; link, network, or Internet protocol.
+   This document describes one such convergence-layer adapter that uses the 
+   well-known Transmission Control Protocol (TCP).
+   This convergence layer is referred to as TCP Convergence Layer Version 4 (TCPCLv4).
+   For the remainder of this document, the abbreviation &quot;BP&quot;
+   without the version suffix refers to BPv7.
+   For the remainder of this document, the abbreviation &quot;TCPCL&quot;
+   without the version suffix refers to TCPCLv4.
 </t><t>
    The locations of the TCPCL and the BP in the Internet model protocol
    stack (described in <xref target="RFC1122"/>) are shown in Figure 1.
@@ -291,7 +294,7 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
   This refers to the procedures and mechanisms
   for conveyance of an individual bundle from one node to
   another.
-  Each transfer within TCPCLv4 is identified by a Transfer ID number
+  Each transfer within TCPCL is identified by a Transfer ID number
   which is unique only to a single direction within a single Session.
 </t><t hangText="Idle Session:">
   A TCPCL session is idle while the only messages being transmitted or received
@@ -624,7 +627,7 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
     This specification places no restrictions on an extension's use of
     available Item Value data.
     Extension specification SHOULD avoid the use of large data exchanges
-    within the TCPCLv4 contact header as no bundle transfers can begin until
+    within the TCPCL contact header as no bundle transfers can begin until
     the full contact exchange and negotiation has been completed.
 </t>
 </list>
@@ -1364,9 +1367,13 @@ The fields of the SHUTDOWN message are:
    However, a node MUST always send the contact header to its peer
    before sending a SHUTDOWN message.
 </t><t>
-   If reception of the contact header itself somehow fails (e.g. an invalid
-   "magic string" is recevied), a node SHOULD close the TCP connection
-   without sending a SHUTDOWN message.
+    If reception of the contact header itself somehow fails (e.g. an invalid
+    "magic string" is recevied), a node SHOULD close the TCP connection
+    without sending a SHUTDOWN message.
+    If the content of the Header Extension Items data disagrees with the
+    Header Extension Length (i.e. the last Item claims to use more octets
+    than are present in the Header Extension Length), the reception of the 
+    contact header is considered to have failed.
 </t><t>
    If a session is to be terminated before a protocol message
    has completed being sent, then the node MUST NOT transmit the SHUTDOWN
