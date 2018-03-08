@@ -9,7 +9,7 @@
 <?rfc toc="yes"?>
 <rfc ipr="trust200902" 
      category="std"
-     docName="draft-ietf-dtn-tcpclv4-06"
+     docName="draft-ietf-dtn-tcpclv4-07"
      obsoletes="7242">
   <front>
     <title abbrev="DTN TCPCLv4">
@@ -75,7 +75,7 @@
         <email>simon@per.reau.lt</email>
       </address>
     </author>
-    <date year="2018" month="Jan" day="28"/>
+    <date year="2018" month="Mar" day="7"/>
     <area>Transport</area>
     <workgroup>Delay Tolerant Networking</workgroup>
 
@@ -739,6 +739,48 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
   established session; to effect such a change, the TCPCL session MUST
   be terminated and a new session established.
 </t>
+<section anchor="sec-extension-REACTIVE_FRAGMENT" title="Reactive Fragmentation Extension">
+<t>
+  In order to allow BP agents to use this reliable convergence layer to perform
+  reactive fragmentation, a header extension type REACTIVE_FRAGMENT is defined
+  to negotate the fragmentation capabilities of the node sending the 
+  extension item.
+  If either node does not send a REACTIVE_FRAGMENT item then no reactive
+  fragmentation is allowed to be initiated within that session.
+  Reactive fragmentation is performed after a failed transfer, so it necessarily
+  spans more than a single TCPCL session. In fact, follow-on bundle fragments
+  may be sent via an entirely different convergence layer.
+  For these reasons, details of how reactive fragmentation and reassembly takes
+  place are outside the scope of this specification.
+</t><t>
+  Within a single contact header there SHALL be no more than one item with 
+  an extension type of REACTIVE_FRAGMENT.
+  If no REACTIVE_FRAGMENT item is received from a peer, all REACTIVE_FRAGMENT
+  flags of that peer SHALL be considered to be not set.
+  The CRITICAL flag of the REACTIVE_FRAGMENT item MAY be set to indicate that
+  the peer node has to interpret and negotiate the reactive fragmentation capability.
+  The order of the REACTIVE_FRAGMENT item within the extension items is not significant.
+  The Item Length of a REACTIVE_FRAGMENT item SHALL be a single octet.
+  The contents of the REACTIVE_FRAGMENT item shall be interpreted as a bit
+  mask, with flags interpreted according to <xref target="tab-REACTIVE_FRAGMENT-flags"/>.
+</t><t>
+  When a transfer-sending node has set the CAN_GENERATE flag and
+  the peer node has set the CAN_RECEIVE flag, the sending node SHALL use acknowledged
+  data segment information to reactively fragment a failed transfer within
+  some later transfers.
+  When a transfer-receving node has set the CAN_RECEIVE flag and the peer node
+  has set the CAN_GENERATE flag, the receving node SHALL treat partial received transfers
+  as reactively fragmented bundles and use the partial transfer to reassemble
+  future fragments of that bundle.
+</t>
+<texttable anchor="tab-REACTIVE_FRAGMENT-flags" title="REACTIVE_FRAGMENT Flags">
+  <ttcol>Name</ttcol><ttcol>Code</ttcol><ttcol>Description</ttcol>
+  <c>CAN_GENERATE</c><c>0x01</c><c>If bit is set, indicates that the sending node is capable of generating reactively fragmented bundles.</c>
+  <c>CAN_RECEIVE</c><c>0x02</c><c>If bit is set, indicates that the sending node is capable of receving and reassembling reactively fragmented bundles.</c>
+  <c>Reserved</c><c>others</c>
+</texttable>
+</section>
+
 </section>
 
 <section anchor="sec-session-security" title="Session Security">
@@ -1276,21 +1318,28 @@ The fields of the XFER_REFUSE message are:
 </t>
 <section anchor="sec-SHUTDOWN" title="Shutdown Message (SHUTDOWN)">
 <t>
-   To cleanly shut down a session, a SHUTDOWN message MUST be
+   To cleanly shut down a session, a SHUTDOWN message SHALL be
    transmitted by either node at any point following complete
    transmission of any other message.
-   After sending a SHUTDOWN message, the sender of the
-   message MAY send further acknowledgments (XFER_ACK or
-   XFER_REFUSE) but no further data messages (XFER_INIT or XFER_SEGMENT).
-   A receiving node SHOULD acknowledge all received data segments
-   before sending a SHUTDOWN message to end the session.
-   A transmitting node SHALL treat a SHUTDOWN message received mid-transfer
-   (i.e. before the final acknowledgment) as a failure of the transfer.
+   Upon receiving a SHUTDOWN message after not sending a SHUTDOWN message in 
+   the same session, a node SHOULD send a confirmation SHUTDOWN message with
+   identical content to the SHUTDOWN for which it is confirming.
 </t><t>
-   After transmitting a SHUTDOWN message, a node MAY immediately close
+   After sending a SHUTDOWN message, a node MAY continue a possible in-progress
+   transfer in either direction.
+   After sending a SHUTDOWN message, a node SHALL NOT begin any new outgoing 
+   transfer (i.e. send an XFER_INIT message) for the remainder of the session.
+   After receving a SHUTDOWN message, a node SHALL NOT accept any new incoming
+   transfer for the remainder of the session.
+</t><t>
+   Instead of following a clean shutdown sequence, after transmitting a 
+   SHUTDOWN message a node MAY immediately close
    the associated TCP connection.
-   Once the SHUTDOWN message is sent, any further received data on the TCP
-   connection SHOULD be ignored.
+   When performing an unclean shutdown, a receiving node SHOULD 
+   acknowledge all received data segments before closing the TCP connection.
+   When performing an unclean shutodwn, a transmitting node SHALL treat
+   either sending or receiving a SHUTDOWN message
+   (i.e. before the final acknowledgment) as a failure of the transfer.
    Any delay between request to terminate the TCP connection and actual
    closing of the connection (a &quot;half-closed&quot; state) MAY be ignored
    by the TCPCL node.
@@ -1518,7 +1567,8 @@ The fields of the SHUTDOWN message are:
 <texttable anchor="tab-iana-header-extension-type" title="Header Extension Type Codes">
   <ttcol>Code</ttcol><ttcol>Message Type</ttcol>
   <c>0x0000</c><c>Reserved</c>
-  <c>0x0001--0x3fff</c><c>Unassigned</c>
+  <c>0x0001</c><c>REACTIVE_FRAGMENT</c>
+  <c>0x0002--0x3fff</c><c>Unassigned</c>
   <c>0x8000--0xffff</c><c>Private/Experimental Use</c>
 </texttable>
 </section>
@@ -1658,6 +1708,7 @@ The fields of the SHUTDOWN message are:
       <t>Added MSG_REJECT message to indicate an unknown or unhandled message was received.</t>
       <t>Added TLS session security mechanism.</t>
       <t>Added TLS failure and Resource Exhaustion SHUTDOWN reason code.</t>
+      <t>Added extension for reactive fragmentation negotiation (REACTIVE_FRAGMENT).</t>
     </list>
     </t>
     </section>
