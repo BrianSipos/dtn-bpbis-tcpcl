@@ -46,13 +46,15 @@ class ContactV4ExtendHeader(packet.Packet):
         formats.UInt32PayloadLenField('length', default=None),
     ]
 
-class DummyExtend(packet.Packet):
-    ''' Proof-of-concept extension type with dummy payload. '''
+class ExtendItemReactiveFragment(packet.Packet):
+    ''' Extension type for reactive fragmentation negotiation. '''
     
     fields_desc = [
-        fields.StrField('data', default='')
+        fields.FlagsField('flags', default=0, size=8,
+                          # names in LSbit-first order
+                          names=['CAN_GENERATE', 'CAN_RECEIVE']),
     ]
-packet.bind_layers(ContactV4ExtendHeader, DummyExtend, type=0x8000)
+packet.bind_layers(ContactV4ExtendHeader, ExtendItemReactiveFragment, type=0x0001)
 
 class ContactV4(formats.NoPayloadPacket):
     ''' TCPCLv4 Contact header pseudo-message. '''
