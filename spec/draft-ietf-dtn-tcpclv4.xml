@@ -178,24 +178,36 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
             Each session attempt can send a different set of contact header
             parameters as directed by the BP agent.
           </t>
-          <t hangText="Session Started">
+          <t hangText="Shutdown Session">
+            The TCPCL allows a BP agent to pre-emptively shutdown an established
+            TCPCL session with a peer node.
+            The shutdown request is on a per-session basis.
+          </t>
+          <t hangText="Session is Started">
             The TCPCL supports indication when a new TCP connection has been
             started (as either client or server) before the TCPCL handshake 
             has begun.
           </t>
-          <t hangText="Session Established">
+          <t hangText="Session is Established">
             The TCPCL supports indication when a new session has been fully
             established and is ready for its first transfer.
           </t>
-          <t hangText="Session Shutdown">
+          <t hangText="Session is Shutdown">
             The TCPCL supports indication when an established session has been
             ended by normal exchange of SHUTDOWN messages with all transfers
             completed.
           </t>
-          <t hangText="Session Failed">
+          <t hangText="Session is Failed">
             The TCPCL supports indication when a session fails, either during
             contact negotiation, TLS negotiation, or after establishement for
             any reason other than normal shutdown.
+          </t>
+          <t hangText="Begin Transmission">
+            The principal purpose of the TCPCL is to allow a BP agent to 
+            transmit bundle data over an established TCPCL session.
+            Transmission request is on a per-session basis, the CL does not
+            necessarily perform any per-session or inter-session queueing.
+            Any queueing of transmissions is the obligation of the BP agent.
           </t>
           <t hangText="Transmission Availability">
             Because TCPCL transmits serially over a TCP connection, it suffers
@@ -219,7 +231,7 @@ behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
             the bundle or when a TCPCL session ends before transferr success.
             The TCPCL itself does not have a notion of transfer timeout.
           </t>
-          <t hangText="Reception Interruption">
+          <t hangText="Interrupt Reception">
             The TCPCL allows a BP agent to interrupt an individual transfer
             before it has fully completed (successfully or not).
           </t>
