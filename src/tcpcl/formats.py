@@ -48,6 +48,8 @@ class SdnvField(fields.Field):
     :param maxval: The maximum value allowed in this field.
         Warnings will be output if the actual value is above this limit
     '''
+    __slots__ = ['_maxval']
+    
     def __init__(self, name, default, maxval=None):
         fields.Field.__init__(self, name, default, fmt='!s')
         if maxval is None:
@@ -88,6 +90,8 @@ class SdnvPayloadLenField(SdnvField):
 class SdnvFieldLenField(SdnvField):
     ''' An SDNV value which represents a count/length of another field.
     '''
+    __slots__ = ['extract', 'adjust']
+    
     def __init__(self, name, default=None, count_of=None, length_of=None, adjust=None):
         SdnvField.__init__(self, name, default)
         if length_of:

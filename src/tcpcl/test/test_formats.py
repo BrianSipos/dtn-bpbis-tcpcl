@@ -1,6 +1,4 @@
 
-import struct
-import datetime
 import unittest
 from scapy.packet import Packet
 from .. import formats
@@ -43,10 +41,13 @@ class TestSdnvField(unittest.TestCase):
     ''' Verify SdnvField class '''
     
     class DummyPacket(Packet):
-        explicit = 1
         fields_desc = [
             formats.SdnvField('attr', default=None),
         ]
+        
+        def __init__(self, *args, **kwargs):
+            Packet.__init__(self, *args, **kwargs)
+            self.explicit = 1
     
     def testSerialize(self):
         pkt = self.DummyPacket()
@@ -74,7 +75,3 @@ class TestSdnvField(unittest.TestCase):
         self.assertEqual(len(pkt), 2)
         self.assertEqual(pkt.getfieldval('attr'), testval)
 
-
-if __name__ == "__main__":
-    #import sys;sys.argv = ['', 'Test.testName']
-    unittest.main()

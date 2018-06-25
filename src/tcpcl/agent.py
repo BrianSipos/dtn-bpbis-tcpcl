@@ -34,8 +34,7 @@ class Config(object):
     def __init__(self):
         self.bus_conn = None
         self.ssl_ctx = None
-        #self.tls_attempt = True
-        self.tls_require = True
+        self.tls_require = None
         self.eid = ''
         self.keepalive_time = 0
         self.idle_time = 0
@@ -48,15 +47,15 @@ class Connection(object):
     
     :param sock: The unsecured socket to wrap.
     :type sock: :py:class:`socket.socket`
-    :param as_server: True if this is the server-side of the connection.
-    :type as_server: bool
+    :param as_passive: True if this is the passive side of the connection.
+    :type as_passive: bool
     :param peer_name: The name of the socket peer.
     :type peer_name: str
     '''
-    def __init__(self, sock, as_server, peer_name):
+    def __init__(self, sock, as_passive, peer_name):
         self.__logger = logging.getLogger(self.__class__.__name__)
         self._on_close = None
-        self._as_server = as_server
+        self._as_passive = as_passive
         self._peer_name = peer_name
         
         #: Transmit buffer
@@ -142,8 +141,8 @@ class Connection(object):
                 continue
             try:
                 sock.shutdown(socket.SHUT_RDWR)
-            except socket.error:
-                pass
+            except socket.error as err:
+                self.__logger.error('Socket shutdown error: %s', err)
             sock.close()
         
         self.__s_notls = None
@@ -166,7 +165,7 @@ class Connection(object):
         self.__unlisten_notls()
         self.__s_notls.setblocking(1)
         
-        if self._as_server:
+        if self._as_passive:
             s_tls = ssl_ctx.wrap_socket(self.__s_notls,
                                               server_side=True,
                                               do_handshake_on_connect=False)
@@ -359,19 +358,22 @@ class Messenger(Connection):
         self._send_segment_size = None
         self._do_send_ack_inter = None
         self._do_send_ack_final = None
-        self._do_send_refuse = None
-        self._do_send_length = None
         
         self._keepalive_timer_id = None
         self._idle_timer_id = None
         
-        self._head_this = None
-        self._head_peer = None
+        # Negotiation inputs and states
+        self._conhead_peer = None
+        self._conhead_this = None
+        self._in_conn = False # Set after contact negotiation
+        self._sessinit_peer = None
+        self._sessinit_this = None
+        self._in_sess = False # Set after SESS_INIT negotiation
+        
         # Assume socket is ready
         self._is_open = True
-        # If false, still waiting on contact header negotiation
-        self._in_conn = False
-        self._wait_shutdown = False
+        # In closing state
+        self._wait_sess_term = False
         
         self._from = fromaddr
         self._to = toaddr
@@ -382,12 +384,12 @@ class Messenger(Connection):
         
         # now set up connection
         if fromaddr:
-            as_server = True
+            as_passive = True
             peer_name = fromaddr[0]
         else:
-            as_server = False
+            as_passive = False
             peer_name = toaddr[0]
-        Connection.__init__(self, sock, as_server, peer_name)
+        Connection.__init__(self, sock, as_passive, peer_name)
     
     def is_server(self):
         return (self._from is not None)
@@ -455,7 +457,7 @@ class Messenger(Connection):
         ''' Handle an idle timer timeout. '''
         self._idle_stop()
         self.__logger.debug('Idle time reached')
-        self.do_shutdown(messages.Shutdown.REASON_IDLE)
+        self.do_sess_term(messages.SessionTerm.REASON_IDLE)
         return False
     
     def recv_raw(self, data):
@@ -498,13 +500,24 @@ class Messenger(Connection):
                 raise ValueError('Contact header with bad magic: {0}'.format(pkt.magic.encode('hex')))
             if pkt.version != 4:
                 raise ValueError('Contact header with bad version: {0}'.format(pkt.version))
-            self._head_peer = pkt.payload
+            
+            if self._as_passive:
+                # After initial validation send reply
+                self._conhead_this = self.send_contact_header().payload
+            
+            self._conhead_peer = pkt.payload
+            self.merge_contact_params()
             self._in_conn = True
-            self.merge_options()
+            
+            # Check policy before attempt
+            if self._config.tls_require is not None:
+                if self._tls_attempt != self._config.tls_require:
+                    self.__logger.error('TLS parameter violated policy')
+                    self.close()
+                    return
             
             # Boths sides immediately try TLS, Client initiates handshake
-            if not self.is_secure() and self._tls_attempt:
-                
+            if self._tls_attempt:
                 # flush the buffers ahead of TLS
                 while self.__tx_buf:
                     self._avail_tx_notls()
@@ -514,27 +527,37 @@ class Messenger(Connection):
                     self.secure(self._config.ssl_ctx)
                 except ssl.SSLError as err:
                     pass
-                
-                if self.is_secure():
-                    # Re-negotiate contact
-                    self._in_conn = False
-                    self.send_contact_header()
-                else:
-                    # TLS negotiation failure
-                    if self._config.tls_require:
-                        self.do_shutdown(messages.Shutdown.REASON_TLS_FAIL)
-                    else:
-                        raise RejectError(messages.RejectMsg.REASON_UNSUPPORTED)
+            
+            # Check policy after attempt
+            if self._config.tls_require is not None:
+                if self.is_secure() != self._config.tls_require:
+                    self.__logger.error('TLS result violated policy')
+                    self.close()
+                    return
+            
+            # Contact negotiation is completed, begin session negotiation
+            if not self._as_passive:
+                # Passive side listens first
+                self._sessinit_this = self.send_sess_init().payload
         
         else:
             # Some payloads are empty and scapy will not construct them
             msgcls = pkt.guess_payload_class('')
             
             try: # Allow rejection from any of these via RejectError
-                if msgcls == messages.Shutdown:
+                if msgcls == messages.SessionInit:
+                    if self._as_passive:
+                        # After initial validation send reply
+                        self._sessinit_this = self.send_sess_init().payload
+                    
+                    self._sessinit_peer = pkt.payload
+                    self.merge_session_params()
+                    self._in_sess = True
+                
+                elif msgcls == messages.SessionTerm:
                     # Send a reply (if not the initiator)
-                    if not self._wait_shutdown:
-                        self.do_shutdown()
+                    if not self._wait_sess_term:
+                        self.do_sess_term()
                     
                     self.close()
                 
@@ -544,15 +567,15 @@ class Messenger(Connection):
                 
                 # Delegated handlers
                 elif msgcls == messages.TransferInit:
-                    self.recv_length(pkt.payload.transfer_id, pkt.payload.length)
+                    self.recv_xfer_init(pkt.payload.transfer_id, pkt.payload.length)
                 elif msgcls == messages.TransferSegment:
-                    self.recv_segment(transfer_id=pkt.payload.transfer_id,
+                    self.recv_xfer_data(transfer_id=pkt.payload.transfer_id,
                                       data=pkt.payload.getfieldval('data'),
                                       flags=pkt.getfieldval('flags'))
                 elif msgcls == messages.TransferAck:
-                    self.recv_ack(pkt.payload.transfer_id, pkt.payload.length)
+                    self.recv_xfer_ack(pkt.payload.transfer_id, pkt.payload.length)
                 elif msgcls == messages.TransferRefuse:
-                    self.recv_refuse(pkt.payload.transfer_id, pkt.flags)
+                    self.recv_xfer_refuse(pkt.payload.transfer_id, pkt.flags)
                 
                 else:
                     # Bad RX message
@@ -568,38 +591,50 @@ class Messenger(Connection):
         
         options = dict(
             flags=combine_flags(flag_names),
-            keepalive=self._config.keepalive_time,
-            segment_mru=self._config.segment_size,
         )
-        if self.is_secure():
-            options['eid_data'] = self._config.eid.encode('utf8')
         
         pkt = contact.Head()/contact.ContactV4(**options)
         self.send_message(pkt)
         return pkt
     
-    def merge_options(self):
+    def merge_contact_params(self):
         ''' Combine local and peer contact headers to contact configuration.
         '''
         self.__logger.debug('Contact negotiation')
         
-        self._tls_attempt = ((self._head_this.flags & contact.ContactV4.FLAG_CAN_TLS)
-                             and (self._head_this.flags & contact.ContactV4.FLAG_CAN_TLS))
+        this_can_tls = (self._conhead_this.flags & contact.ContactV4.FLAG_CAN_TLS)
+        peer_can_tls = (self._conhead_peer.flags & contact.ContactV4.FLAG_CAN_TLS)
+        self._tls_attempt = (this_can_tls and peer_can_tls)
+    
+    def send_sess_init(self):
+        options = dict(
+            keepalive=self._config.keepalive_time,
+            segment_mru=self._config.segment_size,
+            eid_data=self._config.eid.encode('utf8'),
+        )
         
-        self._keepalive_time = min(self._head_this.keepalive,
-                                   self._head_peer.keepalive)
+        pkt = messages.MessageHead()/messages.SessionInit(**options)
+        self.send_message(pkt)
+        return pkt
+    
+    def merge_session_params(self):
+        ''' Combine local and peer SESS_INIT parameters.
+        '''
+        self.__logger.debug('Session negotiation')
+        
+        self._keepalive_time = min(self._sessinit_this.keepalive,
+                                   self._sessinit_peer.keepalive)
+        self.__logger.debug('KEEPALIVE time {0}'.format(self._keepalive_time))
         self._idle_time = self._config.idle_time
         self._keepalive_reset()
         self._idle_reset()
         
         self._send_segment_size = min(self._config.segment_size,
-                                      self._head_peer.segment_mru)
+                                      self._sessinit_peer.segment_mru)
         self.__logger.debug('TX seg size {0}'.format(self._send_segment_size))
         
-        self._do_send_length = True
         self._do_send_ack_inter = True
         self._do_send_ack_final = True
-        self._do_send_refuse = True
     
     def send_raw(self, size):
         ''' Pop some data from the TX queue.
@@ -640,69 +675,93 @@ class Messenger(Connection):
             rej_load.rej_flags = pkt.flags
         self.send_message(messages.MessageHead()/rej_load)
     
-    def do_shutdown(self, reason=None):
-        self._wait_shutdown = True
+    def do_sess_term(self, reason=None):
+        self._wait_sess_term = True
         flg_names = []
         if reason is not None:
             flg_names.append('R')
         
         self.send_message(messages.MessageHead()
-                          / messages.Shutdown(flags=combine_flags(flg_names), reason=reason))
+                          / messages.SessionTerm(flags=combine_flags(flg_names), reason=reason))
     
     def start(self):
         ''' Main state machine of the agent contact. '''
+        self._conhead_peer = None
+        self._conhead_this = None
         self._in_conn = False
-        self._head_peer = None
-        self._head_this = self.send_contact_header().payload
+        self._sessinit_peer = None
+        self._sessinit_this = None
+        self._in_sess = False
+        
+        if not self._as_passive:
+            # Passive side listens first
+            self._conhead_this = self.send_contact_header().payload
     
-    
-    def recv_length(self, transfer_id, length):
-        ''' Handle reception of LENGTH message.
+    def recv_xfer_init(self, transfer_id, length):
+        ''' Handle reception of XFER_INIT message.
         
         :param transfer_id: The bundle ID number.
         :type transfer_id: int
         :param length: The bundle length.
         :type length: int
         '''
-    def recv_segment(self, transfer_id, data, flags):
-        ''' Handle reception of DATA_SEGMENT message.
+        self.__logger.debug('XFER_INIT {0} {1}'.format(transfer_id, length))
+        if not self._in_sess:
+            raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
+        
+    def recv_xfer_data(self, transfer_id, data, flags):
+        ''' Handle reception of XFER_DATA message.
         
         :param transfer_id: The bundle ID number.
         :type transfer_id: int
         :param data: The segment data.
         :type data: str
         '''
-    def recv_ack(self, transfer_id, length):
-        ''' Handle reception of DATA_ACKNOWLEDGE message.
+        self.__logger.debug('XFER_DATA {0} {1}'.format(transfer_id, flags))
+        if not self._in_sess:
+            raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
+        
+    def recv_xfer_ack(self, transfer_id, length):
+        ''' Handle reception of XFER_ACK message.
         
         :param transfer_id: The bundle ID number.
         :type transfer_id: int
         :param length: The acknowledged length.
         :type length: int
         '''
-    def recv_refuse(self, transfer_id, reason):
-        ''' Handle reception of REFUSE message.
+        self.__logger.debug('XFER_ACK {0} {1}'.format(transfer_id, length))
+        if not self._in_sess:
+            raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
+        
+    def recv_xfer_refuse(self, transfer_id, reason):
+        ''' Handle reception of XFER_REFUSE message.
         
         :param transfer_id: The bundle ID number.
         :type transfer_id: int
         :param reason: The refusal reason code.
         :type reason: int
         '''
+        self.__logger.debug('XFER_REFUSE {0} {1}'.format(transfer_id, reason))
+        if not self._in_sess:
+            raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
     
-    def send_length(self, transfer_id, length):
-        ''' Send a LENGTH message.
+    def send_xfer_init(self, transfer_id, length):
+        ''' Send an XFER_INIT message.
         
         :param transfer_id: The bundle ID number.
         :type transfer_id: int
         :param length: The bundle length.
         :type length: int
         '''
+        if not self._in_sess:
+            raise RuntimeError('Attempt to transfer before session established')
+        
         self.send_message(messages.MessageHead()/
                           messages.TransferInit(transfer_id=transfer_id,
                                                 length=length))
         
-    def send_segment(self, transfer_id, data, flg):
-        ''' Send a DATA_SEGMENT message.
+    def send_xfer_data(self, transfer_id, data, flg):
+        ''' Send a XFER_DATA message.
         
         :param transfer_id: The bundle ID number.
         :type transfer_id: int
@@ -711,31 +770,40 @@ class Messenger(Connection):
         :param flg: Data flags for :py:class:`TransferSegment`
         :type flg: int
         '''
+        if not self._in_sess:
+            raise RuntimeError('Attempt to transfer before session established')
+        
         self.send_message(messages.MessageHead()/
                           messages.TransferSegment(transfer_id=transfer_id,
                                                    flags=flg,
                                                    data=data))
         
-    def send_ack(self, transfer_id, length):
-        ''' Send a DATA_ACKNOWLEDGE message.
+    def send_xfer_ack(self, transfer_id, length):
+        ''' Send a XFER_ACK message.
         
         :param transfer_id: The bundle ID number.
         :type transfer_id: int
         :param length: The acknowledged length.
         :type length: int
         '''
+        if not self._in_sess:
+            raise RuntimeError('Attempt to transfer before session established')
+        
         self.send_message(messages.MessageHead()/
                           messages.TransferAck(transfer_id=transfer_id,
                                                length=length))
     
-    def send_refuse(self, transfer_id, reason):
-        ''' Send a REFUSE message.
+    def send_xfer_refuse(self, transfer_id, reason):
+        ''' Send a XFER_REFUSE message.
         
         :param transfer_id: The bundle ID number.
         :type transfer_id: int
         :param reason: The refusal reason code.
         :type reason: int
         '''
+        if not self._in_sess:
+            raise RuntimeError('Attempt to transfer before session established')
+        
         self.send_message(messages.MessageHead()/
                           messages.TransferRefuse(transfer_id=transfer_id,
                                                   flags=reason))
@@ -803,24 +871,21 @@ class ContactHandler(Messenger, dbus.service.Object):
     def _rx_teardown(self):
         self._rx_tmp = None
     
-    def recv_length(self, transfer_id, length):
-        self.__logger.debug('length {0} {1}'.format(transfer_id, length))
+    def recv_xfer_init(self, transfer_id, length):
+        Messenger.recv_xfer_init(self, transfer_id, length)
+        
         # reject if length is received mid-bundle
-        if self._rx_tmp or not self._do_send_length:
+        if self._rx_tmp:
             raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
         self._rx_setup(transfer_id)
     
-    def recv_segment(self, transfer_id, data, flags):
-        self.__logger.debug('data {0} {1}'.format(transfer_id, flags))
+    def recv_xfer_data(self, transfer_id, data, flags):
+        Messenger.recv_xfer_data(self, transfer_id, data, flags)
         
         if flags & messages.TransferSegment.FLAG_START:
-            if self._do_send_length:
-                # Start without a prior LENGTH
-                if self._rx_tmp is None:
-                    raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
-            else:
-                # no LENGTH, this is start of RX
-                self._rx_setup(transfer_id)
+            # Start without a prior XFER_INIT
+            if self._rx_tmp is None:
+                raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
         
         elif self._rx_tmp is None or self._rx_tmp.transfer_id != transfer_id:
             # Each ID in sequence after start must be identical
@@ -830,7 +895,7 @@ class ContactHandler(Messenger, dbus.service.Object):
         
         if flags & messages.TransferSegment.FLAG_END:
             if self._do_send_ack_final:
-                self.send_ack(transfer_id, self._rx_tmp.file.tell())
+                self.send_xfer_ack(transfer_id, self._rx_tmp.file.tell())
             
             item = self._rx_tmp
             self._rx_bundles.append(item)
@@ -841,10 +906,10 @@ class ContactHandler(Messenger, dbus.service.Object):
             self._rx_teardown()
         else:
             if self._do_send_ack_inter:
-                self.send_ack(transfer_id, self._rx_tmp.file.tell())
+                self.send_xfer_ack(transfer_id, self._rx_tmp.file.tell())
     
-    def recv_ack(self, transfer_id, length):
-        self.__logger.debug('ack {0} {1}'.format(transfer_id, length))
+    def recv_xfer_ack(self, transfer_id, length):
+        Messenger.recv_xfer_ack(self, transfer_id, length)
         
         item = self._tx_map[transfer_id]
         if length == item.file.tell():
@@ -857,8 +922,9 @@ class ContactHandler(Messenger, dbus.service.Object):
             if not self._do_send_ack_inter:
                 raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
     
-    def recv_refuse(self, transfer_id, reason):
-        self.__logger.debug('refuse {0} {1}'.format(transfer_id, reason))
+    def recv_xfer_refuse(self, transfer_id, reason):
+        Messenger.recv_xfer_refuse(self, transfer_id, reason)
+        
         self.send_bundle_finished(transfer_id, 'refused with code {0}'.format(reason))
         self._tx_map.pop(transfer_id)
         
@@ -989,8 +1055,7 @@ class ContactHandler(Messenger, dbus.service.Object):
             self._tx_seg_ix = 0
             
             self.send_bundle_started(str(self._tx_tmp.transfer_id))
-            if self._do_send_length:
-                self.send_length(self._tx_tmp.transfer_id, octet_count)
+            self.send_xfer_init(self._tx_tmp.transfer_id, octet_count)
         
         # send next segment
         data = self._tx_tmp.file.read(self._send_segment_size)
@@ -1001,7 +1066,7 @@ class ContactHandler(Messenger, dbus.service.Object):
             flg |= messages.TransferSegment.FLAG_END
         
         # Next segment of data
-        self.send_segment(self._tx_tmp.transfer_id, data, flg)
+        self.send_xfer_data(self._tx_tmp.transfer_id, data, flg)
         self._tx_seg_ix += 1
         
         if flg & messages.TransferSegment.FLAG_END:
@@ -1061,7 +1126,11 @@ class Agent(dbus.service.Object):
     def stop(self):
         if self._bindsock:
             self.__logger.info('Un-listening')
-            self._bindsock.shutdown(socket.SHUT_RDWR)
+            try:
+                self._bindsock.shutdown(socket.SHUT_RDWR)
+            except socket.error as err:
+                self.__logger.error('Bind socket shutdown error: %s', err)
+            self._bindsock.close()
             self._bindsock = None
         
         for hdl in self._handlers:
@@ -1112,33 +1181,56 @@ class Agent(dbus.service.Object):
         hdl = self._bind_handler(config=self._config, sock=sock, toaddr=(address,port))
         hdl.start()
 
+def str2bool(v):
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
 def main():
     parser = argparse.ArgumentParser()
     subp = parser.add_subparsers(dest='action', help='action')
-    parser.add_argument('--eid', type=unicode, help='This node EID')
-    parser.add_argument('--keepalive', type=int, help='Keepalive time in seconds')
-    parser.add_argument('--idle', type=int, help='Idle time in seconds')
-    parser.add_argument('--bus-service', type=str, help='D-Bus service name')
-    parser.add_argument('--tls-disable', dest='tls_enable', default=True, action='store_false', help='Disallow use of TLS on this endpoint')
-    parser.add_argument('--tls-ca', type=str, help='Filename for CA chain')
-    parser.add_argument('--tls-cert', type=str, help='Filename for X.509 certificate')
-    parser.add_argument('--tls-key', type=str, help='Filename for X.509 private key')
-    parser.add_argument('--tls-dhparam', type=str, help='Filename for DH parameters')
+    parser.add_argument('--eid', type=unicode, 
+                        help='This node EID')
+    parser.add_argument('--keepalive', type=int, 
+                        help='Keepalive time in seconds')
+    parser.add_argument('--idle', type=int, 
+                        help='Idle time in seconds')
+    parser.add_argument('--bus-service', type=str, 
+                        help='D-Bus service name')
+    parser.add_argument('--tls-disable', dest='tls_enable', default=True, action='store_false', 
+                        help='Disallow use of TLS on this endpoint')
+    parser.add_argument('--tls-require', default=None, type=str2bool,
+                        help='Require the use of TLS for all sessions')
+    parser.add_argument('--tls-ca', type=str, 
+                        help='Filename for CA chain')
+    parser.add_argument('--tls-cert', type=str, 
+                        help='Filename for X.509 certificate')
+    parser.add_argument('--tls-key', type=str, 
+                        help='Filename for X.509 private key')
+    parser.add_argument('--tls-dhparam', type=str, 
+                        help='Filename for DH parameters')
     
-    parser_listen = subp.add_parser('listen', help='Listen for TCP connections')
+    parser_listen = subp.add_parser('listen', 
+                                    help='Listen for TCP connections')
     parser_listen.add_argument('--address', type=str, default='',
                                help='Listen name or address')
     parser_listen.add_argument('--port', type=int, default=4556,
                                help='Listen TCP port')
     
-    parser_conn = subp.add_parser('connect', help='Make a TCP connection')
-    parser_conn.add_argument('address', type=str, help='Host name or address')
+    parser_conn = subp.add_parser('connect', 
+                                  help='Make a TCP connection')
+    parser_conn.add_argument('address', type=str, 
+                             help='Host name or address')
     parser_conn.add_argument('--port', type=int, default=4556,
                              help='Host TCP port')
     
     args = parser.parse_args()
     
     logging.basicConfig(level=logging.DEBUG)
+    logging.debug('command args: %s', args)
     
     # Must run before connection or real main loop is constructed
     DBusGMainLoop(set_as_default=True)
@@ -1161,6 +1253,7 @@ def main():
             config.ssl_ctx.load_dh_params(args.tls_dhparam)
     
     config.eid = args.eid
+    config.tls_require = args.tls_require
     
     if args.keepalive:
         config.keepalive_time = args.keepalive

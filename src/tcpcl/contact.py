@@ -35,27 +35,6 @@ class ContactV3(formats.NoPayloadPacket):
     ]
 packet.bind_layers(Head, ContactV3, version=3)
 
-class ContactV4ExtendHeader(packet.Packet):
-    ''' TCPCLv4 Extension item header. '''
-    
-    fields_desc = [
-        fields.FlagsField('flags', default=0, size=8,
-                          # names in LSbit-first order
-                          names=['CRITICAL']),
-        formats.UInt16Field('type', default=None),
-        formats.UInt32PayloadLenField('length', default=None),
-    ]
-
-class ExtendItemReactiveFragment(packet.Packet):
-    ''' Extension type for reactive fragmentation negotiation. '''
-    
-    fields_desc = [
-        fields.FlagsField('flags', default=0, size=8,
-                          # names in LSbit-first order
-                          names=['CAN_GENERATE', 'CAN_RECEIVE']),
-    ]
-packet.bind_layers(ContactV4ExtendHeader, ExtendItemReactiveFragment, type=0x0001)
-
 class ContactV4(formats.NoPayloadPacket):
     ''' TCPCLv4 Contact header pseudo-message. '''
     
@@ -68,19 +47,5 @@ class ContactV4(formats.NoPayloadPacket):
         fields.FlagsField('flags', default=0, size=8,
                           # names in LSbit-first order
                           names=['CAN_TLS']),
-        formats.UInt16Field('keepalive', default=0),
-        formats.UInt64Field('segment_mru', default=SIZE_MAX),
-        formats.UInt64Field('transfer_mru', default=SIZE_MAX),
-        
-        formats.UInt16FieldLenField('eid_length', default=None,
-                                    length_of='eid_data'),
-        fields.StrLenField('eid_data', default='',
-                           length_from=lambda pkt: pkt.eid_length),
-        
-        formats.UInt64FieldLenField('ext_size', default=None,
-                                    length_of='ext_items'),
-        fields.PacketListField('ext_items', default=[],
-                               cls=ContactV4ExtendHeader,
-                               length_from=lambda pkt: pkt.ext_size),
     ]
 packet.bind_layers(Head, ContactV4, version=4)

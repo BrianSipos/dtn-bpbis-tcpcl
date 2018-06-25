@@ -13,40 +13,68 @@ class MessageHead(packet.Packet):
     def post_dissection(self, pkt):
         ''' remove padding from payload list after disect() completes '''
         formats.remove_padding(self)
-    
-class Keepalive(formats.NoPayloadPacket):
-    ''' An empty KEEPALIVE message. '''
 
-class Shutdown(formats.NoPayloadPacket):
-    ''' An flag-dependent SHUTDOWN message. '''
+class SessionExtendHeader(packet.Packet):
+    ''' Session Extension Item header. '''
+    
+    fields_desc = [
+        fields.FlagsField('flags', default=0, size=8,
+                          # names in LSbit-first order
+                          names=['CRITICAL']),
+        formats.UInt16Field('type', default=None),
+        formats.UInt32PayloadLenField('length', default=None),
+    ]
+
+class SessionInit(formats.NoPayloadPacket):
+    ''' An SESS_INIT with no payload. '''
+    
+    #: Largest 64-bit size value
+    SIZE_MAX = 2**64 - 1
+    
+    fields_desc = [
+        formats.UInt16Field('keepalive', default=0),
+        formats.UInt64Field('segment_mru', default=SIZE_MAX),
+        formats.UInt64Field('transfer_mru', default=SIZE_MAX),
+        
+        formats.UInt16FieldLenField('eid_length', default=None,
+                                    length_of='eid_data'),
+        fields.StrLenField('eid_data', default='',
+                           length_from=lambda pkt: pkt.eid_length),
+        
+        formats.UInt64FieldLenField('ext_size', default=None,
+                                    length_of='ext_items'),
+        fields.PacketListField('ext_items', default=[],
+                               cls=SessionExtendHeader,
+                               length_from=lambda pkt: pkt.ext_size),
+    ]
+
+class SessionTerm(formats.NoPayloadPacket):
+    ''' An flag-dependent SESS_TERM message. '''
     #: MessageHead.flags mask
     FLAG_REASON = 0x2
-    #: MessageHead.flags mask
-    FLAG_DELAY = 0x1
     
     #: Disconnected because of idleness
     REASON_IDLE = 0
-    #: Disconnected because TLS negotiation failed
-    REASON_TLS_FAIL = 4
     #: ByteEnumField form
     REASONS = {
         REASON_IDLE: 'IDLE',
-        1: 'CL_MISMATCH',
+        1: 'VERSION_MISMATCH',
         2: 'BUSY',
-        3: 'BP_MISMATCH',
-        REASON_TLS_FAIL: 'TLS_FAIL',
+        3: 'CONTACT_FAILURE',
+        4: 'RESOURCE_EXHAUSTION',
     }
     
     fields_desc = [
         fields.FlagsField('flags', default=0, size=8,
                           # names in LSbit-first order
-                          names=['D', 'R']),
+                          names=[None, 'R']),
         fields.ConditionalField(fields.ByteEnumField('reason', default=None, enum=REASONS),
-                                cond=lambda pkt: pkt.flags & Shutdown.FLAG_REASON),
-        fields.ConditionalField(formats.UInt16Field('conn_delay', default=None),
-                                cond=lambda pkt: pkt.flags & Shutdown.FLAG_DELAY)
+                                cond=lambda pkt: pkt.flags & SessionTerm.FLAG_REASON),
         
     ]
+
+class Keepalive(formats.NoPayloadPacket):
+    ''' An empty KEEPALIVE message. '''
 
 class RejectMsg(formats.NoPayloadPacket):
     ''' A REJECT with no payload. '''
@@ -67,12 +95,21 @@ class RejectMsg(formats.NoPayloadPacket):
         fields.ByteEnumField('reason', default=None, enum=REASONS),
     ]
 
+#: Same encoding, different type IDs
+TransferExtendHeader = SessionExtendHeader
+
 class TransferInit(formats.NoPayloadPacket):
-    ''' A LENGTH with no payload. '''
+    ''' An XFER_INIT with no payload. '''
     
     fields_desc = [
         formats.UInt64Field('transfer_id', default=None),
         formats.UInt64Field('length', default=None),
+        
+        formats.UInt64FieldLenField('ext_size', default=None,
+                                    length_of='ext_items'),
+        fields.PacketListField('ext_items', default=[],
+                               cls=TransferExtendHeader,
+                               length_from=lambda pkt: pkt.ext_size),
     ]
 
 class TransferRefuse(formats.NoPayloadPacket):
@@ -125,6 +162,7 @@ packet.bind_layers(MessageHead, TransferSegment, msg_id=0x1)
 packet.bind_layers(MessageHead, TransferAck, msg_id=0x2)
 packet.bind_layers(MessageHead, TransferRefuse, msg_id=0x3)
 packet.bind_layers(MessageHead, Keepalive, msg_id=0x4)
-packet.bind_layers(MessageHead, Shutdown, msg_id=0x5)
+packet.bind_layers(MessageHead, SessionTerm, msg_id=0x5)
 packet.bind_layers(MessageHead, TransferInit, msg_id=0x6)
 packet.bind_layers(MessageHead, RejectMsg, msg_id=0x7)
+packet.bind_layers(MessageHead, SessionInit, msg_id=0x8)
