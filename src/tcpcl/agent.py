@@ -14,8 +14,8 @@ from dbus.mainloop.glib import DBusGMainLoop
 import StringIO
 import os
 import math
-from scapy import packet
-from tcpcl import contact, messages
+import datetime
+from tcpcl import formats, contact, messages, xferextend
 
 def combine_flags(names):
     if len(names):
@@ -178,14 +178,14 @@ class Connection(object):
         try:
             s_tls.do_handshake()
         except ssl.SSLError as err:
-            self.__logger.debug('TLS failed: {0}'.format(err))
+            self.__logger.debug('TLS failed: %s', err)
             # leave non-TLS socket in place
             #self.__s_tls = None
             self.unsecure()
             raise
         
         self.__s_tls = s_tls
-        self.__logger.info('TLS secured with {0}'.format(self.__s_tls.cipher()))
+        self.__logger.info('TLS secured with %s', self.__s_tls.cipher())
         
         self.__s_tls.setblocking(0)
         self.__avail_rx_tls_id = glib.io_add_watch(self.__s_tls, glib.IO_IN, self._avail_rx_tls)
@@ -211,7 +211,10 @@ class Connection(object):
         else:
             return 'plain'
     
+    #: Size of data stream chunks
     CHUNK_SIZE = 10240
+    #: True to log actual hex-encoded data
+    DO_DEBUG_DATA = False
     
     def _avail_rx_notls(self, *args, **kwargs):
         ''' Callback for new :py:obj:`__s_notls` RX data. '''
@@ -236,7 +239,7 @@ class Connection(object):
             self.close()
             return False
         
-        self.__logger.debug('Received {0} octets ({1})'.format(len(data), self._conn_name()))
+        self.__logger.debug('Received %d octets (%s)', len(data), self._conn_name())
         self.recv_raw(data)
         return True
     
@@ -274,8 +277,6 @@ class Connection(object):
     def _tx_proxy(self, sock):
         ''' Process up to a single CHUNK_SIZE outgoing block.
         '''
-        self.__logger.debug('TX proxy')
-        
         # Pull messages into buffer
         if len(self.__tx_buf) < self.CHUNK_SIZE:
             data = self.send_raw(self.CHUNK_SIZE)
@@ -285,18 +286,18 @@ class Connection(object):
             up_empty = False
     
         # Flush chunks from the buffer
+        sent_size = 0
         if len(self.__tx_buf) > 0:
             data = self.__tx_buf[:self.CHUNK_SIZE]
-            self.__logger.debug('Sending message {0}/{1} octets ({2})'.format(len(data), len(self.__tx_buf), self._conn_name()))
+            self.__logger.debug('Sending message %d/%d octets (%s)', len(data), len(self.__tx_buf), self._conn_name())
             tx_size = sock.send(data)
-            self.__logger.debug('Sent {0} octets'.format(tx_size))
+            self.__logger.debug('Sent %d octets', tx_size)
             self.__tx_buf = self.__tx_buf[tx_size:]
-            # send did not take all
-            #if tx_size < self.CHUNK_SIZE:
-            #    break
+            sent_size += tx_size
             
         buf_empty = (len(self.__tx_buf) == 0)
-        self.__logger.debug('TX remain {0} octets and {1}'.format(len(self.__tx_buf), not up_empty))
+        if sent_size:
+            self.__logger.debug('TX %d octets, remain %d octets (msg empty %s)', sent_size, len(self.__tx_buf), up_empty)
         cont = (not buf_empty or not up_empty)
         return cont
     
@@ -352,13 +353,16 @@ class Messenger(Connection):
         self.__logger = logging.getLogger(self.__class__.__name__)
         self._config = config
         
+        # agent-configured parmeters
+        self._do_send_ack_inter = None
+        self._ack_inter_time_min = datetime.timedelta(milliseconds=100)
+        self._do_send_ack_final = None
         # negotiated parameters
         self._keepalive_time = 0
         self._idle_time = 0
         self._send_segment_size = None
-        self._do_send_ack_inter = None
-        self._do_send_ack_final = None
-        
+        # agent timers
+        self._ack_inter_time_last = None
         self._keepalive_timer_id = None
         self._idle_timer_id = None
         
@@ -466,25 +470,32 @@ class Messenger(Connection):
         self._idle_reset()
         # always append
         self.__rx_buf += data
+        self.__logger.debug('RX buffer size %d octets', len(self.__rx_buf))
         
         # Handle as many messages as are present
-        while True:
+        while len(self.__rx_buf):
             if self._in_conn:
                 msgcls = messages.MessageHead
             else:
                 msgcls = contact.Head
             
             # Probe for full message (by reading back encoded data)
-            pkt = msgcls(self.__rx_buf)
-            pkt_data = str(pkt)
-            if not self.__rx_buf.startswith(pkt_data):
+            try:
+                pkt = msgcls(self.__rx_buf)
+                pkt_data = str(pkt)
+            except formats.VerifyError as err:
+                self.__logger.debug('Decoded partial packet: %s', err)
                 return
-            self.__logger.debug('Matched message {0} octets'.format(len(pkt_data)))
-            #self.__logger.debug('RX data: {0}'.format(pkt_data.encode('hex')))
+            except Exception as err:
+                self.__logger.error('Failed to decode packet: %s', err)
+                return
+            if self.DO_DEBUG_DATA:
+                self.__logger.debug('RX packet data: %s', pkt_data.encode('hex'))
+            self.__logger.debug('Matched message %d octets', len(pkt_data))
             
             # Keep final padding as future data
             self.__rx_buf = self.__rx_buf[len(pkt_data):]
-            self.__logger.debug('RX remain {0} octets'.format(len(self.__rx_buf)))
+            self.__logger.debug('RX remain %d octets', len(self.__rx_buf))
             
             self.recv_message(pkt)
     
@@ -493,7 +504,7 @@ class Messenger(Connection):
         
         :param pkt: The message packet received.
         '''
-        self.__logger.info('RX: {0}'.format(repr(pkt)))
+        self.__logger.info('RX: %s', repr(pkt))
         
         if isinstance(pkt, contact.Head):
             if pkt.magic != contact.MAGIC_HEAD:
@@ -566,8 +577,6 @@ class Messenger(Connection):
                     pass
                 
                 # Delegated handlers
-                elif msgcls == messages.TransferInit:
-                    self.recv_xfer_init(pkt.payload.transfer_id, pkt.payload.length)
                 elif msgcls == messages.TransferSegment:
                     self.recv_xfer_data(transfer_id=pkt.payload.transfer_id,
                                       data=pkt.payload.getfieldval('data'),
@@ -624,14 +633,14 @@ class Messenger(Connection):
         
         self._keepalive_time = min(self._sessinit_this.keepalive,
                                    self._sessinit_peer.keepalive)
-        self.__logger.debug('KEEPALIVE time {0}'.format(self._keepalive_time))
+        self.__logger.debug('KEEPALIVE time %d', self._keepalive_time)
         self._idle_time = self._config.idle_time
         self._keepalive_reset()
         self._idle_reset()
         
         self._send_segment_size = min(self._config.segment_size,
                                       self._sessinit_peer.segment_mru)
-        self.__logger.debug('TX seg size {0}'.format(self._send_segment_size))
+        self.__logger.debug('TX seg size %d', self._send_segment_size)
         
         self._do_send_ack_inter = True
         self._do_send_ack_final = True
@@ -640,7 +649,8 @@ class Messenger(Connection):
         ''' Pop some data from the TX queue.
         '''
         data = self.__tx_buf[:size]
-        self.__logger.debug('TX popping {0} of {1}'.format(len(data), len(self.__tx_buf)))
+        if data:
+            self.__logger.debug('TX popping %d of %d', len(data), len(self.__tx_buf))
         self.__tx_buf = self.__tx_buf[len(data):]
         
         self.send_buffer_decreased(len(self.__tx_buf))
@@ -651,9 +661,10 @@ class Messenger(Connection):
         
         :param pkt: The message packet to send.
         '''
-        self.__logger.info('TX: {0}'.format(repr(pkt)))
+        self.__logger.info('TX: %s', repr(pkt))
         pkt_data = str(pkt)
-        #self.__logger.debug('TX data: {0}'.format(pkt_data.encode('hex')))
+        if self.DO_DEBUG_DATA:
+            self.__logger.debug('TX packet data: %s', pkt_data.encode('hex'))
         
         self.__tx_buf += pkt_data
         self.send_ready()
@@ -671,8 +682,7 @@ class Messenger(Connection):
         '''
         rej_load = messages.RejectMsg(reason=reason)
         if pkt is not None:
-            rej_load.rej_id = pkt.msg_id
-            rej_load.rej_flags = pkt.flags
+            rej_load.rej_msg_id = pkt.msg_id
         self.send_message(messages.MessageHead()/rej_load)
     
     def do_sess_term(self, reason=None):
@@ -696,19 +706,7 @@ class Messenger(Connection):
         if not self._as_passive:
             # Passive side listens first
             self._conhead_this = self.send_contact_header().payload
-    
-    def recv_xfer_init(self, transfer_id, length):
-        ''' Handle reception of XFER_INIT message.
-        
-        :param transfer_id: The bundle ID number.
-        :type transfer_id: int
-        :param length: The bundle length.
-        :type length: int
-        '''
-        self.__logger.debug('XFER_INIT {0} {1}'.format(transfer_id, length))
-        if not self._in_sess:
-            raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
-        
+
     def recv_xfer_data(self, transfer_id, data, flags):
         ''' Handle reception of XFER_DATA message.
         
@@ -717,7 +715,7 @@ class Messenger(Connection):
         :param data: The segment data.
         :type data: str
         '''
-        self.__logger.debug('XFER_DATA {0} {1}'.format(transfer_id, flags))
+        self.__logger.debug('XFER_DATA %d %s', transfer_id, flags)
         if not self._in_sess:
             raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
         
@@ -729,7 +727,7 @@ class Messenger(Connection):
         :param length: The acknowledged length.
         :type length: int
         '''
-        self.__logger.debug('XFER_ACK {0} {1}'.format(transfer_id, length))
+        self.__logger.debug('XFER_ACK %d %s', transfer_id, length)
         if not self._in_sess:
             raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
         
@@ -741,26 +739,11 @@ class Messenger(Connection):
         :param reason: The refusal reason code.
         :type reason: int
         '''
-        self.__logger.debug('XFER_REFUSE {0} {1}'.format(transfer_id, reason))
+        self.__logger.debug('XFER_REFUSE %d %s', transfer_id, reason)
         if not self._in_sess:
             raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
-    
-    def send_xfer_init(self, transfer_id, length):
-        ''' Send an XFER_INIT message.
-        
-        :param transfer_id: The bundle ID number.
-        :type transfer_id: int
-        :param length: The bundle length.
-        :type length: int
-        '''
-        if not self._in_sess:
-            raise RuntimeError('Attempt to transfer before session established')
-        
-        self.send_message(messages.MessageHead()/
-                          messages.TransferInit(transfer_id=transfer_id,
-                                                length=length))
-        
-    def send_xfer_data(self, transfer_id, data, flg):
+
+    def send_xfer_data(self, transfer_id, data, flg, ext=[]):
         ''' Send a XFER_DATA message.
         
         :param transfer_id: The bundle ID number.
@@ -769,28 +752,36 @@ class Messenger(Connection):
         :type data: str
         :param flg: Data flags for :py:class:`TransferSegment`
         :type flg: int
+        :param ext: Extension items for the starting segment only.
+        :type ext: list
         '''
         if not self._in_sess:
             raise RuntimeError('Attempt to transfer before session established')
+        if ext and not flg & messages.TransferSegment.FLAG_START:
+            raise RuntimeError('Cannot send extension items outside of START message')
         
         self.send_message(messages.MessageHead()/
                           messages.TransferSegment(transfer_id=transfer_id,
                                                    flags=flg,
-                                                   data=data))
+                                                   data=data,
+                                                   ext_items=ext))
         
-    def send_xfer_ack(self, transfer_id, length):
+    def send_xfer_ack(self, transfer_id, length, flg):
         ''' Send a XFER_ACK message.
         
         :param transfer_id: The bundle ID number.
         :type transfer_id: int
         :param length: The acknowledged length.
         :type length: int
+        :param flg: Data flags for :py:class:`TransferAck`
+        :type flg: int
         '''
         if not self._in_sess:
             raise RuntimeError('Attempt to transfer before session established')
         
         self.send_message(messages.MessageHead()/
                           messages.TransferAck(transfer_id=transfer_id,
+                                               flags=flg,
                                                length=length))
     
     def send_xfer_refuse(self, transfer_id, reason):
@@ -862,6 +853,7 @@ class ContactHandler(Messenger, dbus.service.Object):
         return bid
     
     def _rx_setup(self, transfer_id):
+        ''' Begin reception of a transfer. '''
         self._rx_tmp = BundleItem()
         self._rx_tmp.transfer_id = transfer_id
         self._rx_tmp.file = StringIO.StringIO()
@@ -871,21 +863,12 @@ class ContactHandler(Messenger, dbus.service.Object):
     def _rx_teardown(self):
         self._rx_tmp = None
     
-    def recv_xfer_init(self, transfer_id, length):
-        Messenger.recv_xfer_init(self, transfer_id, length)
-        
-        # reject if length is received mid-bundle
-        if self._rx_tmp:
-            raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
-        self._rx_setup(transfer_id)
-    
     def recv_xfer_data(self, transfer_id, data, flags):
         Messenger.recv_xfer_data(self, transfer_id, data, flags)
         
         if flags & messages.TransferSegment.FLAG_START:
-            # Start without a prior XFER_INIT
-            if self._rx_tmp is None:
-                raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
+            self._rx_setup(transfer_id)
+            self._ack_inter_time_last = None
         
         elif self._rx_tmp is None or self._rx_tmp.transfer_id != transfer_id:
             # Each ID in sequence after start must be identical
@@ -895,18 +878,21 @@ class ContactHandler(Messenger, dbus.service.Object):
         
         if flags & messages.TransferSegment.FLAG_END:
             if self._do_send_ack_final:
-                self.send_xfer_ack(transfer_id, self._rx_tmp.file.tell())
+                self.send_xfer_ack(transfer_id, self._rx_tmp.file.tell(), flags)
             
             item = self._rx_tmp
             self._rx_bundles.append(item)
             self._rx_map[item.transfer_id] = item
             
-            self.__logger.info('Finished RX size {0}'.format(item.file.tell()))
+            self.__logger.info('Finished RX size %d', item.file.tell())
             self.recv_bundle_finished(str(item.transfer_id))
             self._rx_teardown()
         else:
             if self._do_send_ack_inter:
-                self.send_xfer_ack(transfer_id, self._rx_tmp.file.tell())
+                nowtime = datetime.datetime.utcnow()
+                if self._ack_inter_time_last is None or nowtime - self._ack_inter_time_last > self._ack_inter_time_min:
+                    self.send_xfer_ack(transfer_id, self._rx_tmp.file.tell(), flags)
+                    self._ack_inter_time_last = nowtime
     
     def recv_xfer_ack(self, transfer_id, length):
         Messenger.recv_xfer_ack(self, transfer_id, length)
@@ -925,7 +911,7 @@ class ContactHandler(Messenger, dbus.service.Object):
     def recv_xfer_refuse(self, transfer_id, reason):
         Messenger.recv_xfer_refuse(self, transfer_id, reason)
         
-        self.send_bundle_finished(transfer_id, 'refused with code {0}'.format(reason))
+        self.send_bundle_finished(transfer_id, 'refused with code %s', reason)
         self._tx_map.pop(transfer_id)
         
         # interrupt in-progress
@@ -1039,7 +1025,7 @@ class ContactHandler(Messenger, dbus.service.Object):
         ''' Perform the next TX segment if possible.
         '''
         self._process_queue_pend = None
-        self.__logger.debug('Processing queue of {0} items'.format(len(self._tx_bundles)))
+        self.__logger.debug('Processing queue of %d items', len(self._tx_bundles))
         
         # work from the head of the list
         if self._tx_tmp is None:
@@ -1055,18 +1041,21 @@ class ContactHandler(Messenger, dbus.service.Object):
             self._tx_seg_ix = 0
             
             self.send_bundle_started(str(self._tx_tmp.transfer_id))
-            self.send_xfer_init(self._tx_tmp.transfer_id, octet_count)
         
         # send next segment
         data = self._tx_tmp.file.read(self._send_segment_size)
         flg = 0
+        xfer_ext = []
         if self._tx_seg_ix == 0:
             flg |= messages.TransferSegment.FLAG_START
+            xfer_ext.append(
+                messages.TransferExtendHeader()/xferextend.Length(total_length=octet_count)
+            )
         if self._tx_seg_ix == self._tx_seg_num - 1:
             flg |= messages.TransferSegment.FLAG_END
         
         # Next segment of data
-        self.send_xfer_data(self._tx_tmp.transfer_id, data, flg)
+        self.send_xfer_data(self._tx_tmp.transfer_id, data, flg, xfer_ext)
         self._tx_seg_ix += 1
         
         if flg & messages.TransferSegment.FLAG_END:
@@ -1105,7 +1094,7 @@ class Agent(dbus.service.Object):
         path = self._get_obj_path()
         hdl = ContactHandler(hdl_kwargs=kwargs,
                            bus_kwargs=dict(conn=self._config.bus_conn, object_path=path))
-        self.__logger.info('New handler at "{0}"'.format(path))
+        self.__logger.info('New handler at "%s"', path)
         
         self._handlers.append(hdl)
         if not self._bindsock:
@@ -1166,7 +1155,7 @@ class Agent(dbus.service.Object):
         try:
             hdl.start()
         except Exception as err:
-            self.__logger.warning('Failed: {0}'.format(err))
+            self.__logger.warning('Failed: %s', err)
         
         return True
     
@@ -1240,7 +1229,7 @@ def main():
     config.bus_conn = dbus.bus.BusConnection(dbus.bus.BUS_SESSION)
     if args.bus_service:
         bus_serv = dbus.service.BusName(bus=config.bus_conn, name=args.bus_service, do_not_queue=True)
-        logging.info('Registered as "{0}"'.format(bus_serv.get_name()))
+        logging.info('Registered as "%s"', bus_serv.get_name())
     
     if args.tls_enable:
         config.ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)

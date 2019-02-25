@@ -28,6 +28,12 @@ class UInt16FieldLenField(fields.FieldLenField):
         kwargs['fmt'] = '!H'
         fields.FieldLenField.__init__(self, *args, **kwargs)
 
+class UInt32FieldLenField(fields.FieldLenField):
+    ''' Unsigned 32-bit value. '''
+    def __init__(self, *args, **kwargs):
+        kwargs['fmt'] = '!I'
+        fields.FieldLenField.__init__(self, *args, **kwargs)
+
 class UInt64FieldLenField(fields.FieldLenField):
     ''' Unsigned 64-bit value. '''
     def __init__(self, *args, **kwargs):
@@ -38,6 +44,12 @@ class UInt32PayloadLenField(fields.LenField):
     ''' Unsigned 32-bit value. '''
     def __init__(self, *args, **kwargs):
         kwargs['fmt'] = '!I'
+        fields.LenField.__init__(self, *args, **kwargs)
+
+class UInt64PayloadLenField(fields.LenField):
+    ''' Unsigned 32-bit value. '''
+    def __init__(self, *args, **kwargs):
+        kwargs['fmt'] = '!Q'
         fields.LenField.__init__(self, *args, **kwargs)
 
 class SdnvField(fields.Field):
@@ -162,3 +174,18 @@ def remove_padding(pkt):
             break
         
         testload = testload.payload
+
+class VerifyError(RuntimeError):
+    ''' An exception to indicate a read verification error. '''
+
+def verify_sized_item(length, item):
+    ''' Verify consistency of reading a sized item.
+    :param length: The expected size of the field/packet.
+    :type length: int or None
+    :param item: The field or packet to take size of.
+    :raise VerifyError: if inconsistent.
+    '''
+    if length is not None:
+        item_len = len(str(item))
+        if length != item_len:
+            raise VerifyError('Read length {0} inconsistent with actual data {1}'.format(length, item_len))

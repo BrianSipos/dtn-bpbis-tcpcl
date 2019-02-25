@@ -13,17 +13,35 @@ class MessageHead(packet.Packet):
     def post_dissection(self, pkt):
         ''' remove padding from payload list after disect() completes '''
         formats.remove_padding(self)
+        
+        if not self.payload:
+            raise formats.VerifyError('Message without payload')
+        if isinstance(self.payload, packet.Raw):
+            raise formats.VerifyError('Message with improper payload')
+        
+        packet.Packet.post_dissection(self, pkt)
 
-class SessionExtendHeader(packet.Packet):
-    ''' Session Extension Item header. '''
+class TlvHead(packet.Packet):
+    ''' Generic TLV header with data as payload. '''
+    
+    FLAG_CRITICAL = 0x01
+    #: In FlagsField form (LSbit-first order)
+    FLAGS_NAMES = ['CRITICAL']
     
     fields_desc = [
         fields.FlagsField('flags', default=0, size=8,
-                          # names in LSbit-first order
-                          names=['CRITICAL']),
+                          names=FLAGS_NAMES),
         formats.UInt16Field('type', default=None),
         formats.UInt32PayloadLenField('length', default=None),
     ]
+    
+    def post_dissection(self, pkt):
+        ''' Verify consistency of packet. '''
+        formats.verify_sized_item(self.length, self.payload)
+        packet.Packet.post_dissection(self, pkt)
+
+class SessionExtendHeader(TlvHead):
+    ''' Session Extension Item header with data as payload. '''
 
 class SessionInit(formats.NoPayloadPacket):
     ''' An SESS_INIT with no payload. '''
@@ -41,36 +59,46 @@ class SessionInit(formats.NoPayloadPacket):
         fields.StrLenField('eid_data', default='',
                            length_from=lambda pkt: pkt.eid_length),
         
-        formats.UInt64FieldLenField('ext_size', default=None,
+        formats.UInt32FieldLenField('ext_size', default=None,
                                     length_of='ext_items'),
         fields.PacketListField('ext_items', default=[],
                                cls=SessionExtendHeader,
                                length_from=lambda pkt: pkt.ext_size),
     ]
+    
+    def post_dissection(self, pkt):
+        ''' Verify consistency of packet. '''
+        formats.verify_sized_item(self.eid_length, self.eid_data)
+
+        (field, val) = self.getfield_and_val('ext_items')
+        if val is not None:
+            encoded = field.addfield(self, '', val)
+            formats.verify_sized_item(self.ext_size, encoded)
+
+        packet.Packet.post_dissection(self, pkt)
 
 class SessionTerm(formats.NoPayloadPacket):
     ''' An flag-dependent SESS_TERM message. '''
-    #: MessageHead.flags mask
-    FLAG_REASON = 0x2
     
-    #: Disconnected because of idleness
-    REASON_IDLE = 0
+    FLAG_ACK = 0x01
+    #: In FlagsField form (LSbit-first order)
+    FLAGS_NAMES = ['ACK']
+    
+    REASON_UNKNOWN = 0
     #: ByteEnumField form
     REASONS = {
-        REASON_IDLE: 'IDLE',
-        1: 'VERSION_MISMATCH',
-        2: 'BUSY',
-        3: 'CONTACT_FAILURE',
-        4: 'RESOURCE_EXHAUSTION',
+        REASON_UNKNOWN: 'UNKNOWN',
+        1: 'IDLE_TIMEOUT',
+        2: 'VERSION_MISMATCH',
+        3: 'BUSY',
+        4: 'CONTACT_FAILURE',
+        5: 'RESOURCE_EXHAUSTION',
     }
     
     fields_desc = [
         fields.FlagsField('flags', default=0, size=8,
-                          # names in LSbit-first order
-                          names=[None, 'R']),
-        fields.ConditionalField(fields.ByteEnumField('reason', default=None, enum=REASONS),
-                                cond=lambda pkt: pkt.flags & SessionTerm.FLAG_REASON),
-        
+                          names=FLAGS_NAMES),
+        fields.ByteEnumField('reason', default=None, enum=REASONS),
     ]
 
 class Keepalive(formats.NoPayloadPacket):
@@ -95,22 +123,8 @@ class RejectMsg(formats.NoPayloadPacket):
         fields.ByteEnumField('reason', default=None, enum=REASONS),
     ]
 
-#: Same encoding, different type IDs
-TransferExtendHeader = SessionExtendHeader
-
-class TransferInit(formats.NoPayloadPacket):
-    ''' An XFER_INIT with no payload. '''
-    
-    fields_desc = [
-        formats.UInt64Field('transfer_id', default=None),
-        formats.UInt64Field('length', default=None),
-        
-        formats.UInt64FieldLenField('ext_size', default=None,
-                                    length_of='ext_items'),
-        fields.PacketListField('ext_items', default=[],
-                               cls=TransferExtendHeader,
-                               length_from=lambda pkt: pkt.ext_size),
-    ]
+class TransferExtendHeader(TlvHead):
+    ''' Transfer Extension Item header with data as payload. '''
 
 class TransferRefuse(formats.NoPayloadPacket):
     ''' An XFER_REFUSE with no payload. '''
@@ -121,10 +135,10 @@ class TransferRefuse(formats.NoPayloadPacket):
     REASON_RETRANSMIT = 0x3
     #: ByteEnumField form
     REASONS = {
-        0: 'UNKNOWN',
-        1: 'COMPLETED',
-        2: 'RESOURCES',
-        3: 'RETRANSMIT',
+        REASON_UNKNOWN: 'UNKNOWN',
+        REASON_COMPLETED: 'COMPLETED',
+        REASON_RESOURCES: 'RESOURCES',
+        REASON_RETRANSMIT: 'RETRANSMIT',
     }
     
     fields_desc = [
@@ -133,27 +147,47 @@ class TransferRefuse(formats.NoPayloadPacket):
     ]
 
 class TransferSegment(formats.NoPayloadPacket):
-    ''' A XFER_SEGMENT with bundle data as payload. '''
+    ''' A XFER_SEGMENT with bundle data as field. '''
     
     FLAG_START = 0x2
     FLAG_END   = 0x1
+    #: In FlagsField form (LSbit-first order)
+    FLAGS_NAMES = ['END', 'START']
     
     fields_desc = [
         fields.FlagsField('flags', default=0, size=8,
-                          # names in LSbit-first order
-                          names=['E', 'S']),
+                          names=FLAGS_NAMES),
         formats.UInt64Field('transfer_id', default=None),
+        fields.ConditionalField(
+            cond=lambda pkt: pkt.flags & TransferSegment.FLAG_START,
+            fld=formats.UInt32FieldLenField('ext_size', default=None, length_of='ext_items'),
+        ),
+        fields.ConditionalField(
+            cond=lambda pkt: pkt.flags & TransferSegment.FLAG_START,
+            fld=fields.PacketListField('ext_items', default=[],
+                                       cls=TransferExtendHeader,
+                                       length_from=lambda pkt: pkt.ext_size),
+        ),
         formats.UInt64FieldLenField('length', default=None, length_of='data'),
         formats.BlobField('data', '', length_from=lambda pkt: pkt.length),
     ]
+    
+    def post_dissection(self, pkt):
+        ''' Verify consistency of packet. '''
+        (field, val) = self.getfield_and_val('ext_items')
+        if val is not None:
+            encoded = field.addfield(self, '', val)
+            formats.verify_sized_item(self.ext_size, encoded)
+        
+        formats.verify_sized_item(self.length, self.getfieldval('data'))
+        packet.Packet.post_dissection(self, pkt)
 
 class TransferAck(formats.NoPayloadPacket):
     ''' An XFER_ACK with no payload. '''
     
     fields_desc = [
         fields.FlagsField('flags', default=0, size=8,
-                          # names in LSbit-first order
-                          names=['E', 'S']),
+                          names=TransferSegment.FLAGS_NAMES),
         formats.UInt64Field('transfer_id', default=None),
         formats.UInt64Field('length', default=None),
     ]
@@ -163,6 +197,5 @@ packet.bind_layers(MessageHead, TransferAck, msg_id=0x2)
 packet.bind_layers(MessageHead, TransferRefuse, msg_id=0x3)
 packet.bind_layers(MessageHead, Keepalive, msg_id=0x4)
 packet.bind_layers(MessageHead, SessionTerm, msg_id=0x5)
-packet.bind_layers(MessageHead, TransferInit, msg_id=0x6)
 packet.bind_layers(MessageHead, RejectMsg, msg_id=0x7)
 packet.bind_layers(MessageHead, SessionInit, msg_id=0x8)

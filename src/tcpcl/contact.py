@@ -4,7 +4,6 @@
 from scapy import fields, packet
 from . import formats
 
-
 #: Header magic prefix-data
 MAGIC_HEAD = 'dtn!'
 
@@ -33,6 +32,12 @@ class ContactV3(formats.NoPayloadPacket):
         fields.StrLenField('eid_data', default='',
                            length_from=lambda pkt: pkt.eid_length),
     ]
+    
+    def post_dissection(self, pkt):
+        ''' Verify consistency of packet. '''
+        formats.verify_sized_item(self.eid_length, self.eid_data)
+        packet.Packet.post_dissection(self, pkt)
+
 packet.bind_layers(Head, ContactV3, version=3)
 
 class ContactV4(formats.NoPayloadPacket):
@@ -48,4 +53,5 @@ class ContactV4(formats.NoPayloadPacket):
                           # names in LSbit-first order
                           names=['CAN_TLS']),
     ]
+
 packet.bind_layers(Head, ContactV4, version=4)

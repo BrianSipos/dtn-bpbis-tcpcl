@@ -67,7 +67,7 @@
         <email>simon@per.reau.lt</email>
       </address>
     </author>
-    <date year="2018" month="June" day="24" />
+    <date year="2019" month="February" day="25" />
     <area>Transport</area>
     <workgroup>Delay Tolerant Networking</workgroup>
 
@@ -233,7 +233,8 @@
             <t hangText="Reception Initialized">
               The TCPCL supports indication to the reciver just before any
               transmssion data is sent.
-              This corresponds to reception of the XFER_INIT message.
+              This corresponds to reception of the XFER_SEGMENT message with
+              the START flag set.
             </t>
             <t hangText="Interrupt Reception">
               The TCPCL allows a BP agent to interrupt an individual transfer
@@ -455,17 +456,18 @@
         <t>
           Once the TCPCL session is established and configured in this way,
           bundles can be transferred in either direction.
-          Each transfer is performed by an initialization (XFER_INIT) message followed
-          by one or more logical segments of data within an XFER_SEGMENT message.
-          Multiple bundles can be transmitted consecutively on a single TCPCL
-          connection. Segments from different bundles are never interleaved.
+          Each transfer is performed by an sequence of 
+          logical segments of data within XFER_SEGMENT messages.
+          Multiple bundles can be transmitted consecutively in a single 
+          direction on a single TCPCL connection.
+          Segments from different bundles are never interleaved.
           Bundle interleaving can be
           accomplished by fragmentation at the BP layer or by establishing multiple
           TCPCL sessions between the same peers.
         </t>
         <t>
           A feature of this protocol is for the receiving node to send
-          acknowledgment (XFER_ACK) messages as bundle data segments arrive . The
+          acknowledgment (XFER_ACK) messages as bundle data segments arrive. The
           rationale behind these acknowledgments is to enable the sender node
           to determine how much of the bundle has been received, so that in
           case the session is interrupted, it can perform reactive
@@ -680,18 +682,18 @@ SESS_TERM Exchange
         </t>
         <figure anchor="fig-transfer-tx-states" title="Transfer sender states">
           <artwork xml:space="preserve">
-                                    +--Send XFER_DATA--+
-+--------+                          |                  |
-| Stream |                    +-------------+          |
-|  Idle  |---Send XFER_INIT-->| In Progress |&lt;---------+
-+--------+                    +-------------+
-                                    |
-     +------All segments sent-------+
+                                       +--Send XFER_SEGMENT--+
++--------+                             |                     |
+| Stream |                       +-------------+             |
+|  Idle  |---Send XFER_SEGMENT-->| In Progress |&lt;------------+
++--------+                        +-------------+
+                                       |
+     +---------All segments sent-------+
      |
      V
 +---------+                       +--------+
 | Waiting |---- Receive Final----&gt;| Stream |
-| for Ack |         Ack           |  IDLE  |
+| for Ack |       XFER_ACK        |  IDLE  |
 +---------+                       +--------+
 </artwork></figure>
         <t>
@@ -702,13 +704,13 @@ SESS_TERM Exchange
         </t>
         <figure anchor="fig-transfer-rx-states" title="Transfer receiver states">
           <artwork xml:space="preserve">
-                                      +-Receive XFER_DATA-+
-+--------+                            |     Send Ack      |
-| Stream |                      +-------------+           |
-|  IDLE  |--Receive XFER_INIT--&gt;| In Progress |&lt;----------+
-+--------+                      +-------------+
-                                      |
-     +---------Sent Final Ack---------+
+                                         +-Receive XFER_SEGMENT-+
++--------+                               |    Send XFER_ACK     |
+| Stream |                         +-------------+              |
+|  IDLE  |--Receive XFER_SEGMENT--&gt;| In Progress |&lt;-------------+
++--------+                         +-------------+
+                                         |
+     +--------Sent Final XFER_ACK--------+
      |
      V
 +--------+
@@ -782,8 +784,8 @@ SESS_TERM Exchange
           lengths &quot;L1&quot;, &quot;L2&quot;, and &quot;L3&quot;) from Entity A to Entity B.
         </t>
         <t>
-          Note that the sending node MAY transmit multiple XFER_SEGMENT
-          messages without necessarily waiting for the corresponding
+          Note that the sending node can transmit multiple XFER_SEGMENT
+          messages without waiting for the corresponding
           XFER_ACK responses. This enables pipelining of messages on a
           transfer stream. Although this example only demonstrates a single bundle
           transmission, it is also possible to pipeline multiple XFER_SEGMENT
@@ -808,11 +810,6 @@ SESS_TERM Exchange
     +-------------------------+      &lt;- |        SESS_INIT        |
                                         +-------------------------+
     
-    +-------------------------+
-    |        XFER_INIT        | -&gt;
-    |     Transfer ID [I1]    |
-    |    Total Length [L1]    |
-    +-------------------------+
     +-------------------------+
     |   XFER_SEGMENT (start)  | -&gt;
     |     Transfer ID [I1]    |
@@ -1123,11 +1120,6 @@ SESS_TERM Exchange
             Contains the session parameter inputs from one of the entities,
             as described in <xref target="sec-SESS_INIT" />.
           </c>
-          <c>XFER_INIT</c>
-          <c>
-            Contains the length (in octets) of the next transfer, as described in
-            <xref target="sec-XFER_INIT" />.
-          </c>
           <c>XFER_SEGMENT</c>
           <c>
             Indicates the transmission of a segment of bundle data, as described in
@@ -1187,7 +1179,7 @@ SESS_TERM Exchange
 +-------------------------------+
 |      EID Data (variable)      |
 +-------------------------------+
-| Session Extension Length (U64)|
+| Session Extension Length (U32)|
 +-------------------------------+
 | Session Extension Items (var.)|
 +-------------------------------+
@@ -1282,9 +1274,9 @@ SESS_TERM Exchange
                 associated Item Type.
                 This specification places no restrictions on an extension's use of
                 available Item Value data.
-                Extension specification SHOULD avoid the use of large data exchanges
-                within the TCPCL contact header as no bundle transfers can begin until
-                the full contact exchange and negotiation has been completed.
+                Extension specifications SHOULD avoid the use of large data lengths,
+                as no bundle transfers can begin until
+                the full extension data is sent.
               </t>
             </list>
           </t>
@@ -1525,8 +1517,8 @@ SESS_TERM Exchange
             and has no relation to concepts such as bundle fragmentation.
             Each invocation of TCPCL by the bundle protocol agent, requesting transmission
             of a bundle (fragmentary or otherwise), results in the initiation of a single
-            TCPCL transfer. Each transfer entails the sending of a XFER_INIT message
-            and some number of XFER_SEGMENT and XFER_ACK messages; all are correlated
+            TCPCL transfer. Each transfer entails the sending of a sequence of
+            some number of XFER_SEGMENT and XFER_ACK messages; all are correlated
             by the same Transfer ID.
           </t>
           <t>
@@ -1541,150 +1533,6 @@ SESS_TERM Exchange
             For bidirectional bundle transfers, a TCPCL node SHOULD NOT rely on any
             relation between Transfer IDs originating from each side of the TCPCL session.
           </t>
-        </section>
-
-        <section anchor="sec-XFER_INIT" title="Transfer Initialization (XFER_INIT)">
-          <t>
-            The XFER_INIT message contains the total length, in octets, of the bundle data
-            in the associated transfer.
-            The total length is formatted as a 64-bit unsigned integer.
-          </t>
-          <t>
-            The purpose of the XFER_INIT message is to allow entities to preemptively refuse
-            bundles that would exceed their resources or to prepare storage on the
-            receiving node for the upcoming bundle data.
-            See
-            <xref target="sec-XFER_REFUSE" />
-            for details on when refusal based
-            on XFER_INIT content is acceptable.
-          </t>
-          <t>
-            The Total Bundle Length field within a XFER_INIT message SHALL be treated
-            as authoritative by the receiver. If, for whatever reason, the actual
-            total length of bundle data received differs from the value indicated by the
-            XFER_INIT message, the receiver SHOULD treat the transmitted data as invalid.
-          </t>
-          <t>
-            The format of the XFER_INIT message is as follows in
-            <xref target="fig-XFER_INIT-fields" />.
-          </t>
-          <figure anchor="fig-XFER_INIT-fields" title="Format of XFER_INIT Messages">
-            <artwork align="center" xml:space="preserve">
-+-----------------------------+
-|       Message Header        |
-+-----------------------------+
-|      Transfer ID (U64)      |
-+-----------------------------+
-|  Total Bundle Length (U64)  |
-+-----------------------------+
-|      Transfer Extension     |
-|          Length (U64)       |
-+-----------------------------+
-| Transfer Extension Items... |
-+-----------------------------+
-</artwork>
-          </figure>
-          <t>
-            The fields of the XFER_INIT message are:
-            <list style="hanging">
-              <t hangText="Transfer ID:">
-                A 64-bit unsigned integer identifying the transfer about to begin.
-              </t>
-              <t hangText="Total Bundle Length:">
-                A 64-bit unsigned integer indicating the size of the data-to-be-transferred.
-              </t>
-              <t hangText="Transfer Extension Length and Transfer Extension Items:">
-                Together these fields represent protocol extension data
-                not defined by this specification.
-                The Transfer Extension Length is the total number of octets to follow which
-                are used to encode the Transfer Extension Item list.
-                The encoding of each Transfer Extension Item is within a consistent data
-                container as described in
-                <xref target="sec-transfer-extension" />.
-                The full set of transfer extension items apply only to the
-                assoicated single transfer.
-                The order and mulitplicity of these transfer extension items MAY be
-                significant, as defined in the associated type specification(s).
-              </t>
-            </list>
-          </t>
-          <t>
-            An XFER_INIT message SHALL be sent as the first message in a transfer
-            sequence, before transmission of any XFER_SEGMENT messages for the same
-            Transfer ID.
-            XFER_INIT messages MUST NOT be sent unless the next XFER_SEGMENT message
-            has the 'START' bit set to &quot;1&quot;
-            (i.e., just before the start of a new transfer).
-          </t>
-          
-          <section anchor="sec-transfer-extension" title="Transfer Extension Items">
-            <t>
-              Each of the Transfer Extension Items SHALL be encoded in an identical
-              Type-Length-Value (TLV) container form as indicated in
-              <xref target="fig-transfer-extension" />.
-              The fields of the Transfer Extension Item are:
-            </t>
-            <t>
-              <list style="hanging">
-                <t hangText="Flags:">
-                  A one-octet field containing generic bit flags about the Item,
-                  which are listed in
-                  <xref target="tab-transfer-extension-flags" />.
-                  If a TCPCL node receives a Transfer Extension Item with an unknown Item Type
-                  and the CRITICAL flag set, the node SHALL refuse the transfer
-                  with an XFER_REFUSE reason code of &quot;Extension Failure&quot;.
-                  If the CRITICAL flag is not set, an entity SHALL skip over and ignore
-                  any item with an unknown Item Type.
-                </t>
-                <t hangText="Item Type:">
-                  A 16-bit unsigned integer field containing the type of the extension item.
-                  This specification does not define any extension types directly, but does
-                  allocate an IANA registry for such codes
-                  (see
-                  <xref target="sec-iana-transfer-extension-type" />).
-                </t>
-                <t hangText="Item Length:">
-                  A 32-bit unsigned integer field containing the number of Item Value octets
-                  to follow.
-                </t>
-                <t hangText="Item Value:">
-                  A variable-length data field which is interpreted according to the
-                  associated Item Type.
-                  This specification places no restrictions on an extension's use of
-                  available Item Value data.
-                  Extension specification SHOULD avoid the use of large data exchanges
-                  within the XFER_INIT as the associated transfer cannot begin until
-                  the full initialization message is sent.
-                </t>
-              </list>
-            </t>
-  
-            <figure anchor="fig-transfer-extension" title="Transfer Extension Item Format">
-              <artwork align="center" xml:space="preserve">
-                     1 1 1 1 1 1 1 1 1 1 2 2 2 2 2 2 2 2 2 2 3 3
- 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-+---------------+---------------+---------------+---------------+
-|  Item Flags   |           Item Type           | Item Length...|
-+---------------+---------------+---------------+---------------+
-|    length contd.                              | Item Value... |
-+---------------+---------------+---------------+---------------+
-|    value contd.                                               |
-+---------------+---------------+---------------+---------------+
-</artwork>
-            </figure>
-  
-            <texttable anchor="tab-transfer-extension-flags" title="Transfer Extension Item Flags">
-              <ttcol>Name</ttcol>
-              <ttcol>Code</ttcol>
-              <ttcol>Description</ttcol>
-              <c>CRITICAL</c>
-              <c>0x01</c>
-              <c>If bit is set, indicates that the receiving peer must handle the extension item.</c>
-              <c>Reserved</c>
-              <c>others</c>
-            </texttable>
-  
-          </section>
         </section>
 
         <section anchor="sec-XFER_SEGMENT" title="Data Transmission (XFER_SEGMENT)">
@@ -1702,6 +1550,14 @@ SESS_TERM Exchange
 +------------------------------+
 |      Transfer ID (U64)       |
 +------------------------------+
+|     Transfer Extension       |
+|         Length (U32)         |
+|   (only for START segment)   |
++------------------------------+
+|     Transfer Extension       |
+|         Items (var.)         |
+|   (only for START segment)   |
++------------------------------+
 |      Data length (U64)       |
 +------------------------------+
 | Data contents (octet string) |
@@ -1718,6 +1574,21 @@ SESS_TERM Exchange
               </t>
               <t hangText="Transfer ID:">
                 A 64-bit unsigned integer identifying the transfer being made.
+              </t>
+              <t hangText="Transfer Extension Length and Transfer Extension Items:">
+                Together these fields represent protocol extension data
+                for this specification.
+                The Transfer Extension Length and Transfer Extension Item fields
+                SHALL only be present when the 'START' flag is set on the message.
+                The Transfer Extension Length is the total number of octets to follow which
+                are used to encode the Transfer Extension Item list.
+                The encoding of each Transfer Extension Item is within a consistent data
+                container as described in
+                <xref target="sec-transfer-extension" />.
+                The full set of transfer extension items apply only to the
+                assoicated single transfer.
+                The order and mulitplicity of these transfer extension items MAY be
+                significant, as defined in the associated type specification(s).
               </t>
               <t hangText="Data length:">
                 A 64-bit unsigned integer indicating the number of octets in the
@@ -1812,7 +1683,18 @@ SESS_TERM Exchange
 
           <t>
             A receiving TCPCL node SHALL send an XFER_ACK message in response to
-            each received XFER_SEGMENT message.
+            each received XFER_SEGMENT message with the 'END' flag set.
+            A receiving TCPCL node SHOULD send an XFER_ACK message in response to
+            each received XFER_SEGMENT message without the 'END' flag set,
+            unless the previous XFER_ACK for the same transfer was sent within
+            an acknowledgement elision time.
+            Because each acknowledgement is in-sequence and supersedes any
+            earlier acknowledged length of a transfer, multiple acknowledgements
+            within a very short time period are redundant and some intermediate
+            acknowledgements can be avoided without any effect on successful
+            transfer sequencing.
+            Elided acknowledgements can have an effect on a slow network, so
+            chosing if and when to elide is an implementation matter.
             The flags portion of the XFER_ACK header SHALL be set to match the
             corresponding DATA_SEGMENT message being acknowledged.
             The acknowledged length of each XFER_ACK contains the sum of the
@@ -1838,7 +1720,7 @@ SESS_TERM Exchange
           <t>
             The TCPCL supports a mechanism by which a receiving node can indicate to
             the sender that it does not want to receive the corresponding bundle.
-            To do so, upon receiving a XFER_INIT or XFER_SEGMENT message, the node MAY
+            To do so, upon receiving an XFER_SEGMENT message, the node MAY
             transmit a XFER_REFUSE message. As data segments and
             acknowledgments MAY cross on the wire, the bundle that is being
             refused SHALL be identified by the Transfer ID of the refusal.
@@ -1853,8 +1735,8 @@ SESS_TERM Exchange
             is inspected by an agent and determined to be unacceptable.
           </t>
           <t>
-            A receiver MAY send an XFER_REFUSE message as soon as it receives a
-            XFER_INIT message without waiting for the next XFER_SEGMENT message.
+            A receiver MAY send an XFER_REFUSE message as soon as it receives
+            any XFER_SEGMENT message.
             The sender MUST be prepared for this and MUST associate the refusal
             with the correct bundle via the Transfer ID fields.
           </t>
@@ -1927,6 +1809,104 @@ SESS_TERM Exchange
           </t>
         </section>
 
+          <section anchor="sec-transfer-extension" title="Transfer Extension Items">
+            <t>
+              Each of the Transfer Extension Items SHALL be encoded in an identical
+              Type-Length-Value (TLV) container form as indicated in
+              <xref target="fig-transfer-extension" />.
+              The fields of the Transfer Extension Item are:
+            </t>
+            <t>
+              <list style="hanging">
+                <t hangText="Flags:">
+                  A one-octet field containing generic bit flags about the Item,
+                  which are listed in
+                  <xref target="tab-transfer-extension-flags" />.
+                  If a TCPCL node receives a Transfer Extension Item with an unknown Item Type
+                  and the CRITICAL flag set, the node SHALL refuse the transfer
+                  with an XFER_REFUSE reason code of &quot;Extension Failure&quot;.
+                  If the CRITICAL flag is not set, an entity SHALL skip over and ignore
+                  any item with an unknown Item Type.
+                </t>
+                <t hangText="Item Type:">
+                  A 16-bit unsigned integer field containing the type of the extension item.
+                  This specification allocates an IANA registry for such codes
+                  (see
+                  <xref target="sec-iana-transfer-extension-type" />).
+                </t>
+                <t hangText="Item Length:">
+                  A 32-bit unsigned integer field containing the number of Item Value octets
+                  to follow.
+                </t>
+                <t hangText="Item Value:">
+                  A variable-length data field which is interpreted according to the
+                  associated Item Type.
+                  This specification places no restrictions on an extension's use of
+                  available Item Value data.
+                  Extension specifications SHOULD avoid the use of large data lengths,
+                  as the associated transfer cannot begin until
+                  the full extension data is sent.
+                </t>
+              </list>
+            </t>
+  
+            <figure anchor="fig-transfer-extension" title="Transfer Extension Item Format">
+              <artwork align="center" xml:space="preserve">
+                     1 1 1 1 1 1 1 1 1 1 2 2 2 2 2 2 2 2 2 2 3 3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++---------------+---------------+---------------+---------------+
+|  Item Flags   |           Item Type           | Item Length...|
++---------------+---------------+---------------+---------------+
+|    length contd.                              | Item Value... |
++---------------+---------------+---------------+---------------+
+|    value contd.                                               |
++---------------+---------------+---------------+---------------+
+</artwork>
+            </figure>
+  
+            <texttable anchor="tab-transfer-extension-flags" title="Transfer Extension Item Flags">
+              <ttcol>Name</ttcol>
+              <ttcol>Code</ttcol>
+              <ttcol>Description</ttcol>
+              <c>CRITICAL</c>
+              <c>0x01</c>
+              <c>If bit is set, indicates that the receiving peer must handle the extension item.</c>
+              <c>Reserved</c>
+              <c>others</c>
+            </texttable>
+  
+            <section anchor="sec-transfer-extension-transfer-length" title="Transfer Length Extension">
+              <t>
+                The purpose of the Transfer Length extension is to allow entities to preemptively refuse
+                bundles that would exceed their resources or to prepare storage on the
+                receiving node for the upcoming bundle data.
+                The Transfer Length extension SHALL be assigned transfer extension type ID 0x0001.
+              </t>
+              <t>
+                The format of the Transfer Length data is as follows in
+                <xref target="fig-Transfer-Length-fields" />.
+              </t>
+              <figure anchor="fig-Transfer-Length-fields" title="Format of Transfer Length data">
+                <artwork align="center" xml:space="preserve">
++----------------------+
+|  Total Length (U64)  |
++----------------------+
+    </artwork>
+              </figure>
+              <t>
+                The fields of the Transfer Length extension are:
+                <list style="hanging">
+                  <t hangText="Total Length:">
+                    A 64-bit unsigned integer indicating the size of the data-to-be-transferred.
+                    The Total Length field SHALL be treated as authoritative by the receiver.
+                    If, for whatever reason, the actual total length of bundle data 
+                    received differs from the value indicated by the
+                    Total Length value, the receiver SHALL treat the transmitted data as invalid.
+                  </t>
+                </list>
+              </t>
+            </section>
+          </section>
       </section>
     </section>
 
@@ -1951,7 +1931,7 @@ SESS_TERM Exchange
           After sending a SESS_TERM message, an entity MAY continue a possible in-progress
           transfer in either direction.
           After sending a SESS_TERM message, an entity SHALL NOT begin any new outgoing
-          transfer (i.e. send an XFER_INIT message) for the remainder of the session.
+          transfer (i.e. send an XFER_SEGMENT message) for the remainder of the session.
           After receving a SESS_TERM message, an entity SHALL NOT accept any new incoming
           transfer for the remainder of the session.
         </t>
@@ -2295,7 +2275,9 @@ SESS_TERM Exchange
           <ttcol>Message Type</ttcol>
           <c>0x0000</c>
           <c>Reserved</c>
-          <c>0x0001--0x7fff</c>
+          <c>0x0001</c>
+          <c>Transfer Length Extension</c>
+          <c>0x0002--0x7fff</c>
           <c>Unassigned</c>
           <c>0x8000--0xffff</c>
           <c>Private/Experimental Use</c>
@@ -2328,10 +2310,8 @@ SESS_TERM Exchange
           <c>0x05</c>
           <c>SESS_TERM</c>
           <c>0x06</c>
-          <c>XFER_INIT</c>
-          <c>0x07</c>
           <c>MSG_REJECT</c>
-          <c>0x08--0xf</c>
+          <c>0x07--0xf</c>
           <c>Unassigned</c>
         </texttable>
       </section>
@@ -2502,7 +2482,7 @@ SESS_TERM Exchange
           <t>Added transfer extension capability.</t>
           <t>Defined new IANA registries for message / type / reason codes to allow renaming some codes for clarity.</t>
           <t>Expanded Message Header to octet-aligned fields instead of bit-packing.</t>
-          <t>Added a bundle transfer identification number to all bundle-related messages (XFER_INIT, XFER_SEGMENT, XFER_ACK, XFER_REFUSE).</t>
+          <t>Added a bundle transfer identification number to all bundle-related messages (XFER_SEGMENT, XFER_ACK, XFER_REFUSE).</t>
           <t>Use flags in XFER_ACK to mirror flags from XFER_SEGMENT.</t>
           <t>Removed all uses of SDNV fields and replaced with fixed-bit-length fields.</t>
           <t>Renamed SHUTDOWN to SESS_TERM to deconflict term "shutdown".</t>
