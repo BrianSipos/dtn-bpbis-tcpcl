@@ -2,7 +2,7 @@
 <!DOCTYPE rfc SYSTEM "rfc2629.dtd" [
 ]>
 <?rfc toc="yes"?>
-<rfc ipr="trust200902" category="std" docName="draft-ietf-dtn-tcpclv4-10" obsoletes="7242">
+<rfc ipr="trust200902" category="std" docName="draft-ietf-dtn-tcpclv4-11" obsoletes="7242">
   <front>
     <title abbrev="DTN TCPCLv4">
       Delay-Tolerant Networking TCP Convergence Layer Protocol Version 4
@@ -918,9 +918,9 @@ SESS_TERM Exchange
           <xref target="sec-contact-negotiate" />
           for details on the use of each
           of these contact header fields.
-          The fields of the contact header are:
         </t>
         <t>
+          The fields of the contact header are:
           <list style="hanging">
             <t hangText="magic:">
               A four-octet field that always contains the octet sequence 0x64
@@ -1158,7 +1158,8 @@ SESS_TERM Exchange
           Before a session is established and ready to transfer bundles, the
           session parameters are negotiated between the connected entities.
           The SESS_INIT message is used to convey the per-entity parameters
-          which are used together to negotiate the per-session parameters.
+          which are used together to negotiate the per-session parameters
+          as described in <xref target="sec-session-negotiate"/>.
         </t>
         <t>
             The format of a SESS_INIT message is as follows in
@@ -1186,7 +1187,8 @@ SESS_TERM Exchange
 </artwork>
         </figure>
         <t>
-          <list>
+          The fields of the SESS_INIT message are:
+          <list style="hanging">
             <t hangText="Keepalive Interval:">
               A 16-bit unsigned integer indicating the interval,
               in seconds, between any subsequent messages being transmitted by the peer.
@@ -1240,70 +1242,6 @@ SESS_TERM Exchange
             </t>
           </list>
         </t>
-        <section anchor="sec-session-extension" title="Session Extension Items">
-          <t>
-            Each of the Session Extension Items SHALL be encoded in an identical
-            Type-Length-Value (TLV) container form as indicated in
-            <xref target="fig-header-extension" />.
-            The fields of the Session Extension Item are:
-          </t>
-          <t>
-            <list style="hanging">
-              <t hangText="Flags:">
-                A one-octet field containing generic bit flags about the Item,
-                which are listed in
-                <xref target="tab-header-extension-flags" />.
-                If a TCPCL entity receives a Session Extension Item with an unknown Item Type
-                and the CRITICAL flag set, the entity SHALL close the
-                TCPCL session with SESS_TERM reason code of &quot;Contact Failure&quot;.
-                If the CRITICAL flag is not set, an entity SHALL skip over and ignore
-                any item with an unknown Item Type.
-              </t>
-              <t hangText="Item Type:">
-                A 16-bit unsigned integer field containing the type of the extension item.
-                This specification does not define any extension types directly, but does
-                allocate an IANA registry for such codes
-                (see <xref target="sec-iana-header-extension-type" />).
-              </t>
-              <t hangText="Item Length:">
-                A 32-bit unsigned integer field containing the number of Item Value octets
-                to follow.
-              </t>
-              <t hangText="Item Value:">
-                A variable-length data field which is interpreted according to the
-                associated Item Type.
-                This specification places no restrictions on an extension's use of
-                available Item Value data.
-                Extension specifications SHOULD avoid the use of large data lengths,
-                as no bundle transfers can begin until
-                the full extension data is sent.
-              </t>
-            </list>
-          </t>
-          <figure anchor="fig-header-extension" title="Session Extension Item Format">
-            <artwork align="center" xml:space="preserve">
-                     1 1 1 1 1 1 1 1 1 1 2 2 2 2 2 2 2 2 2 2 3 3
- 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-+---------------+---------------+---------------+---------------+
-|  Item Flags   |           Item Type           | Item Length...|
-+---------------+---------------+---------------+---------------+
-|    length contd.                              | Item Value... |
-+---------------+---------------+---------------+---------------+
-|    value contd.                                               |
-+---------------+---------------+---------------+---------------+
-</artwork>
-          </figure>
-          <texttable anchor="tab-header-extension-flags" title="Session Extension Item Flags">
-            <ttcol>Name</ttcol>
-            <ttcol>Code</ttcol>
-            <ttcol>Description</ttcol>
-            <c>CRITICAL</c>
-            <c>0x01</c>
-            <c>If bit is set, indicates that the receiving peer must handle the extension item.</c>
-            <c>Reserved</c>
-            <c>others</c>
-          </texttable>
-        </section>
       </section>
       
       <section anchor="sec-session-negotiate" title="Session Parameter Negotiation">
@@ -1361,6 +1299,71 @@ SESS_TERM Exchange
           be terminated and a new session established.
         </t>
       </section>
+
+      <section anchor="sec-session-extension" title="Session Extension Items">
+        <t>
+          Each of the Session Extension Items SHALL be encoded in an identical
+          Type-Length-Value (TLV) container form as indicated in
+          <xref target="fig-header-extension" />.
+        </t>
+        <t>
+          The fields of the Session Extension Item are:
+          <list style="hanging">
+            <t hangText="Flags:">
+              A one-octet field containing generic bit flags about the Item,
+              which are listed in
+              <xref target="tab-header-extension-flags" />.
+              If a TCPCL entity receives a Session Extension Item with an unknown Item Type
+              and the CRITICAL flag set, the entity SHALL close the
+              TCPCL session with SESS_TERM reason code of &quot;Contact Failure&quot;.
+              If the CRITICAL flag is not set, an entity SHALL skip over and ignore
+              any item with an unknown Item Type.
+            </t>
+            <t hangText="Item Type:">
+              A 16-bit unsigned integer field containing the type of the extension item.
+              This specification does not define any extension types directly, but does
+              allocate an IANA registry for such codes
+              (see <xref target="sec-iana-header-extension-type" />).
+            </t>
+            <t hangText="Item Length:">
+              A 32-bit unsigned integer field containing the number of Item Value octets
+              to follow.
+            </t>
+            <t hangText="Item Value:">
+              A variable-length data field which is interpreted according to the
+              associated Item Type.
+              This specification places no restrictions on an extension's use of
+              available Item Value data.
+              Extension specifications SHOULD avoid the use of large data lengths,
+              as no bundle transfers can begin until
+              the full extension data is sent.
+            </t>
+          </list>
+        </t>
+        <figure anchor="fig-header-extension" title="Session Extension Item Format">
+          <artwork align="center" xml:space="preserve">
+                     1 1 1 1 1 1 1 1 1 1 2 2 2 2 2 2 2 2 2 2 3 3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++---------------+---------------+---------------+---------------+
+|  Item Flags   |           Item Type           | Item Length...|
++---------------+---------------+---------------+---------------+
+|    length contd.                              | Item Value... |
++---------------+---------------+---------------+---------------+
+|    value contd.                                               |
++---------------+---------------+---------------+---------------+
+</artwork>
+        </figure>
+        <texttable anchor="tab-header-extension-flags" title="Session Extension Item Flags">
+          <ttcol>Name</ttcol>
+          <ttcol>Code</ttcol>
+          <ttcol>Description</ttcol>
+          <c>CRITICAL</c>
+          <c>0x01</c>
+          <c>If bit is set, indicates that the receiving peer must handle the extension item.</c>
+          <c>Reserved</c>
+          <c>others</c>
+        </texttable>
+      </section>
     </section>
 
     <section anchor="sec-session" title="Established Session Operation">
@@ -1407,13 +1410,13 @@ SESS_TERM Exchange
             The format of a KEEPALIVE message is a one-octet message type code of
             KEEPALIVE (as described in
             <xref target="tab-msg-types" />) with no additional data.
-            Both sides SHOULD send a KEEPALIVE message whenever the negotiated
+            Both sides SHALL send a KEEPALIVE message whenever the negotiated
             interval has elapsed with no transmission of any message (KEEPALIVE
             or other).
           </t>
           <t>
             If no message (KEEPALIVE or other) has been received in a session after some
-            implementation-defined time duration, then the node SHOULD terminate the
+            implementation-defined time duration, then the node SHALL terminate the
             session by transmitting a SESS_TERM message (as described in
             <xref target="sec-SESS_TERM" />) with reason code "Idle Timeout".
             If configurable, the idle timeout duration SHOULD be no shorter 
@@ -1798,7 +1801,7 @@ SESS_TERM Exchange
             that an entity will not receive another XFER_SEGMENT for the same bundle
             after transmitting a XFER_REFUSE message since messages MAY cross
             on the wire; if this happens, subsequent segments of the bundle
-            SHOULD also be refused with a XFER_REFUSE message.
+            SHALL also be refused with a XFER_REFUSE message.
           </t>
           <t>
             Note: If a bundle transmission is aborted in this way, the receiver
@@ -1814,9 +1817,9 @@ SESS_TERM Exchange
               Each of the Transfer Extension Items SHALL be encoded in an identical
               Type-Length-Value (TLV) container form as indicated in
               <xref target="fig-transfer-extension" />.
-              The fields of the Transfer Extension Item are:
             </t>
             <t>
+              The fields of the Transfer Extension Item are:
               <list style="hanging">
                 <t hangText="Flags:">
                   A one-octet field containing generic bit flags about the Item,
@@ -1880,6 +1883,12 @@ SESS_TERM Exchange
                 The purpose of the Transfer Length extension is to allow entities to preemptively refuse
                 bundles that would exceed their resources or to prepare storage on the
                 receiving node for the upcoming bundle data.
+              </t>
+              <t>
+                Multiple Transfer Length extension items SHALL NOT
+                occurr within the same transfer.
+                The lack of a Transfer Length extension item in any transfer 
+                SHALL NOT imply anything about the potential length of the transfer.
                 The Transfer Length extension SHALL be assigned transfer extension type ID 0x0001.
               </t>
               <t>
@@ -1922,7 +1931,7 @@ SESS_TERM Exchange
           When sent to initiate a termination, the REPLY bit of a SESS_TERM message
           SHALL NOT be set.
           Upon receiving a SESS_TERM message after not sending a SESS_TERM message in
-          the same session, an entity SHOULD send an acknowledging SESS_TERM message.
+          the same session, an entity SHALL send an acknowledging SESS_TERM message.
           When sent to acknowledge a termination, a SESS_TERM message SHALL have
           identical data content from the message being acknowledged except for
           the REPLY bit, which is set to indicate acknowledgement.
@@ -1941,6 +1950,7 @@ SESS_TERM Exchange
           the associated TCP connection.
           When performing an unclean shutdown, a receiving node SHOULD
           acknowledge all received data segments before closing the TCP connection.
+          Not acknowledging received segments can result in unnecessary retransmission.
           When performing an unclean shutodwn, a transmitting node SHALL treat
           either sending or receiving a SESS_TERM message
           (i.e. before the final acknowledgment) as a failure of the transfer.
@@ -2014,7 +2024,7 @@ SESS_TERM Exchange
         </t>
         <t>
           If reception of the contact header itself somehow fails (e.g. an invalid
-          "magic string" is recevied), an entity SHOULD close the TCP connection
+          "magic string" is recevied), an entity SHALL close the TCP connection
           without sending a SESS_TERM message.
           If the content of the Session Extension Items data disagrees with the
           Session Extension Length (i.e. the last Item claims to use more octets
@@ -2024,7 +2034,7 @@ SESS_TERM Exchange
         <t>
           If a session is to be terminated before a protocol message
           has completed being sent, then the node MUST NOT transmit the SESS_TERM
-          message but still SHOULD close the TCP connection.
+          message but still SHALL close the TCP connection.
           Each TCPCL message is contiguous in the octet stream and has no ability
           to be cut short and/or preempted by an other message.
           This is particularly important when large segment sizes
@@ -2472,14 +2482,13 @@ SESS_TERM Exchange
       <t>
         The areas in which changes from
         <xref target="RFC7242" />
-        have
-        been made to existing headers and messages are:
+        have been made to existing headers and messages are:
         <list style="symbols">
           <t>Split contact header into pre-TLS protocol negotiation and SESS_INIT parameter negotiation. The contact header is now fixed-length.</t>
           <t>Changed contact header content to limit number of negotiated options.</t>
           <t>Added contact option to negotiate maximum segment size (per each direction).</t>
           <t>Added session extension capability.</t>
-          <t>Added transfer extension capability.</t>
+          <t>Added transfer extension capability. Moved transfer total length into an extension item.</t>
           <t>Defined new IANA registries for message / type / reason codes to allow renaming some codes for clarity.</t>
           <t>Expanded Message Header to octet-aligned fields instead of bit-packing.</t>
           <t>Added a bundle transfer identification number to all bundle-related messages (XFER_SEGMENT, XFER_ACK, XFER_REFUSE).</t>
