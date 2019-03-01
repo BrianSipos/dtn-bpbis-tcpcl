@@ -185,7 +185,9 @@ def verify_sized_item(length, item):
     :param item: The field or packet to take size of.
     :raise VerifyError: if inconsistent.
     '''
-    if length is not None:
-        item_len = len(str(item))
-        if length != item_len:
-            raise VerifyError('Read length {0} inconsistent with actual data {1}'.format(length, item_len))
+    read_len = int(length)
+    if read_len != length:
+        raise VerifyError('Read length is missing')
+    item_len = len(str(item))
+    if read_len != item_len:
+        raise VerifyError('Read length {0} inconsistent with actual data {1}'.format(read_len, item_len))

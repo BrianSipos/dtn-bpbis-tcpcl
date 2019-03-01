@@ -39,7 +39,7 @@ class Config(object):
         self.keepalive_time = 0
         self.idle_time = 0
         #: Maximum size of transmit segments in octets
-        self.segment_size = 10240
+        self.segment_size = int(1 * (1024 ** 2))
 
 class Connection(object):
     ''' Optionally secured socket connection.
@@ -290,10 +290,15 @@ class Connection(object):
         if len(self.__tx_buf) > 0:
             data = self.__tx_buf[:self.CHUNK_SIZE]
             self.__logger.debug('Sending message %d/%d octets (%s)', len(data), len(self.__tx_buf), self._conn_name())
-            tx_size = sock.send(data)
-            self.__logger.debug('Sent %d octets', tx_size)
-            self.__tx_buf = self.__tx_buf[tx_size:]
-            sent_size += tx_size
+            try:
+                tx_size = sock.send(data)
+                self.__logger.debug('Sent %d octets', tx_size)
+            except socket.error as err:
+                self.__logger.debug('Failed to send chunk: %s', err)
+                tx_size = None
+            if tx_size:
+                self.__tx_buf = self.__tx_buf[tx_size:]
+                sent_size += tx_size
             
         buf_empty = (len(self.__tx_buf) == 0)
         if sent_size:
@@ -354,15 +359,13 @@ class Messenger(Connection):
         self._config = config
         
         # agent-configured parmeters
-        self._do_send_ack_inter = None
-        self._ack_inter_time_min = datetime.timedelta(milliseconds=100)
-        self._do_send_ack_final = None
+        self._do_send_ack_inter = True
+        self._do_send_ack_final = True
         # negotiated parameters
         self._keepalive_time = 0
         self._idle_time = 0
         self._send_segment_size = None
         # agent timers
-        self._ack_inter_time_last = None
         self._keepalive_timer_id = None
         self._idle_timer_id = None
         
@@ -641,9 +644,6 @@ class Messenger(Connection):
         self._send_segment_size = min(self._config.segment_size,
                                       self._sessinit_peer.segment_mru)
         self.__logger.debug('TX seg size %d', self._send_segment_size)
-        
-        self._do_send_ack_inter = True
-        self._do_send_ack_final = True
     
     def send_raw(self, size):
         ''' Pop some data from the TX queue.
@@ -868,7 +868,6 @@ class ContactHandler(Messenger, dbus.service.Object):
         
         if flags & messages.TransferSegment.FLAG_START:
             self._rx_setup(transfer_id)
-            self._ack_inter_time_last = None
         
         elif self._rx_tmp is None or self._rx_tmp.transfer_id != transfer_id:
             # Each ID in sequence after start must be identical
@@ -889,10 +888,7 @@ class ContactHandler(Messenger, dbus.service.Object):
             self._rx_teardown()
         else:
             if self._do_send_ack_inter:
-                nowtime = datetime.datetime.utcnow()
-                if self._ack_inter_time_last is None or nowtime - self._ack_inter_time_last > self._ack_inter_time_min:
-                    self.send_xfer_ack(transfer_id, self._rx_tmp.file.tell(), flags)
-                    self._ack_inter_time_last = nowtime
+                self.send_xfer_ack(transfer_id, self._rx_tmp.file.tell(), flags)
     
     def recv_xfer_ack(self, transfer_id, length):
         Messenger.recv_xfer_ack(self, transfer_id, length)
@@ -1180,6 +1176,9 @@ def str2bool(v):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--log-level', dest='log_level', default='info',
+                        metavar='LEVEL',
+                        help='Console logging lowest level displayed.')
     subp = parser.add_subparsers(dest='action', help='action')
     parser.add_argument('--eid', type=unicode, 
                         help='This node EID')
@@ -1218,7 +1217,7 @@ def main():
     
     args = parser.parse_args()
     
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=args.log_level.upper())
     logging.debug('command args: %s', args)
     
     # Must run before connection or real main loop is constructed

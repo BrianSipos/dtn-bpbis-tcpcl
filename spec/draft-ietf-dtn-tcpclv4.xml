@@ -67,7 +67,7 @@
         <email>simon@per.reau.lt</email>
       </address>
     </author>
-    <date year="2019" month="February" day="25" />
+    <date year="2019" month="February" day="28" />
     <area>Transport</area>
     <workgroup>Delay Tolerant Networking</workgroup>
 
@@ -1686,27 +1686,16 @@ SESS_TERM Exchange
 
           <t>
             A receiving TCPCL node SHALL send an XFER_ACK message in response to
-            each received XFER_SEGMENT message with the 'END' flag set.
-            A receiving TCPCL node SHOULD send an XFER_ACK message in response to
-            each received XFER_SEGMENT message without the 'END' flag set,
-            unless the previous XFER_ACK for the same transfer was sent within
-            an acknowledgement elision time.
-            Because each acknowledgement is in-sequence and supersedes any
-            earlier acknowledged length of a transfer, multiple acknowledgements
-            within a very short time period are redundant and some intermediate
-            acknowledgements can be avoided without any effect on successful
-            transfer sequencing.
-            Elided acknowledgements can have an effect on a slow network, so
-            chosing if and when to elide is an implementation matter.
+            each received XFER_SEGMENT message.
             The flags portion of the XFER_ACK header SHALL be set to match the
             corresponding DATA_SEGMENT message being acknowledged.
             The acknowledged length of each XFER_ACK contains the sum of the
             data length fields of all XFER_SEGMENT messages received so far in the
             course of the indicated transfer.
-            The sending node MAY transmit multiple XFER_SEGMENT
-            messages without necessarily waiting for the corresponding
-            XFER_ACK responses. This enables pipelining of messages on a
-            transfer stream.
+            The sending node SHOULD transmit multiple XFER_SEGMENT
+            messages without waiting for the corresponding
+            XFER_ACK responses.
+            This enables pipelining of messages on a transfer stream.
           </t>
           <t>
             For example, suppose the sending node transmits four segments of
