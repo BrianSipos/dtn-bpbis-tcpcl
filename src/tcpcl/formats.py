@@ -65,7 +65,7 @@ class SdnvField(fields.Field):
     def __init__(self, name, default, maxval=None):
         fields.Field.__init__(self, name, default, fmt='!s')
         if maxval is None:
-            maxval = 2L**32-1
+            maxval = 2**32-1
         self._maxval = maxval
     
     def i2m(self, pkt, x):
@@ -188,6 +188,6 @@ def verify_sized_item(length, item):
     read_len = int(length)
     if read_len != length:
         raise VerifyError('Read length is missing')
-    item_len = len(str(item))
+    item_len = len(bytes(item))
     if read_len != item_len:
-        raise VerifyError('Read length {0} inconsistent with actual data {1}'.format(read_len, item_len))
+        raise VerifyError('Read length {0} inconsistent with actual length {1}'.format(read_len, item_len))

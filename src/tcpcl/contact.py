@@ -5,7 +5,7 @@ from scapy import fields, packet
 from . import formats
 
 #: Header magic prefix-data
-MAGIC_HEAD = 'dtn!'
+MAGIC_HEAD = b'dtn!'
 
 class Head(packet.Packet):
     ''' Front elements common to the TCPCL contact headers. '''

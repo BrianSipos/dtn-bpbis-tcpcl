@@ -47,17 +47,17 @@ def int2sdnv(val):
         if val == 0:
             break
         s.insert(0, CNT_MASK | (val & VAL_MASK))
-    return ''.join([chr(x) for x in s])
+    return bytearray(s)
 
 def sdnv2int(data):
     ''' Decode available SDNV data string.
     
     :param data: The full input data.
-    :type data: str
+    :type data: bytes
     :return: A pair of values representing:
         1. The unprocessed non-SDNV tail.
         2. The processed integer.
-    :rtype: tuple of (str, int)
+    :rtype: tuple of (bytes, int)
     '''
     
     # ix value to index just-past last read digit
@@ -70,7 +70,7 @@ def sdnv2int(data):
             logger.warning("Broken SDNV: no ending byte")
             break
         
-        dit = ord(data[ix])
+        dit = int(bytearray([data[ix]])[0])
         ix += 1
         
         val = val << 7

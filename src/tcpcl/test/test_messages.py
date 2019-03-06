@@ -1,4 +1,4 @@
-
+import binascii
 import unittest
 from scapy.packet import Raw
 from ..messages import *
@@ -9,58 +9,85 @@ class TestSessionInit(unittest.TestCase):
     def testSerializeDefault(self):
         pkt = MessageHead()/SessionInit()
         self.assertEqual(
-            str(pkt).encode('hex'),
-            '08' + '0000' + 'ffffffffffffffff' + 'ffffffffffffffff' + '0000' + '00000000'
+            binascii.hexlify(bytes(pkt)),
+            b'08' + b'0000' + b'ffffffffffffffff' + b'ffffffffffffffff' + b'0000' + b'00000000'
         )
 
     def testSerializeNoExt(self):
         pkt = MessageHead()/SessionInit(
             keepalive=300,
-            eid_data=u'hello'.encode('utf8'),
+            eid_data=b'hello',
             segment_mru=1024,
             transfer_mru=10240,
         )
         self.assertSequenceEqual(
-            str(pkt).encode('hex'), 
-            '08' + '012c' + '0000000000000400' + '0000000000002800' + '0005' + 'hello'.encode('hex')
-            + '00000000'
+            binascii.hexlify(bytes(pkt)), 
+            b'08' + b'012c' + b'0000000000000400' + b'0000000000002800' + b'0005' + binascii.hexlify(b'hello')
+            + b'00000000'
         )
 
     def testDeserializeNoExt(self):
-        pkt = MessageHead(('08' + '012c' + '0000000000000400' + '0000000000002800' + '0005' + 'hello'.encode('hex')).decode('hex'))
+        pkt = MessageHead(binascii.unhexlify(
+            b'08' + b'012c' + b'0000000000000400' + b'0000000000002800'
+            + b'0005' + binascii.hexlify(b'hello') 
+            + b'00000000'
+        ))
         self.assertEqual(pkt.msg_id, 8)
         self.assertIsInstance(pkt.payload, SessionInit)
         self.assertEqual(pkt.payload.keepalive, 300)
         self.assertEqual(pkt.payload.segment_mru, 1024)
         self.assertEqual(pkt.payload.transfer_mru, 10240)
-        self.assertEqual(pkt.payload.eid_data, 'hello')
+        self.assertEqual(pkt.payload.eid_data, b'hello')
+        self.assertEqual(len(pkt.payload.ext_items), 0)
 
     def testSerializeEmptyExt(self):
         pkt = MessageHead()/SessionInit(
             keepalive=300,
-            eid_data=u'hello'.encode('utf8'),
+            eid_data=b'hello',
             segment_mru=1024,
             transfer_mru=10240,
             ext_items=[
-                SessionExtendHeader(flags='CRITICAL', type=0xfffe)/Raw('exthi')
+                SessionExtendHeader(flags='CRITICAL', type=0xfffe)/Raw(b'exthi')
             ],
         )
         self.assertSequenceEqual(
-            str(pkt).encode('hex'), 
-            '08' + '012c' + '0000000000000400' + '0000000000002800' + '0005' + 'hello'.encode('hex')
+            binascii.hexlify(bytes(pkt)), 
+            b'08' + b'012c' + b'0000000000000400' + b'0000000000002800' + b'0005' + binascii.hexlify(b'hello')
             # extensions:
-            + '0000000c'
-            + '01' + 'fffe' + '00000005' + 'exthi'.encode('hex')
+            + b'0000000c'
+            + b'01' + b'fffe' + b'00000005' + binascii.hexlify(b'exthi')
         )
-    
+
+    def testDeserializeEmptyExt(self):
+        pkt = MessageHead(binascii.unhexlify(
+            b'08' + b'012c' + b'0000000000000400' + b'0000000000002800' + b'0005' + binascii.hexlify(b'hello')
+            # extensions:
+            + b'0000000c'
+            + b'01' + b'fffe' + b'00000005' + binascii.hexlify(b'exthi')
+        ))
+        self.assertEqual(pkt.msg_id, 8)
+        self.assertIsInstance(pkt.payload, SessionInit)
+        self.assertEqual(pkt.payload.keepalive, 300)
+        self.assertEqual(pkt.payload.segment_mru, 1024)
+        self.assertEqual(pkt.payload.transfer_mru, 10240)
+        self.assertEqual(pkt.payload.eid_data, b'hello')
+        self.assertEqual(len(pkt.payload.ext_items), 1)
+        # Items:
+        item = pkt.payload.ext_items[0]
+        self.assertEqual(item.flags, TransferExtendHeader.FLAG_CRITICAL)
+        self.assertEqual(item.type, 0xfffe)
+        self.assertEqual(item.length, 5)
+        self.assertIsInstance(item.payload, Raw)
+        self.assertEqual(item.payload.load, b'exthi')
+
 class TestSessionTerm(unittest.TestCase):
     
     def testSerializeNoReason(self):
         pkt = MessageHead()/SessionTerm()
-        self.assertSequenceEqual(str(pkt).encode('hex'), '050000')
+        self.assertSequenceEqual(binascii.hexlify(bytes(pkt)), b'050000')
 
     def testDeserializeNoReason(self):
-        pkt = MessageHead(('05' + '0000').decode('hex'))
+        pkt = MessageHead(binascii.unhexlify(b'05' + b'0000'))
         self.assertEqual(pkt.msg_id, 5)
         self.assertIsInstance(pkt.payload, SessionTerm)
         self.assertEqual(pkt.payload.flags, 0)
@@ -68,10 +95,10 @@ class TestSessionTerm(unittest.TestCase):
 
     def testSerializeWithReason(self):
         pkt = MessageHead()/SessionTerm(reason=3)
-        self.assertSequenceEqual(str(pkt).encode('hex'), '050003')
+        self.assertSequenceEqual(binascii.hexlify(bytes(pkt)), b'050003')
 
     def testDeserializeWithReason(self):
-        pkt = MessageHead(('05' + '0003').decode('hex'))
+        pkt = MessageHead(binascii.unhexlify(b'05' + b'0003'))
         self.assertEqual(pkt.msg_id, 5)
         self.assertIsInstance(pkt.payload, SessionTerm)
         self.assertEqual(pkt.payload.flags, 0)
@@ -79,10 +106,10 @@ class TestSessionTerm(unittest.TestCase):
 
     def testSerializeAck(self):
         pkt = MessageHead()/SessionTerm(flags='ACK', reason=4)
-        self.assertSequenceEqual(str(pkt).encode('hex'), '050104')
+        self.assertSequenceEqual(binascii.hexlify(bytes(pkt)), b'050104')
 
     def testDeserializeAck(self):
-        pkt = MessageHead(('05' + '0104').decode('hex'))
+        pkt = MessageHead(binascii.unhexlify(b'05' + b'0104'))
         self.assertEqual(pkt.msg_id, 5)
         self.assertIsInstance(pkt.payload, SessionTerm)
         self.assertEqual(pkt.payload.flags, SessionTerm.FLAG_ACK)
@@ -92,10 +119,10 @@ class TestKeepalive(unittest.TestCase):
     
     def testSerialize(self):
         pkt = MessageHead()/Keepalive()
-        self.assertSequenceEqual(str(pkt).encode('hex'), '04')
+        self.assertSequenceEqual(binascii.hexlify(bytes(pkt)), b'04')
 
     def testDeserialize(self):
-        pkt = MessageHead(('0400').decode('hex'))
+        pkt = MessageHead(binascii.unhexlify(b'0400'))
         self.assertEqual(pkt.msg_id, 4)
         self.assertIsInstance(pkt.payload, Keepalive)
 
@@ -103,10 +130,10 @@ class TestRejectMsg(unittest.TestCase):
     
     def testSerialize(self):
         pkt = MessageHead()/RejectMsg(rej_msg_id=7, reason=RejectMsg.REASON_UNSUPPORTED)
-        self.assertSequenceEqual(str(pkt).encode('hex'), '070702')
+        self.assertSequenceEqual(binascii.hexlify(bytes(pkt)), b'070702')
 
     def testDeserialize(self):
-        pkt = MessageHead(('070702').decode('hex'))
+        pkt = MessageHead(binascii.unhexlify(b'070702'))
         self.assertEqual(pkt.msg_id, 7)
         self.assertIsInstance(pkt.payload, RejectMsg)
         self.assertEqual(pkt.payload.rej_msg_id, 7)
@@ -116,10 +143,10 @@ class TestTransferRefuse(unittest.TestCase):
     
     def testSerialize(self):
         pkt = MessageHead()/TransferRefuse(transfer_id=1234, reason=TransferRefuse.REASON_RESOURCES)
-        self.assertSequenceEqual(str(pkt).encode('hex'), '03' + '02' + '00000000000004d2')
+        self.assertSequenceEqual(binascii.hexlify(bytes(pkt)), b'03' + b'02' + b'00000000000004d2')
 
     def testDeserialize(self):
-        pkt = MessageHead(('03' + '02' + '00000000000004d2').decode('hex'))
+        pkt = MessageHead(binascii.unhexlify(b'03' + b'02' + b'00000000000004d2'))
         self.assertEqual(pkt.msg_id, 3)
         self.assertIsInstance(pkt.payload, TransferRefuse)
         self.assertEqual(pkt.payload.transfer_id, 1234)
@@ -128,26 +155,26 @@ class TestTransferRefuse(unittest.TestCase):
 class TestTransferSegment(unittest.TestCase):
 
     def testSerializeStartNoExt(self):
-        pkt = MessageHead()/TransferSegment(flags=TransferSegment.FLAG_START, transfer_id=1234, data='hello')
+        pkt = MessageHead()/TransferSegment(flags=TransferSegment.FLAG_START, transfer_id=1234, data=b'hello')
         self.assertSequenceEqual(
-            str(pkt).encode('hex'),
-            '01' + '02' + '00000000000004d2' 
-            + '00000000' 
-            + '0000000000000005' + 'hello'.encode('hex')
+            binascii.hexlify(bytes(pkt)),
+            b'01' + b'02' + b'00000000000004d2' 
+            + b'00000000' 
+            + b'0000000000000005' + binascii.hexlify(b'hello')
         )
 
     def testDeserializeStartNoExt(self):
-        pkt = MessageHead((
-            '01' + '02' + '00000000000004d2' 
-            + '00000000' 
-            + '0000000000000005' + 'hello'.encode('hex')
-        ).decode('hex'))
+        pkt = MessageHead(binascii.unhexlify(
+            b'01' + b'02' + b'00000000000004d2' 
+            + b'00000000' 
+            + b'0000000000000005' + binascii.hexlify(b'hello')
+        ))
         self.assertEqual(pkt.msg_id, 1)
         self.assertIsInstance(pkt.payload, TransferSegment)
         self.assertEqual(pkt.payload.flags, TransferSegment.FLAG_START)
         self.assertEqual(pkt.payload.transfer_id, 1234)
         self.assertEqual(pkt.payload.length, 5)
-        self.assertEqual(pkt.payload.getfieldval('data'), 'hello')
+        self.assertEqual(pkt.payload.getfieldval('data'), b'hello')
         
         self.assertEqual(pkt.payload.ext_size, 0)
         self.assertEqual(len(pkt.payload.ext_items), 0)
@@ -159,31 +186,31 @@ class TestTransferSegment(unittest.TestCase):
             ext_items=[
                 TransferExtendHeader(flags='CRITICAL')/xferextend.Length(total_length=800)
             ],
-            data='hello',
+            data=b'hello',
         )
         self.assertSequenceEqual(
-            str(pkt).encode('hex'),
-            '01' + '02' + '00000000000004d2' 
+            binascii.hexlify(bytes(pkt)),
+            b'01' + b'02' + b'00000000000004d2' 
             # extensions:
-            + '0000000f'
-            + '01' + '0001' + '00000008' + '0000000000000320'
+            + b'0000000f'
+            + b'01' + b'0001' + b'00000008' + b'0000000000000320'
             # data
-            + '0000000000000005' + 'hello'.encode('hex')
+            + b'0000000000000005' + binascii.hexlify(b'hello')
         )
 
     def testDeserializeStartLengthExt(self):
-        pkt = MessageHead((
-            '01' + '02' + '00000000000004d2' 
-            + '0000000f'
-            + '01' + '0001' + '00000008' + '0000000000000320'
-            + '0000000000000005' + 'hello'.encode('hex')
-        ).decode('hex'))
+        pkt = MessageHead(binascii.unhexlify(
+            b'01' + b'02' + b'00000000000004d2' 
+            + b'0000000f'
+            + b'01' + b'0001' + b'00000008' + b'0000000000000320'
+            + b'0000000000000005' + binascii.hexlify(b'hello')
+        ))
         self.assertEqual(pkt.msg_id, 1)
         self.assertIsInstance(pkt.payload, TransferSegment)
         self.assertEqual(pkt.payload.flags, TransferSegment.FLAG_START)
         self.assertEqual(pkt.payload.transfer_id, 1234)
         self.assertEqual(pkt.payload.length, 5)
-        self.assertEqual(pkt.payload.getfieldval('data'), 'hello')
+        self.assertEqual(pkt.payload.getfieldval('data'), b'hello')
 
         self.assertEqual(pkt.payload.ext_size, 15)
         self.assertEqual(len(pkt.payload.ext_items), 1)
@@ -196,47 +223,55 @@ class TestTransferSegment(unittest.TestCase):
         self.assertEqual(item.payload.total_length, 800)
 
     def testSerializeMidData(self):
-        pkt = MessageHead()/TransferSegment(transfer_id=1234, data='hello')
-        self.assertSequenceEqual(str(pkt).encode('hex'), '01' + '00' + '00000000000004d2' + '0000000000000005' + 'hello'.encode('hex'))
+        pkt = MessageHead()/TransferSegment(transfer_id=1234, data=b'hello')
+        self.assertSequenceEqual(
+            binascii.hexlify(bytes(pkt)),
+            b'01' + b'00' + b'00000000000004d2' + b'0000000000000005' + binascii.hexlify(b'hello')
+        )
 
     def testDeserializeMidData(self):
-        pkt = MessageHead(('01' + '00' + '00000000000004d2' + '0000000000000005' + 'hello'.encode('hex')).decode('hex'))
+        pkt = MessageHead(binascii.unhexlify(
+            b'01' + b'00' + b'00000000000004d2' + b'0000000000000005' + binascii.hexlify(b'hello')
+        ))
         self.assertEqual(pkt.msg_id, 1)
         self.assertIsInstance(pkt.payload, TransferSegment)
         self.assertEqual(pkt.payload.flags, 0)
         self.assertEqual(pkt.payload.transfer_id, 1234)
         self.assertEqual(pkt.payload.length, 5)
-        self.assertEqual(pkt.payload.getfieldval('data'), 'hello')
+        self.assertEqual(pkt.payload.getfieldval('data'), b'hello')
 
     def testSerializeEndData(self):
-        pkt = MessageHead()/TransferSegment(flags=TransferSegment.FLAG_END, transfer_id=1234, data='hello')
-        self.assertSequenceEqual(str(pkt).encode('hex'), '01' + '01' + '00000000000004d2' + '0000000000000005' + 'hello'.encode('hex'))
+        pkt = MessageHead()/TransferSegment(flags=TransferSegment.FLAG_END, transfer_id=1234, data=b'hello')
+        self.assertSequenceEqual(
+            binascii.hexlify(bytes(pkt)), 
+            b'01' + b'01' + b'00000000000004d2' + b'0000000000000005' + binascii.hexlify(b'hello')
+        )
 
     def testDeserializeEndData(self):
-        pkt = MessageHead((
-            '01' + '01' + '00000000000004d2' 
-            + '0000000000000005' + 'hello'.encode('hex')
-        ).decode('hex'))
+        pkt = MessageHead(binascii.unhexlify(
+            b'01' + b'01' + b'00000000000004d2' 
+            + b'0000000000000005' + binascii.hexlify(b'hello')
+        ))
         self.assertEqual(pkt.msg_id, 1)
         self.assertIsInstance(pkt.payload, TransferSegment)
         self.assertEqual(pkt.payload.flags, TransferSegment.FLAG_END)
         self.assertEqual(pkt.payload.transfer_id, 1234)
         self.assertEqual(pkt.payload.length, 5)
-        self.assertEqual(pkt.payload.getfieldval('data'), 'hello')
+        self.assertEqual(pkt.payload.getfieldval('data'), b'hello')
 
 class TestTransferAck(unittest.TestCase):
     
     def testSerialize(self):
         pkt = MessageHead()/TransferAck(transfer_id=1234, flags=TransferSegment.FLAG_END, length=43210)
         self.assertSequenceEqual(
-            str(pkt).encode('hex'),
-            '02' + '01' + '00000000000004d2' + '000000000000a8ca'
+            binascii.hexlify(bytes(pkt)),
+            b'02' + b'01' + b'00000000000004d2' + b'000000000000a8ca'
         )
 
     def testDeserialize(self):
-        pkt = MessageHead((
-            '02' + '01' + '00000000000004d2' + '000000000000a8ca'
-        ).decode('hex'))
+        pkt = MessageHead(binascii.unhexlify(
+            b'02' + b'01' + b'00000000000004d2' + b'000000000000a8ca'
+        ))
         self.assertEqual(pkt.msg_id, 2)
         self.assertIsInstance(pkt.payload, TransferAck)
         self.assertEqual(pkt.payload.flags, TransferSegment.FLAG_END)

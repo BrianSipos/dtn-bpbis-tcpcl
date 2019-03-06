@@ -1,4 +1,4 @@
-
+import binascii
 import unittest
 from scapy.packet import Packet
 from .. import formats
@@ -19,16 +19,16 @@ class TestUInt16Field(unittest.TestCase):
         # Default value
         self.assertIsNone(pkt.getfieldval('attr'))
         self.assertIsNone(pkt.attr)
-        data = str(pkt)
-        self.assertSequenceEqual(data, '0000'.decode('hex'))
+        data = bytes(pkt)
+        self.assertSequenceEqual(data, binascii.unhexlify(b'0000'))
         
         # Particular value
         testval = 0x30
         pkt.setfieldval('attr', testval)
         self.assertEqual(pkt.getfieldval('attr'), testval)
         self.assertEqual(pkt.attr, testval)
-        data = str(pkt)
-        self.assertSequenceEqual(data, '0030'.decode('hex'))
+        data = bytes(pkt)
+        self.assertSequenceEqual(data, binascii.unhexlify(b'0030'))
     
     def testDeserialize(self):
         testval = 0x40
@@ -57,20 +57,20 @@ class TestSdnvField(unittest.TestCase):
         # Default value
         self.assertIsNone(pkt.getfieldval('attr'))
         self.assertIsNone(pkt.attr)
-        data = str(pkt)
-        self.assertSequenceEqual(data, '\0')
+        data = bytes(pkt)
+        self.assertSequenceEqual(data, binascii.unhexlify(b'00'))
         
         # Particular value
         testval = 12345
         pkt.setfieldval('attr', testval)
         self.assertEqual(pkt.getfieldval('attr'), testval)
         self.assertEqual(pkt.attr, testval)
-        data = str(pkt)
-        self.assertSequenceEqual(data, 'e039'.decode('hex'))
+        data = bytes(pkt)
+        self.assertSequenceEqual(data, binascii.unhexlify(b'e039'))
     
     def testDeserialize(self):
         testval = 12345
-        data = 'e039'.decode('hex')
+        data = binascii.unhexlify(b'e039')
         pkt = self.DummyPacket(data)
         self.assertEqual(len(pkt), 2)
         self.assertEqual(pkt.getfieldval('attr'), testval)

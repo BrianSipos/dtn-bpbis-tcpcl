@@ -2,6 +2,7 @@
 Implementation of a symmetric TCPCL agent.
 '''
 
+import binascii
 import sys
 import logging
 import argparse
@@ -11,10 +12,9 @@ from gi.repository import GLib as glib
 import dbus.bus
 import dbus.service
 from dbus.mainloop.glib import DBusGMainLoop
-import StringIO
+from io import BytesIO
 import os
 import math
-import datetime
 from tcpcl import formats, contact, messages, xferextend
 
 def combine_flags(names):
@@ -35,7 +35,7 @@ class Config(object):
         self.bus_conn = None
         self.ssl_ctx = None
         self.tls_require = None
-        self.eid = ''
+        self.eid = u''
         self.keepalive_time = 0
         self.idle_time = 0
         #: Maximum size of transmit segments in octets
@@ -59,7 +59,7 @@ class Connection(object):
         self._peer_name = peer_name
         
         #: Transmit buffer
-        self.__tx_buf = ''
+        self.__tx_buf = b''
         
         #: The raw socket
         self.__s_notls = None
@@ -332,7 +332,7 @@ class Connection(object):
         :return: The to-be-transmitted data.
         :rtype: str
         '''
-        return ''
+        return b''
 
 class RejectError(Exception):
     ''' Allow recv_ handlers to reject the message.
@@ -385,9 +385,9 @@ class Messenger(Connection):
         self._from = fromaddr
         self._to = toaddr
         #: Receive pre-message data buffer
-        self.__rx_buf = ''
+        self.__rx_buf = b''
         #: Transmit post-message data buffer
-        self.__tx_buf = ''
+        self.__tx_buf = b''
         
         # now set up connection
         if fromaddr:
@@ -485,7 +485,7 @@ class Messenger(Connection):
             # Probe for full message (by reading back encoded data)
             try:
                 pkt = msgcls(self.__rx_buf)
-                pkt_data = str(pkt)
+                pkt_data = bytes(pkt)
             except formats.VerifyError as err:
                 self.__logger.debug('Decoded partial packet: %s', err)
                 return
@@ -493,7 +493,7 @@ class Messenger(Connection):
                 self.__logger.error('Failed to decode packet: %s', err)
                 return
             if self.DO_DEBUG_DATA:
-                self.__logger.debug('RX packet data: %s', pkt_data.encode('hex'))
+                self.__logger.debug('RX packet data: %s', binascii.hexlify(pkt_data))
             self.__logger.debug('Matched message %d octets', len(pkt_data))
             
             # Keep final padding as future data
@@ -511,7 +511,7 @@ class Messenger(Connection):
         
         if isinstance(pkt, contact.Head):
             if pkt.magic != contact.MAGIC_HEAD:
-                raise ValueError('Contact header with bad magic: {0}'.format(pkt.magic.encode('hex')))
+                raise ValueError('Contact header with bad magic: {0}'.format(binascii.hexlify(pkt.magic)))
             if pkt.version != 4:
                 raise ValueError('Contact header with bad version: {0}'.format(pkt.version))
             
@@ -556,7 +556,7 @@ class Messenger(Connection):
         
         else:
             # Some payloads are empty and scapy will not construct them
-            msgcls = pkt.guess_payload_class('')
+            msgcls = pkt.guess_payload_class(b'')
             
             try: # Allow rejection from any of these via RejectError
                 if msgcls == messages.SessionInit:
@@ -662,9 +662,9 @@ class Messenger(Connection):
         :param pkt: The message packet to send.
         '''
         self.__logger.info('TX: %s', repr(pkt))
-        pkt_data = str(pkt)
+        pkt_data = bytes(pkt)
         if self.DO_DEBUG_DATA:
-            self.__logger.debug('TX packet data: %s', pkt_data.encode('hex'))
+            self.__logger.debug('TX packet data: %s', binascii.hexlify(pkt_data))
         
         self.__tx_buf += pkt_data
         self.send_ready()
@@ -856,7 +856,7 @@ class ContactHandler(Messenger, dbus.service.Object):
         ''' Begin reception of a transfer. '''
         self._rx_tmp = BundleItem()
         self._rx_tmp.transfer_id = transfer_id
-        self._rx_tmp.file = StringIO.StringIO()
+        self._rx_tmp.file = BytesIO()
         
         self.recv_bundle_started(str(transfer_id))
     
@@ -933,10 +933,10 @@ class ContactHandler(Messenger, dbus.service.Object):
         '''
         
         # byte array to str
-        data = ''.join([chr(val) for val in data])
+        data = b''.join([chr(val) for val in data])
         
         item = BundleItem()
-        item.file = StringIO.StringIO(data)
+        item.file = BytesIO(data)
         return str(self._add_queue_item(item))
     
     @dbus.service.method(IFACE, in_signature='s', out_signature='s')
@@ -1180,7 +1180,7 @@ def main():
                         metavar='LEVEL',
                         help='Console logging lowest level displayed.')
     subp = parser.add_subparsers(dest='action', help='action')
-    parser.add_argument('--eid', type=unicode, 
+    parser.add_argument('--eid', type=str, 
                         help='This node EID')
     parser.add_argument('--keepalive', type=int, 
                         help='Keepalive time in seconds')

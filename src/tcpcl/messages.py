@@ -56,7 +56,7 @@ class SessionInit(formats.NoPayloadPacket):
         
         formats.UInt16FieldLenField('eid_length', default=None,
                                     length_of='eid_data'),
-        fields.StrLenField('eid_data', default='',
+        fields.StrLenField('eid_data', default=b'',
                            length_from=lambda pkt: pkt.eid_length),
         
         formats.UInt32FieldLenField('ext_size', default=None,
@@ -72,7 +72,7 @@ class SessionInit(formats.NoPayloadPacket):
 
         (field, val) = self.getfield_and_val('ext_items')
         if val is not None:
-            encoded = field.addfield(self, '', val)
+            encoded = field.addfield(self, b'', val)
             formats.verify_sized_item(self.ext_size, encoded)
 
         packet.Packet.post_dissection(self, pkt)
@@ -169,14 +169,14 @@ class TransferSegment(formats.NoPayloadPacket):
                                        length_from=lambda pkt: pkt.ext_size),
         ),
         formats.UInt64FieldLenField('length', default=None, length_of='data'),
-        formats.BlobField('data', '', length_from=lambda pkt: pkt.length),
+        formats.BlobField('data', b'', length_from=lambda pkt: pkt.length),
     ]
     
     def post_dissection(self, pkt):
         ''' Verify consistency of packet. '''
         (field, val) = self.getfield_and_val('ext_items')
         if val is not None:
-            encoded = field.addfield(self, '', val)
+            encoded = field.addfield(self, b'', val)
             formats.verify_sized_item(self.ext_size, encoded)
         
         formats.verify_sized_item(self.length, self.getfieldval('data'))
