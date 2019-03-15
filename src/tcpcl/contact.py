@@ -1,6 +1,6 @@
 ''' Items related to contact header and connection negotiation.
 '''
-
+import enum
 from scapy import fields, packet
 from . import formats
 
@@ -17,15 +17,17 @@ class Head(packet.Packet):
 class ContactV3(formats.NoPayloadPacket):
     ''' TCPCLv3 contact header pseudo-message. '''
     
-    FLAG_ENA_ACK    = 0x01
-    FLAG_ENA_FRAG   = 0x02
-    FLAG_ENA_REFUSE = 0x04
-    FLAG_ENA_LENGTH = 0x08
+    #: Flags must be in LSbit-first order
+    @enum.unique
+    class Flag(enum.IntEnum):
+        ENA_ACK    = 0x01
+        ENA_FRAG   = 0x02
+        ENA_REFUSE = 0x04
+        ENA_LENGTH = 0x08
     
     fields_desc = [
         fields.FlagsField('flags', default=0, size=8,
-                          # names in LSbit-first order
-                          names=['ENA_ACK', 'ENA_FRAG', 'ENA_REFUSE', 'ENA_LENGTH']),
+                          names=[item.name for item in Flag]),
         formats.UInt16Field('keepalive', default=0),
         
         formats.SdnvFieldLenField('eid_length', default=None, length_of='eid_data'),
@@ -45,13 +47,16 @@ class ContactV4(formats.NoPayloadPacket):
     
     #: Largest 64-bit size value
     SIZE_MAX = 2**64 - 1
-    #: Sender can use TLS
-    FLAG_CAN_TLS = 0x01
+    
+    #: Flags must be in LSbit-first order
+    @enum.unique
+    class Flag(enum.IntEnum):
+        CAN_TLS = 0x01
     
     fields_desc = [
         fields.FlagsField('flags', default=0, size=8,
                           # names in LSbit-first order
-                          names=['CAN_TLS']),
+                          names=[item.name for item in Flag]),
     ]
 
 packet.bind_layers(Head, ContactV4, version=4)

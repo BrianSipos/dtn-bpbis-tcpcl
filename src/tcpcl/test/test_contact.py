@@ -22,9 +22,9 @@ class TestContact(unittest.TestCase):
         pkt = contact.Head(binascii.unhexlify(MAGIC_HEX + b'04' + b'00'))
         self.assertEqual(pkt.magic, b'dtn!')
         self.assertEqual(pkt.version, 4)
-        self.assertFalse(pkt.flags & contact.ContactV4.FLAG_CAN_TLS)
+        self.assertFalse(pkt.flags & contact.ContactV4.Flag.CAN_TLS)
         
         pkt = contact.Head(binascii.unhexlify(MAGIC_HEX + b'04' + b'01'))
         pkt.show()
         self.assertEqual(pkt.version, 4)
-        self.assertTrue(pkt.flags & contact.ContactV4.FLAG_CAN_TLS)
+        self.assertTrue(pkt.flags & contact.ContactV4.Flag.CAN_TLS)

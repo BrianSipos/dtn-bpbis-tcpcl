@@ -1,17 +1,23 @@
-#include "../../wireshark-plugin/src/packet-tcpclv4.h"
-
+#include "packet-tcpclv4.h"
 #include <epan/packet.h>
 #include <epan/prefs.h>
 #include <epan/proto.h>
 #include <epan/conversation.h>
 #include <epan/dissectors/packet-tcp.h>
+#include <epan/dissectors/packet-ssl.h>
+#include <epan/dissectors/packet-ssl-utils.h>
 #include <epan/expert.h>
+#include <epan/reassemble.h>
 #include <stdio.h>
 
-static const char *TCPCL_PORT_RANGE = "4556";
+static const guint TCPCL_PORT_NUM = 4556;
 /// Protocol handles
 static int proto_tcpcl = -1;
 static int proto_xferext_totallen = -1;
+
+/// Dissector handles
+static dissector_handle_t handle_tcpcl;
+static dissector_handle_t handle_ssl;
 
 /// Extension sub-dissectors
 static dissector_table_t sess_ext_dissector;
@@ -44,6 +50,7 @@ static const value_string msg_reject_reason_vals[]={
     {0, NULL},
 };
 
+static int hf_tcpcl = -1;
 static int hf_chdr_tree = -1;
 static int hf_chdr_magic = -1;
 static int hf_chdr_version = -1;
@@ -92,9 +99,11 @@ static int hf_msg_reject_head = -1;
 static int hf_xferext_totallen_total_len = -1;
 /// Field definitions
 static hf_register_info fields[] = {
+    {&hf_tcpcl, {"TCP Convergence Layer Version 4", "tcpclv4", FT_PROTOCOL, BASE_NONE, NULL, 0x0, NULL, HFILL}},
+
     {&hf_chdr_tree, {"TCPCLv4 Contact Header", "tcpclv4.chdr", FT_PROTOCOL, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_chdr_magic, {"Protocol Magic", "tcpclv4.chdr.magic", FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL}},
-    {&hf_chdr_version, {"Protocol Version", "tcpclv4.chdr.version", FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL}},
+    {&hf_chdr_version, {"Protocol Version", "tcpclv4.chdr.version", FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL}},
     {&hf_chdr_flags, {"Contact Flags", "tcpclv4.chdr.flags", FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL}},
     {&hf_chdr_flags_cantls, {"CAN_TLS", "tcpclv4.chdr.can_tls", FT_UINT8, BASE_DEC, NULL, 0x01, NULL, HFILL}},
 
@@ -169,6 +178,7 @@ static const int *xferext_flags[] = {
     &hf_xferext_flags_crit,
     NULL
 };
+static int ett_tcpcl = -1;
 static int ett_chdr = -1;
 static int ett_chdr_flags = -1;
 static int ett_chdr_badmagic = -1;
@@ -227,11 +237,12 @@ typedef struct {
     gboolean contact_negotiated;
     /// Derived use of TLS from @c can_tls of the peers
     gboolean session_use_tls;
+    guint32 session_tls_start;
 
     /// True when session negotiation is finished
     gboolean sess_negotiated;
 } tcpcl_conversation_t;
-#define TCPCL_CONVERSATION_INIT {TCPCL_PEER_INIT, TCPCL_PEER_INIT, FALSE, FALSE, FALSE}
+#define TCPCL_CONVERSATION_INIT {TCPCL_PEER_INIT, TCPCL_PEER_INIT, FALSE, FALSE, 0, FALSE}
 
 static tcpcl_peer_t * get_peer(tcpcl_conversation_t *tcpcl_convo, const packet_info *pinfo) {
     const gboolean is_active = (
@@ -250,8 +261,7 @@ static gboolean has_init_packet(const tcpcl_peer_t *peer) {
     return (peer->chdr_seen.raw_offset >= 0);
 }
 
-static gboolean is_init_packet(const tcpcl_peer_t *peer, const packet_info *pinfo, tvbuff_t *tvb) {
-    const gint raw_off = tvb_raw_offset(tvb);
+static gboolean is_init_packet(const tcpcl_peer_t *peer, const packet_info *pinfo, gint raw_off) {
     fprintf(stdout, "is_init_packet on %d+%d seen contact header on %d+%d\n",
         pinfo->num, raw_off,
         peer->chdr_seen.frame_num, peer->chdr_seen.raw_offset
@@ -265,7 +275,7 @@ static gboolean is_init_packet(const tcpcl_peer_t *peer, const packet_info *pinf
     );
 }
 
-static void try_negotiate(tcpcl_conversation_t *tcpcl_convo) {
+static void try_negotiate(tcpcl_conversation_t *tcpcl_convo, packet_info *pinfo _U_) {
     if (!(tcpcl_convo->contact_negotiated)
         && has_init_packet(&(tcpcl_convo->active))
         && has_init_packet(&(tcpcl_convo->passive))) {
@@ -273,49 +283,14 @@ static void try_negotiate(tcpcl_conversation_t *tcpcl_convo) {
             tcpcl_convo->active.can_tls & tcpcl_convo->passive.can_tls
         );
         tcpcl_convo->contact_negotiated = TRUE;
+        fprintf(stdout, "TCPCLv4 negotiated contact parameters: USE_TLS=%d\n", tcpcl_convo->session_use_tls);
+
+        if (tcpcl_convo->session_use_tls && (tcpcl_convo->session_tls_start == 0)) {
+            col_append_str(pinfo->cinfo, COL_INFO, ", STARTTLS");
+            tcpcl_convo->session_tls_start = pinfo->num;
+            ssl_starttls_ack(handle_ssl, pinfo, handle_tcpcl);
+        }
     }
-}
-
-static void reinit_tcpcl(void) {
-    //pref_tcp_range = prefs_get_range_value("tcpclv4", "tcp.port");
-}
-
-static void proto_register_tcpcl(void) {
-    proto_tcpcl = proto_register_protocol(
-        "DTN TCP Convergence Layer Protocol Version 4", /* name */
-        "TCPCLv4", /* short name */
-        "tcpclv4" /* abbrev */
-    );
-
-    proto_register_field_array(proto_tcpcl, fields, array_length(fields));
-    static int *ett[] = {
-        &ett_chdr,
-        &ett_chdr_flags,
-        &ett_chdr_badmagic,
-        &ett_mhdr,
-        &ett_sess_term_flags,
-        &ett_xfer_flags,
-        &ett_sessext,
-        &ett_sessext_flags,
-        &ett_xferext,
-        &ett_xferext_flags,
-    };
-    proto_register_subtree_array(ett, array_length(ett));
-    sess_ext_dissector = register_dissector_table("tcpclv4.sess_ext", "TCPCLv4 Session Extension", proto_tcpcl, FT_UINT16, BASE_HEX);
-    xfer_ext_dissector = register_dissector_table("tcpclv4.xfer_ext", "TCPCLv4 Transfer Extension", proto_tcpcl, FT_UINT16, BASE_HEX);
-
-    expert_module_t *expert = expert_register_protocol(proto_tcpcl);
-    expert_register_field_array(expert, expertitems, array_length(expertitems));
-
-    module_t *module_tcpcl = prefs_register_protocol(proto_tcpcl, reinit_tcpcl);
-    (void)module_tcpcl;
-
-    /* Packaged extensions */
-    proto_xferext_totallen = proto_register_protocol(
-        "DTN TCPCLv4 Transfer Total Length", /* name */
-        "TCPCLv4-xferext-totallen", /* short name */
-        "tcpclv4-xferext-totallen" /* abbrev */
-    );
 }
 
 static guint get_message_len(packet_info *pinfo, tvbuff_t *tvb, int ext_offset, void *data _U_) {
@@ -330,7 +305,8 @@ static guint get_message_len(packet_info *pinfo, tvbuff_t *tvb, int ext_offset, 
 
     const tcpcl_peer_t *tcpcl_peer = get_peer(tcpcl_convo, pinfo);
     guint8 msgtype = 0;
-    if (is_init_packet(tcpcl_peer, pinfo, tvb)) {
+    fprintf(stdout, "LEN scanning...\n");
+    if (is_init_packet(tcpcl_peer, pinfo, tvb_raw_offset(tvb) + ext_offset)) {
         offset += 6;
     }
     else {
@@ -401,7 +377,7 @@ static guint get_message_len(packet_info *pinfo, tvbuff_t *tvb, int ext_offset, 
         }
     }
     const int needlen = offset - init_offset;
-    fprintf(stdout, "len decoded msg type %x, remain length %d, need length %d\n", msgtype, buflen - init_offset, needlen);
+    fprintf(stdout, "LEN decoded msg type %x, remain length %d, need length %d\n", msgtype, buflen - init_offset, needlen);
     return needlen;
 }
 
@@ -414,7 +390,11 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
     gint offset = 0;
 
     tcpcl_peer_t *tcpcl_peer = get_peer(tcpcl_convo, pinfo);
-    if (is_init_packet(tcpcl_peer, pinfo, tvb)) {
+    const char *msgtype_name = NULL;
+    fprintf(stdout, "DISSECT scanning...\n");
+    if (is_init_packet(tcpcl_peer, pinfo, tvb_raw_offset(tvb))) {
+        msgtype_name = "Contact Header";
+
         proto_item *item_chdr = proto_tree_add_item(tree, hf_chdr_tree, tvb, offset, 0, ENC_BIG_ENDIAN);
         proto_tree *tree_chdr = proto_item_add_subtree(item_chdr, ett_chdr);
 
@@ -449,9 +429,8 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
         guint8 msgtype = tvb_get_guint8(tvb, offset);
         proto_tree_add_uint(tree_msg, hf_mhdr_type, tvb, offset, 1, msgtype);
         offset += 1;
-        fprintf(stdout, "dissect decoding msg type %x, buf length %d\n", msgtype, tvb_captured_length(tvb));
+        fprintf(stdout, "DISSECT decoding msg type %x, buf length %d\n", msgtype, tvb_captured_length(tvb));
 
-        const char *msgtype_name = NULL;
         wmem_strbuf_t *suffix_text = wmem_strbuf_new(wmem_packet_scope(), NULL);
         switch(msgtype) {
             case TCPCL_MSGTYPE_SESS_INIT: {
@@ -696,7 +675,13 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
         wmem_strbuf_finalize(suffix_text);
     }
 
-    try_negotiate(tcpcl_convo);
+    const gchar *coltext = col_get_text(pinfo->cinfo, COL_INFO);
+    if (coltext && strnlen(coltext, 1) > 0) {
+        col_append_str(pinfo->cinfo, COL_INFO, ", ");
+    }
+    col_append_fstr(pinfo->cinfo, COL_INFO, "%s", msgtype_name);
+
+    try_negotiate(tcpcl_convo, pinfo);
 
     return offset;
 }
@@ -718,13 +703,20 @@ static int dissect_tcpcl(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
         tcpcl_convo->passive.port = pinfo->destport;
     }
 
-    tcp_dissect_pdus(tvb, pinfo, tree, TRUE, 1, get_message_len, dissect_message, data);
-
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "TCPCLv4");
     /* Clear out stuff in the info column */
     col_clear(pinfo->cinfo, COL_INFO);
+    fprintf(stdout, "\n");
 
-    return tvb_captured_length(tvb);
+    proto_item *item_tcpcl = proto_tree_add_item(tree, hf_tcpcl, tvb, 0, 0, ENC_BIG_ENDIAN);
+    proto_tree *tree_tcpcl = proto_item_add_subtree(item_tcpcl, ett_tcpcl);
+
+    tcp_dissect_pdus(tvb, pinfo, tree_tcpcl, TRUE, 1, get_message_len, dissect_message, data);
+
+    const guint buflen = tvb_captured_length(tvb);
+    proto_item_set_len(item_tcpcl, buflen);
+
+    return buflen;
 }
 
 static int dissect_xferext_totallen(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, void *data _U_) {
@@ -737,11 +729,57 @@ static int dissect_xferext_totallen(tvbuff_t *tvb, packet_info *pinfo _U_, proto
     return tvb_captured_length(tvb);
 }
 
+static void reinit_tcpcl(void) {
+    //pref_tcp_range = prefs_get_range_value("tcpclv4", "tcp.port");
+}
+
+static void proto_register_tcpcl(void) {
+    proto_tcpcl = proto_register_protocol(
+        "DTN TCP Convergence Layer Protocol Version 4", /* name */
+        "TCPCLv4", /* short name */
+        "tcpclv4" /* abbrev */
+    );
+
+    proto_register_field_array(proto_tcpcl, fields, array_length(fields));
+    static int *ett[] = {
+        &ett_tcpcl,
+        &ett_chdr,
+        &ett_chdr_flags,
+        &ett_chdr_badmagic,
+        &ett_mhdr,
+        &ett_sess_term_flags,
+        &ett_xfer_flags,
+        &ett_sessext,
+        &ett_sessext_flags,
+        &ett_xferext,
+        &ett_xferext_flags,
+    };
+    proto_register_subtree_array(ett, array_length(ett));
+    sess_ext_dissector = register_dissector_table("tcpclv4.sess_ext", "TCPCLv4 Session Extension", proto_tcpcl, FT_UINT16, BASE_HEX);
+    xfer_ext_dissector = register_dissector_table("tcpclv4.xfer_ext", "TCPCLv4 Transfer Extension", proto_tcpcl, FT_UINT16, BASE_HEX);
+
+    expert_module_t *expert = expert_register_protocol(proto_tcpcl);
+    expert_register_field_array(expert, expertitems, array_length(expertitems));
+
+    handle_tcpcl = register_dissector("tcpclv4", dissect_tcpcl, proto_tcpcl);
+
+    module_t *module_tcpcl = prefs_register_protocol(proto_tcpcl, reinit_tcpcl);
+    (void)module_tcpcl;
+
+    /* Packaged extensions */
+    proto_xferext_totallen = proto_register_protocol(
+        "DTN TCPCLv4 Transfer Total Length", /* name */
+        "TCPCLv4-xferext-totallen", /* short name */
+        "tcpclv4-xferext-totallen" /* abbrev */
+    );
+}
+
 static void proto_reg_handoff_tcpcl(void) {
-    {
-        dissector_handle_t dis_h = create_dissector_handle(dissect_tcpcl, proto_tcpcl);
-        dissector_add_uint_range_with_preference("tcp.port", TCPCL_PORT_RANGE, dis_h);
-    }
+    dissector_add_uint_with_preference("tcp.port", TCPCL_PORT_NUM, handle_tcpcl);
+
+    handle_ssl = find_dissector("ssl");
+
+    /* Packaged extensions */
     {
         dissector_handle_t dis_h = create_dissector_handle(dissect_xferext_totallen, proto_xferext_totallen);
         dissector_add_uint("tcpclv4.xfer_ext", 1, dis_h);

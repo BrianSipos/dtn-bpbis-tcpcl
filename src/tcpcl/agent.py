@@ -33,13 +33,14 @@ class Config(object):
     '''
     def __init__(self):
         self.bus_conn = None
+        self.stop_on_close = False
         self.ssl_ctx = None
         self.tls_require = None
         self.eid = u''
         self.keepalive_time = 0
         self.idle_time = 0
         #: Maximum size of transmit segments in octets
-        self.segment_size = int(1 * (1024 ** 2))
+        self.segment_size = 100#int(1 * (1024 ** 2))
 
 class Connection(object):
     ''' Optionally secured socket connection.
@@ -142,7 +143,7 @@ class Connection(object):
             try:
                 sock.shutdown(socket.SHUT_RDWR)
             except socket.error as err:
-                self.__logger.error('Socket shutdown error: %s', err)
+                self.__logger.warning('Socket shutdown error: %s', err)
             sock.close()
         
         self.__s_notls = None
@@ -174,14 +175,11 @@ class Connection(object):
                                               server_hostname=self._peer_name,
                                               do_handshake_on_connect=False)
         
-        self.__logger.debug('Negotiating TLS...')
+        self.__logger.info('Negotiating TLS...')
         try:
             s_tls.do_handshake()
         except ssl.SSLError as err:
             self.__logger.debug('TLS failed: %s', err)
-            # leave non-TLS socket in place
-            #self.__s_tls = None
-            self.unsecure()
             raise
         
         self.__s_tls = s_tls
@@ -464,7 +462,7 @@ class Messenger(Connection):
         ''' Handle an idle timer timeout. '''
         self._idle_stop()
         self.__logger.debug('Idle time reached')
-        self.do_sess_term(messages.SessionTerm.REASON_IDLE)
+        self.do_sess_term(messages.SessionTerm.Reason.IDLE)
         return False
     
     def recv_raw(self, data):
@@ -540,7 +538,8 @@ class Messenger(Connection):
                 try:
                     self.secure(self._config.ssl_ctx)
                 except ssl.SSLError as err:
-                    pass
+                    self.close()
+                    return
             
             # Check policy after attempt
             if self._config.tls_require is not None:
@@ -591,7 +590,7 @@ class Messenger(Connection):
                 
                 else:
                     # Bad RX message
-                    raise RejectError(messages.RejectMsg.REASON_UNKNOWN)
+                    raise RejectError(messages.RejectMsg.Reason.UNKNOWN)
                 
             except RejectError as err:
                 self.send_reject(err.reason, pkt)
@@ -614,8 +613,8 @@ class Messenger(Connection):
         '''
         self.__logger.debug('Contact negotiation')
         
-        this_can_tls = (self._conhead_this.flags & contact.ContactV4.FLAG_CAN_TLS)
-        peer_can_tls = (self._conhead_peer.flags & contact.ContactV4.FLAG_CAN_TLS)
+        this_can_tls = (self._conhead_this.flags & contact.ContactV4.Flag.CAN_TLS)
+        peer_can_tls = (self._conhead_peer.flags & contact.ContactV4.Flag.CAN_TLS)
         self._tls_attempt = (this_can_tls and peer_can_tls)
     
     def send_sess_init(self):
@@ -717,7 +716,7 @@ class Messenger(Connection):
         '''
         self.__logger.debug('XFER_DATA %d %s', transfer_id, flags)
         if not self._in_sess:
-            raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
+            raise RejectError(messages.RejectMsg.Reason.UNEXPECTED)
         
     def recv_xfer_ack(self, transfer_id, length):
         ''' Handle reception of XFER_ACK message.
@@ -729,7 +728,7 @@ class Messenger(Connection):
         '''
         self.__logger.debug('XFER_ACK %d %s', transfer_id, length)
         if not self._in_sess:
-            raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
+            raise RejectError(messages.RejectMsg.Reason.UNEXPECTED)
         
     def recv_xfer_refuse(self, transfer_id, reason):
         ''' Handle reception of XFER_REFUSE message.
@@ -741,7 +740,7 @@ class Messenger(Connection):
         '''
         self.__logger.debug('XFER_REFUSE %d %s', transfer_id, reason)
         if not self._in_sess:
-            raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
+            raise RejectError(messages.RejectMsg.Reason.UNEXPECTED)
 
     def send_xfer_data(self, transfer_id, data, flg, ext=[]):
         ''' Send a XFER_DATA message.
@@ -757,7 +756,7 @@ class Messenger(Connection):
         '''
         if not self._in_sess:
             raise RuntimeError('Attempt to transfer before session established')
-        if ext and not flg & messages.TransferSegment.FLAG_START:
+        if ext and not flg & messages.TransferSegment.Flag.START:
             raise RuntimeError('Cannot send extension items outside of START message')
         
         self.send_message(messages.MessageHead()/
@@ -815,10 +814,15 @@ class ContactHandler(Messenger, dbus.service.Object):
     :param bus_kwargs: Arguments to :py:cls:`dbus.service.Object` constructor.
     :type bus_kwargs: dict
     '''
+    
+    #: D-Bus interface name
+    DBUS_IFACE = 'org.ietf.dtn.tcpcl.Contact'
+    
     def __init__(self, hdl_kwargs, bus_kwargs):
         self.__logger = logging.getLogger(self.__class__.__name__)
         Messenger.__init__(self, **hdl_kwargs)
         dbus.service.Object.__init__(self, **bus_kwargs)
+        self.object_path = bus_kwargs['object_path']
         # Transmit state
         #: Next sequential bundle ID
         self._tx_next_id = 1
@@ -866,16 +870,16 @@ class ContactHandler(Messenger, dbus.service.Object):
     def recv_xfer_data(self, transfer_id, data, flags):
         Messenger.recv_xfer_data(self, transfer_id, data, flags)
         
-        if flags & messages.TransferSegment.FLAG_START:
+        if flags & messages.TransferSegment.Flag.START:
             self._rx_setup(transfer_id)
         
         elif self._rx_tmp is None or self._rx_tmp.transfer_id != transfer_id:
             # Each ID in sequence after start must be identical
-            raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
+            raise RejectError(messages.RejectMsg.Reason.UNEXPECTED)
         
         self._rx_tmp.file.write(data)
         
-        if flags & messages.TransferSegment.FLAG_END:
+        if flags & messages.TransferSegment.Flag.END:
             if self._do_send_ack_final:
                 self.send_xfer_ack(transfer_id, self._rx_tmp.file.tell(), flags)
             
@@ -896,13 +900,13 @@ class ContactHandler(Messenger, dbus.service.Object):
         item = self._tx_map[transfer_id]
         if length == item.file.tell():
             if not self._do_send_ack_final:
-                raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
+                raise RejectError(messages.RejectMsg.Reason.UNEXPECTED)
             
             self.send_bundle_finished(str(item.transfer_id), 'success')
             self._tx_map.pop(transfer_id)
         else:
             if not self._do_send_ack_inter:
-                raise RejectError(messages.RejectMsg.REASON_UNEXPECTED)
+                raise RejectError(messages.RejectMsg.Reason.UNEXPECTED)
     
     def recv_xfer_refuse(self, transfer_id, reason):
         Messenger.recv_xfer_refuse(self, transfer_id, reason)
@@ -914,20 +918,18 @@ class ContactHandler(Messenger, dbus.service.Object):
         if self._tx_tmp is not None and self._tx_tmp.transfer_id == transfer_id:
             self._tx_teardown()
     
-    IFACE = 'org.ietf.dtn.tcpcl.Contact'
-    
-    @dbus.service.method(IFACE, in_signature='', out_signature='b')
+    @dbus.service.method(DBUS_IFACE, in_signature='', out_signature='b')
     def is_secure(self):
         return Connection.is_secure(self)
     
-    @dbus.service.method(IFACE, in_signature='', out_signature='')
+    @dbus.service.method(DBUS_IFACE, in_signature='', out_signature='')
     def close(self):
         if tuple(self.locations):
             self.remove_from_connection()
             
         Messenger.close(self)
     
-    @dbus.service.method(IFACE, in_signature='ay', out_signature='s')
+    @dbus.service.method(DBUS_IFACE, in_signature='ay', out_signature='s')
     def send_bundle_data(self, data):
         ''' Send bundle data directly.
         '''
@@ -939,7 +941,7 @@ class ContactHandler(Messenger, dbus.service.Object):
         item.file = BytesIO(data)
         return str(self._add_queue_item(item))
     
-    @dbus.service.method(IFACE, in_signature='s', out_signature='s')
+    @dbus.service.method(DBUS_IFACE, in_signature='s', out_signature='s')
     def send_bundle_file(self, filepath):
         ''' Send a bundle from the filesystem.
         '''
@@ -957,31 +959,31 @@ class ContactHandler(Messenger, dbus.service.Object):
         self._process_queue_trigger()
         return item.transfer_id
     
-    @dbus.service.method(IFACE, in_signature='', out_signature='as')
+    @dbus.service.method(DBUS_IFACE, in_signature='', out_signature='as')
     def send_bundle_get_queue(self):
         return dbus.Array([str(bid) for bid in self._tx_map.keys()])
     
-    @dbus.service.signal(IFACE, signature='s')
+    @dbus.service.signal(DBUS_IFACE, signature='s')
     def send_bundle_started(self, bid):
         pass
     
-    @dbus.service.signal(IFACE, signature='ss')
+    @dbus.service.signal(DBUS_IFACE, signature='ss')
     def send_bundle_finished(self, bid, result):
         pass
     
-    @dbus.service.signal(IFACE, signature='s')
+    @dbus.service.signal(DBUS_IFACE, signature='s')
     def recv_bundle_started(self, bid):
         pass
     
-    @dbus.service.signal(IFACE, signature='s')
+    @dbus.service.signal(DBUS_IFACE, signature='s')
     def recv_bundle_finished(self, bid):
         pass
     
-    @dbus.service.method(IFACE, in_signature='', out_signature='as')
+    @dbus.service.method(DBUS_IFACE, in_signature='', out_signature='as')
     def recv_bundle_get_queue(self):
         return dbus.Array([str(bid) for bid in self._rx_map.keys()])
     
-    @dbus.service.method(IFACE, in_signature='s', out_signature='ay')
+    @dbus.service.method(DBUS_IFACE, in_signature='s', out_signature='ay')
     def recv_bundle_pop_data(self, bid):
         bid = int(bid)
         item = self._rx_map.pop(bid)
@@ -989,7 +991,7 @@ class ContactHandler(Messenger, dbus.service.Object):
         item.file.seek(0)
         return item.file.read()
     
-    @dbus.service.method(IFACE, in_signature='ss', out_signature='')
+    @dbus.service.method(DBUS_IFACE, in_signature='ss', out_signature='')
     def recv_bundle_pop_file(self, bid, filepath):
         bid = int(bid)
         item = self._rx_map.pop(bid)
@@ -1043,18 +1045,18 @@ class ContactHandler(Messenger, dbus.service.Object):
         flg = 0
         xfer_ext = []
         if self._tx_seg_ix == 0:
-            flg |= messages.TransferSegment.FLAG_START
+            flg |= messages.TransferSegment.Flag.START
             xfer_ext.append(
                 messages.TransferExtendHeader()/xferextend.Length(total_length=octet_count)
             )
         if self._tx_seg_ix == self._tx_seg_num - 1:
-            flg |= messages.TransferSegment.FLAG_END
+            flg |= messages.TransferSegment.Flag.END
         
         # Next segment of data
         self.send_xfer_data(self._tx_tmp.transfer_id, data, flg, xfer_ext)
         self._tx_seg_ix += 1
         
-        if flg & messages.TransferSegment.FLAG_END:
+        if flg & messages.TransferSegment.Flag.END:
             if not self._do_send_ack_final:
                 self.send_bundle_finished(str(self._tx_tmp.transfer_id), 'unacknowledged')
                 self._tx_map.pop(self._tx_tmp.transfer_id)
@@ -1065,13 +1067,15 @@ class ContactHandler(Messenger, dbus.service.Object):
 class Agent(dbus.service.Object):
     ''' Overall agent behavior. '''
     
+    DBUS_IFACE = 'org.ietf.dtn.tcpcl.Agent'
+    
     def __init__(self, config, bus_kwargs):
         self.__logger = logging.getLogger(self.__class__.__name__)
         dbus.service.Object.__init__(self, **bus_kwargs)
         self._config = config
         self._on_stop = None
         
-        self._bindsock = None
+        self._bindsocks = {}
         self._obj_id = 0
         self._handlers = []
     
@@ -1088,35 +1092,45 @@ class Agent(dbus.service.Object):
             return
         
         path = self._get_obj_path()
-        hdl = ContactHandler(hdl_kwargs=kwargs,
-                           bus_kwargs=dict(conn=self._config.bus_conn, object_path=path))
-        self.__logger.info('New handler at "%s"', path)
+        hdl = ContactHandler(
+            hdl_kwargs=kwargs,
+            bus_kwargs=dict(conn=self._config.bus_conn, object_path=path)
+        )
         
         self._handlers.append(hdl)
-        if not self._bindsock:
-            hdl.set_on_close(lambda: self.stop())
+        hdl.set_on_close(lambda: self._unbind_handler(hdl))
         
+        self.connection_opened(path)
         return hdl
     
-    IFACE = 'org.ietf.dtn.tcpcl.Agent'
+    def _unbind_handler(self, hdl):
+        path = hdl.object_path
+        self.connection_closed(path)
+        
+        if self._config.stop_on_close:
+            self.stop()
     
-    def set_on_close(self, func):
+    def set_on_stop(self, func):
         ''' Set a callback to be run when this agent is stopped.
         
         :param func: The callback, which takes no arguments.
         '''
         self._on_stop = func
     
-    @dbus.service.method(IFACE, in_signature='')
+    @dbus.service.signal(DBUS_IFACE, signature='o')
+    def connection_opened(self, objpath):
+        ''' Emitted when a connection is opened. '''
+        self.__logger.info('Opened handler at "%s"', objpath)
+
+    @dbus.service.signal(DBUS_IFACE, signature='o')
+    def connection_closed(self, objpath):
+        ''' Emitted when a connection is closed. '''
+        self.__logger.info('Closed handler at "%s"', objpath)
+
+    @dbus.service.method(DBUS_IFACE, in_signature='')
     def stop(self):
-        if self._bindsock:
-            self.__logger.info('Un-listening')
-            try:
-                self._bindsock.shutdown(socket.SHUT_RDWR)
-            except socket.error as err:
-                self.__logger.error('Bind socket shutdown error: %s', err)
-            self._bindsock.close()
-            self._bindsock = None
+        for spec in tuple(self._bindsocks.keys()):
+            self.listen_stop(*spec)
         
         for hdl in self._handlers:
             hdl.close()
@@ -1127,18 +1141,37 @@ class Agent(dbus.service.Object):
         if self._on_stop:
             self._on_stop()
     
+    @dbus.service.method(DBUS_IFACE, in_signature='si')
     def listen(self, address, port):
         ''' Begin listening for incoming connections and defer handling
         connections to `glib` event loop.
         '''
-        sock = socket.socket(socket.AF_INET)
-        sock.bind((address, port))
+        bindspec = (address, port)
+        if bindspec in self._bindsocks:
+            raise dbus.DBusException('Already listening')
         
-        self.__logger.info('Listening')
-        self._bindsock = sock
-        self._bindsock.listen(1)
-        glib.io_add_watch(self._bindsock, glib.IO_IN, self._accept)
-    
+        sock = socket.socket(socket.AF_INET)
+        sock.bind(bindspec)
+        
+        self.__logger.info('Listening on %s:%d', address, port)
+        sock.listen(1)
+        self._bindsocks[bindspec] = sock
+        glib.io_add_watch(sock, glib.IO_IN, self._accept)
+
+    @dbus.service.method(DBUS_IFACE, in_signature='si')
+    def listen_stop(self, address, port):
+        bindspec = (address, port)
+        if bindspec not in self._bindsocks:
+            raise dbus.DBusException('Not listening')
+        
+        sock = self._bindsocks.pop(bindspec)
+        self.__logger.info('Un-listening on %s:%d', address, port)
+        try:
+            sock.shutdown(socket.SHUT_RDWR)
+        except socket.error as err:
+            self.__logger.warning('Bind socket shutdown error: %s', err)
+        sock.close()
+
     def _accept(self, bindsock, *args, **kwargs):
         ''' Callback to handle incoming connections.
         
@@ -1155,6 +1188,7 @@ class Agent(dbus.service.Object):
         
         return True
     
+    @dbus.service.method(DBUS_IFACE, in_signature='si')
     def connect(self, address, port):
         ''' Initiate an outgoing connection and defer handling state to
         `glib` event loop.
@@ -1200,6 +1234,10 @@ def main():
                         help='Filename for X.509 private key')
     parser.add_argument('--tls-dhparam', type=str, 
                         help='Filename for DH parameters')
+    parser.add_argument('--tls-ciphers', type=str, default=ssl._DEFAULT_CIPHERS,
+                        help='Allowed TLS cipher filter')
+    parser.add_argument('--stop-on-close', default=False, action='store_true',
+                        help='Stop the agent when connection is closed')
     
     parser_listen = subp.add_parser('listen', 
                                     help='Listen for TCP connections')
@@ -1225,6 +1263,7 @@ def main():
     
     config = Config()
     
+    config.stop_on_close = args.stop_on_close
     config.bus_conn = dbus.bus.BusConnection(dbus.bus.BUS_SESSION)
     if args.bus_service:
         bus_serv = dbus.service.BusName(bus=config.bus_conn, name=args.bus_service, do_not_queue=True)
@@ -1232,7 +1271,8 @@ def main():
     
     if args.tls_enable:
         config.ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
-        config.ssl_ctx.set_ciphers(ssl._DEFAULT_CIPHERS)
+        if args.tls_ciphers:
+            config.ssl_ctx.set_ciphers(args.tls_ciphers)
         if args.tls_ca:
             config.ssl_ctx.load_verify_locations(args.tls_ca)
         if args.tls_cert:
@@ -1267,7 +1307,7 @@ def main():
         agent.connect(args.address, args.port)
     
     eloop = glib.MainLoop()
-    agent.set_on_close(lambda: eloop.quit())
+    agent.set_on_stop(lambda: eloop.quit())
     try:
         eloop.run()
     except KeyboardInterrupt:
