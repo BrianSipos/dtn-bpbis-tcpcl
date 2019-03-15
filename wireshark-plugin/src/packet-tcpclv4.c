@@ -11,6 +11,8 @@
 #include <stdio.h>
 
 static const guint TCPCL_PORT_NUM = 4556;
+static gboolean tcpcl_desegment_transfer = TRUE;
+
 /// Protocol handles
 static int proto_tcpcl = -1;
 static int proto_xferext_totallen = -1;
@@ -20,8 +22,12 @@ static dissector_handle_t handle_tcpcl;
 static dissector_handle_t handle_ssl;
 
 /// Extension sub-dissectors
+static dissector_table_t xferload_dissector;
 static dissector_table_t sess_ext_dissector;
 static dissector_table_t xfer_ext_dissector;
+
+/// Transfer reassembly
+static reassembly_table tcpcl_reassembly_table;
 
 static const value_string sess_term_reason_vals[]={
     {0x00, "Unknown"},
@@ -56,6 +62,8 @@ static int hf_chdr_magic = -1;
 static int hf_chdr_version = -1;
 static int hf_chdr_flags = -1;
 static int hf_chdr_flags_cantls = -1;
+
+static int hf_cnegotiate_use_tls = -1;
 
 static int hf_mhdr_tree = -1;
 static int hf_mhdr_type = -1;
@@ -96,6 +104,20 @@ static int hf_xfer_refuse_reason = -1;
 static int hf_msg_reject_reason = -1;
 static int hf_msg_reject_head = -1;
 
+static int hf_xferload_fragments = -1;
+static int hf_xferload_fragment = -1;
+static int hf_xferload_fragment_overlap = -1;
+static int hf_xferload_fragment_overlap_conflicts = -1;
+static int hf_xferload_fragment_multiple_tails = -1;
+static int hf_xferload_fragment_too_long_fragment = -1;
+static int hf_xferload_fragment_error = -1;
+static int hf_xferload_fragment_count = -1;
+static int hf_xferload_reassembled_in = -1;
+static int hf_xferload_reassembled_length = -1;
+static int hf_xferload_reassembled_data = -1;
+static gint ett_xferload_fragment = -1;
+static gint ett_xferload_fragments = -1;
+
 static int hf_xferext_totallen_total_len = -1;
 /// Field definitions
 static hf_register_info fields[] = {
@@ -106,6 +128,8 @@ static hf_register_info fields[] = {
     {&hf_chdr_version, {"Protocol Version", "tcpclv4.chdr.version", FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL}},
     {&hf_chdr_flags, {"Contact Flags", "tcpclv4.chdr.flags", FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL}},
     {&hf_chdr_flags_cantls, {"CAN_TLS", "tcpclv4.chdr.can_tls", FT_UINT8, BASE_DEC, NULL, 0x01, NULL, HFILL}},
+    // Contact negotiation results
+    {&hf_cnegotiate_use_tls, {"Use TLS", "tcpclv4.cnegotiate.use_tls", FT_BOOLEAN, BASE_NONE, NULL, 0x0, NULL, HFILL}},
 
     {&hf_mhdr_tree, {"TCPCLv4 Message", "tcpclv4.mhdr", FT_PROTOCOL, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_mhdr_type, {"Message Type", "tcpclv4.mhdr.type", FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL}},
@@ -125,8 +149,6 @@ static hf_register_info fields[] = {
     {&hf_xferext_type, {"Item Type", "tcpclv4.xferext.type", FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL}},
     {&hf_xferext_len, {"Item Length", "tcpclv4.xferext.len", FT_UINT32, BASE_DEC, NULL, 0x0, NULL, HFILL}},
     {&hf_xferext_data, {"Item Data", "tcpclv4.xferext.data", FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL}},
-    // Specific extensions
-    {&hf_xferext_totallen_total_len, {"Total Length (octets)", "tcpclv4.xferext.totallen.total_len", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
 
     // SESS_INIT fields
     {&hf_sess_init_keepalive, {"Keepalive Interval (s)", "tcpclv4.sess_init.keepalive", FT_UINT16, BASE_DEC, NULL, 0x0, NULL, HFILL}},
@@ -156,6 +178,45 @@ static hf_register_info fields[] = {
     // MSG_REJECT fields
     {&hf_msg_reject_reason, {"Reason", "tcpclv4.msg_reject.reason", FT_UINT8, BASE_DEC, VALS(msg_reject_reason_vals), 0x0, NULL, HFILL}},
     {&hf_msg_reject_head, {"Rejected Type", "tcpclv4.msg_reject.head", FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL}},
+
+    {&hf_xferload_fragments,
+        {"Transfer fragments", "tcpclv4.xferload.fragments",
+        FT_NONE, BASE_NONE, NULL, 0x00, NULL, HFILL } },
+    {&hf_xferload_fragment,
+        {"Transfer fragment", "tcpclv4.xferload.fragment",
+        FT_FRAMENUM, BASE_NONE, NULL, 0x00, NULL, HFILL } },
+    {&hf_xferload_fragment_overlap,
+        {"Transfer fragment overlap", "tcpclv4.xferload.fragment.overlap",
+        FT_BOOLEAN, 0, NULL, 0x00, NULL, HFILL } },
+    {&hf_xferload_fragment_overlap_conflicts,
+        {"Transfer fragment overlapping with conflicting data",
+        "tcpclv4.xferload.fragment.overlap.conflicts",
+        FT_BOOLEAN, 0, NULL, 0x00, NULL, HFILL } },
+    {&hf_xferload_fragment_multiple_tails,
+        {"Message has multiple tail fragments",
+        "tcpclv4.xferload.fragment.multiple_tails",
+        FT_BOOLEAN, 0, NULL, 0x00, NULL, HFILL } },
+    {&hf_xferload_fragment_too_long_fragment,
+        {"Transfer fragment too long", "tcpclv4.xferload.fragment.too_long_fragment",
+        FT_BOOLEAN, 0, NULL, 0x00, NULL, HFILL } },
+    {&hf_xferload_fragment_error,
+        {"Message defragmentation error", "tcpclv4.xferload.fragment.error",
+        FT_FRAMENUM, BASE_NONE, NULL, 0x00, NULL, HFILL } },
+    {&hf_xferload_fragment_count,
+        {"Transfer fragment count", "tcpclv4.xferload.fragment.count",
+        FT_UINT32, BASE_DEC, NULL, 0x00, NULL, HFILL } },
+    {&hf_xferload_reassembled_in,
+        {"Reassembled in", "tcpclv4.xferload.reassembled.in",
+        FT_FRAMENUM, BASE_NONE, NULL, 0x00, NULL, HFILL } },
+    {&hf_xferload_reassembled_length,
+        {"Reassembled length", "tcpclv4.xferload.reassembled.length",
+        FT_UINT32, BASE_DEC, NULL, 0x00, NULL, HFILL } },
+    {&hf_xferload_reassembled_data,
+        {"Reassembled data", "tcpclv4.xferload.reassembled.data",
+        FT_BYTES, BASE_NONE, NULL, 0x00, NULL, HFILL } },
+
+    // Specific extensions
+    {&hf_xferext_totallen_total_len, {"Total Length (octets)", "tcpclv4.xferext.totallen.total_len", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
 };
 static const int *chdr_flags[] = {
     &hf_chdr_flags_cantls,
@@ -178,6 +239,27 @@ static const int *xferext_flags[] = {
     &hf_xferext_flags_crit,
     NULL
 };
+static const fragment_items xferload_frag_items = {
+    /* Fragment subtrees */
+    &ett_xferload_fragment,
+    &ett_xferload_fragments,
+    /* Fragment fields */
+    &hf_xferload_fragments,
+    &hf_xferload_fragment,
+    &hf_xferload_fragment_overlap,
+    &hf_xferload_fragment_overlap_conflicts,
+    &hf_xferload_fragment_multiple_tails,
+    &hf_xferload_fragment_too_long_fragment,
+    &hf_xferload_fragment_error,
+    &hf_xferload_fragment_count,
+    /* Reassembled in field */
+    &hf_xferload_reassembled_in,
+    &hf_xferload_reassembled_length,
+    &hf_xferload_reassembled_data,
+    /* Tag */
+    "Transfer fragments"
+};
+
 static int ett_tcpcl = -1;
 static int ett_chdr = -1;
 static int ett_chdr_flags = -1;
@@ -189,6 +271,21 @@ static int ett_sessext = -1;
 static int ett_sessext_flags = -1;
 static int ett_xferext = -1;
 static int ett_xferext_flags = -1;
+static int *ett[] = {
+    &ett_tcpcl,
+    &ett_chdr,
+    &ett_chdr_flags,
+    &ett_chdr_badmagic,
+    &ett_mhdr,
+    &ett_sess_term_flags,
+    &ett_xfer_flags,
+    &ett_sessext,
+    &ett_sessext_flags,
+    &ett_xferext,
+    &ett_xferext_flags,
+    &ett_xferload_fragment,
+    &ett_xferload_fragments,
+};
 
 static expert_field ei_invalid_magic = EI_INIT;
 static expert_field ei_invalid_version = EI_INIT;
@@ -209,6 +306,7 @@ typedef struct {
     guint32 frame_num;
     gint raw_offset;
 } frame_loc_t;
+#define FRAME_LOC_INIT {0, -1}
 
 typedef struct {
     /// Address for this peer
@@ -219,13 +317,13 @@ typedef struct {
     /// Frame number in which the contact header starts
     frame_loc_t chdr_seen;
     /// Frame number in which the SESS_INIT message starts
-    guint32 sess_init_seen;
+    frame_loc_t sess_init_seen;
 
     /// CAN_TLS flag from the contact header
     gboolean can_tls;
 
 } tcpcl_peer_t;
-#define TCPCL_PEER_INIT {ADDRESS_INIT_NONE, 0, {0, -1}, 0, FALSE}
+#define TCPCL_PEER_INIT {ADDRESS_INIT_NONE, 0, FRAME_LOC_INIT, FRAME_LOC_INIT, FALSE}
 
 typedef struct {
     /// Information for the active side of the session
@@ -237,12 +335,13 @@ typedef struct {
     gboolean contact_negotiated;
     /// Derived use of TLS from @c can_tls of the peers
     gboolean session_use_tls;
-    guint32 session_tls_start;
+    /// The last frame before TLS handshake
+    frame_loc_t session_tls_start;
 
     /// True when session negotiation is finished
     gboolean sess_negotiated;
 } tcpcl_conversation_t;
-#define TCPCL_CONVERSATION_INIT {TCPCL_PEER_INIT, TCPCL_PEER_INIT, FALSE, FALSE, 0, FALSE}
+#define TCPCL_CONVERSATION_INIT {TCPCL_PEER_INIT, TCPCL_PEER_INIT, FALSE, FALSE, FRAME_LOC_INIT, FALSE}
 
 static tcpcl_peer_t * get_peer(tcpcl_conversation_t *tcpcl_convo, const packet_info *pinfo) {
     const gboolean is_active = (
@@ -257,39 +356,64 @@ static tcpcl_peer_t * get_peer(tcpcl_conversation_t *tcpcl_convo, const packet_i
     }
 }
 
-static gboolean has_init_packet(const tcpcl_peer_t *peer) {
-    return (peer->chdr_seen.raw_offset >= 0);
+/** Determine if the frame location has been set.
+ *
+ * @param loc The location to check.
+ * @return TRUE if the value is set.
+ */
+static gboolean has_frame_loc(const frame_loc_t *loc) {
+    return (loc->raw_offset >= 0);
 }
 
-static gboolean is_init_packet(const tcpcl_peer_t *peer, const packet_info *pinfo, gint raw_off) {
-    fprintf(stdout, "is_init_packet on %d+%d seen contact header on %d+%d\n",
+/** Determine if the reader is at a frame location.
+ *
+ * @param loc The location to check against.
+ * @param pinfo The packet to check.
+ * @param raw_off The offset within the packet to check.
+ * @return True if the location is set and matches current.
+ */
+static gboolean is_frame_loc(const frame_loc_t *loc, const packet_info *pinfo, gint raw_off) {
+#if 0
+    fprintf(stdout, "is_frame_loc on %d+%d seen location %d+%d\n",
         pinfo->num, raw_off,
-        peer->chdr_seen.frame_num, peer->chdr_seen.raw_offset
+        loc->frame_num, loc->raw_offset
     );
+#endif
     return (
-        (peer->chdr_seen.raw_offset < 0)
+        (loc->raw_offset < 0)
         || (
-            (peer->chdr_seen.frame_num == pinfo->num)
-            && (peer->chdr_seen.raw_offset == raw_off)
+            (loc->frame_num == pinfo->num)
+            && (loc->raw_offset == raw_off)
         )
     );
 }
 
-static void try_negotiate(tcpcl_conversation_t *tcpcl_convo, packet_info *pinfo _U_) {
+static void try_negotiate(tcpcl_conversation_t *tcpcl_convo, tvbuff_t *tvb, packet_info *pinfo) {
     if (!(tcpcl_convo->contact_negotiated)
-        && has_init_packet(&(tcpcl_convo->active))
-        && has_init_packet(&(tcpcl_convo->passive))) {
+        && has_frame_loc(&(tcpcl_convo->active.chdr_seen))
+        && has_frame_loc(&(tcpcl_convo->passive.chdr_seen))) {
         tcpcl_convo->session_use_tls = (
             tcpcl_convo->active.can_tls & tcpcl_convo->passive.can_tls
         );
         tcpcl_convo->contact_negotiated = TRUE;
+
         fprintf(stdout, "TCPCLv4 negotiated contact parameters: USE_TLS=%d\n", tcpcl_convo->session_use_tls);
 
-        if (tcpcl_convo->session_use_tls && (tcpcl_convo->session_tls_start == 0)) {
-            col_append_str(pinfo->cinfo, COL_INFO, ", STARTTLS");
-            tcpcl_convo->session_tls_start = pinfo->num;
+        if (tcpcl_convo->session_use_tls
+            && (!has_frame_loc(&(tcpcl_convo->session_tls_start)))) {
+            col_append_str(pinfo->cinfo, COL_INFO, " [STARTTLS]");
+            tcpcl_convo->session_tls_start.frame_num = pinfo->num;
+            tcpcl_convo->session_tls_start.raw_offset = tvb_raw_offset(tvb);
             ssl_starttls_ack(handle_ssl, pinfo, handle_tcpcl);
         }
+    }
+
+    if (!(tcpcl_convo->sess_negotiated)
+        && has_frame_loc(&(tcpcl_convo->active.sess_init_seen))
+        && has_frame_loc(&(tcpcl_convo->passive.sess_init_seen))) {
+        tcpcl_convo->sess_negotiated = TRUE;
+        fprintf(stdout, "TCPCLv4 negotiated session parameters: \n");
+
     }
 }
 
@@ -306,7 +430,7 @@ static guint get_message_len(packet_info *pinfo, tvbuff_t *tvb, int ext_offset, 
     const tcpcl_peer_t *tcpcl_peer = get_peer(tcpcl_convo, pinfo);
     guint8 msgtype = 0;
     fprintf(stdout, "LEN scanning...\n");
-    if (is_init_packet(tcpcl_peer, pinfo, tvb_raw_offset(tvb) + ext_offset)) {
+    if (is_frame_loc(&(tcpcl_peer->chdr_seen), pinfo, tvb_raw_offset(tvb) + ext_offset)) {
         offset += 6;
     }
     else {
@@ -391,29 +515,32 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
 
     tcpcl_peer_t *tcpcl_peer = get_peer(tcpcl_convo, pinfo);
     const char *msgtype_name = NULL;
+    proto_tree *tree_msg = NULL;
+    tvbuff_t *xferload_tvb = NULL;
     fprintf(stdout, "DISSECT scanning...\n");
-    if (is_init_packet(tcpcl_peer, pinfo, tvb_raw_offset(tvb))) {
+    const gboolean is_contact = is_frame_loc(&(tcpcl_peer->chdr_seen), pinfo, tvb_raw_offset(tvb));
+    if (is_contact) {
         msgtype_name = "Contact Header";
 
         proto_item *item_chdr = proto_tree_add_item(tree, hf_chdr_tree, tvb, offset, 0, ENC_BIG_ENDIAN);
-        proto_tree *tree_chdr = proto_item_add_subtree(item_chdr, ett_chdr);
+        tree_msg = proto_item_add_subtree(item_chdr, ett_chdr);
 
         const void *magic_data = tvb_memdup(wmem_packet_scope(), tvb, offset, 4);
-        proto_item *item_magic = proto_tree_add_bytes(tree_chdr, hf_chdr_magic, tvb, offset, 4, magic_data);
+        proto_item *item_magic = proto_tree_add_bytes(tree_msg, hf_chdr_magic, tvb, offset, 4, magic_data);
         offset += 4;
         if (strncmp((const char *)magic_data, "dtn!", 4) != 0) {
             expert_add_info(pinfo, item_magic, &ei_invalid_magic);
         }
 
         guint8 version = tvb_get_guint8(tvb, offset);
-        proto_item *item_version = proto_tree_add_uint(tree_chdr, hf_chdr_version, tvb, offset, 1, version);
+        proto_item *item_version = proto_tree_add_uint(tree_msg, hf_chdr_version, tvb, offset, 1, version);
         offset += 1;
         if (version != 4) {
             expert_add_info(pinfo, item_version, &ei_invalid_version);
         }
 
         guint8 flags = tvb_get_guint8(tvb, offset);
-        proto_tree_add_bitmask(tree_chdr, tvb, offset, hf_chdr_flags, ett_chdr_flags, chdr_flags, ENC_BIG_ENDIAN);
+        proto_tree_add_bitmask(tree_msg, tvb, offset, hf_chdr_flags, ett_chdr_flags, chdr_flags, ENC_BIG_ENDIAN);
         offset += 1;
         tcpcl_peer->can_tls = (flags & TCPCL_CONTACT_FLAG_CANTLS);
 
@@ -424,7 +551,7 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
     }
     else {
         proto_item *item_msg = proto_tree_add_item(tree, hf_mhdr_tree, tvb, offset, 0, ENC_BIG_ENDIAN);
-        proto_tree *tree_msg = proto_item_add_subtree(item_msg, ett_mhdr);
+        tree_msg = proto_item_add_subtree(item_msg, ett_mhdr);
 
         guint8 msgtype = tvb_get_guint8(tvb, offset);
         proto_tree_add_uint(tree_msg, hf_mhdr_type, tvb, offset, 1, msgtype);
@@ -582,6 +709,7 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
 
                 const void *data_load = tvb_memdup(wmem_packet_scope(), tvb, offset, data_len);
                 proto_tree_add_bytes(tree_msg, hf_xfer_segment_data_load, tvb, offset, data_len, data_load);
+                const gint data_offset = offset;
                 offset += data_len;
 
                 if (flags) {
@@ -598,6 +726,27 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                         wmem_strbuf_append(suffix_text, "END");
                         sep = TRUE;
                     }
+                }
+
+                if (tcpcl_desegment_transfer) {
+                    // Reassemble the segments
+                    fragment_head *xferload_frag_msg = fragment_add_seq_next(
+                        &tcpcl_reassembly_table,
+                        tvb, data_offset, pinfo,
+                        xfer_id & 0xFFFFFFFF, /* Truncate to 32-bits */
+                        data_load, data_len,
+                        !(flags & TCPCL_TRANSFER_FLAG_END)
+                    );
+
+                    gboolean update_info = TRUE;
+                    xferload_tvb = process_reassembled_data(
+                        tvb, data_offset, pinfo,
+                        "Reassembled Transfer",
+                        xferload_frag_msg,
+                        &xferload_frag_items,
+                        &update_info,
+                        proto_item_get_parent(tree)
+                    );
                 }
 
                 break;
@@ -681,7 +830,31 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
     }
     col_append_fstr(pinfo->cinfo, COL_INFO, "%s", msgtype_name);
 
-    try_negotiate(tcpcl_convo, pinfo);
+    try_negotiate(tcpcl_convo, tvb, pinfo);
+    if (is_contact) {
+        proto_item *item_use_tls = proto_tree_add_boolean(tree_msg, hf_cnegotiate_use_tls, tvb, 0, 0, tcpcl_convo->session_use_tls);
+        PROTO_ITEM_SET_GENERATED(item_use_tls);
+    }
+
+    if (xferload_tvb) {
+        col_append_str(pinfo->cinfo, COL_INFO, " [Bundle]");
+        dissector_table_t dissect_media = find_dissector_table("media_type");
+        guint sublen = dissector_try_string(
+            dissect_media,
+            "application/cbor",
+            xferload_tvb,
+            pinfo,
+            proto_item_get_parent(tree),
+            data
+        );
+        if (sublen == 0) {
+            call_data_dissector(
+                xferload_tvb,
+                pinfo,
+                proto_item_get_parent(tree)
+            );
+        }
+    }
 
     return offset;
 }
@@ -730,7 +903,6 @@ static int dissect_xferext_totallen(tvbuff_t *tvb, packet_info *pinfo _U_, proto
 }
 
 static void reinit_tcpcl(void) {
-    //pref_tcp_range = prefs_get_range_value("tcpclv4", "tcp.port");
 }
 
 static void proto_register_tcpcl(void) {
@@ -741,20 +913,8 @@ static void proto_register_tcpcl(void) {
     );
 
     proto_register_field_array(proto_tcpcl, fields, array_length(fields));
-    static int *ett[] = {
-        &ett_tcpcl,
-        &ett_chdr,
-        &ett_chdr_flags,
-        &ett_chdr_badmagic,
-        &ett_mhdr,
-        &ett_sess_term_flags,
-        &ett_xfer_flags,
-        &ett_sessext,
-        &ett_sessext_flags,
-        &ett_xferext,
-        &ett_xferext_flags,
-    };
     proto_register_subtree_array(ett, array_length(ett));
+    xferload_dissector = register_dissector_table("tcpclv4.xferload", "TCPCLv4 Transfer Payload", proto_tcpcl, FT_STRING, BASE_NONE);
     sess_ext_dissector = register_dissector_table("tcpclv4.sess_ext", "TCPCLv4 Session Extension", proto_tcpcl, FT_UINT16, BASE_HEX);
     xfer_ext_dissector = register_dissector_table("tcpclv4.xfer_ext", "TCPCLv4 Transfer Extension", proto_tcpcl, FT_UINT16, BASE_HEX);
 
@@ -764,7 +924,22 @@ static void proto_register_tcpcl(void) {
     handle_tcpcl = register_dissector("tcpclv4", dissect_tcpcl, proto_tcpcl);
 
     module_t *module_tcpcl = prefs_register_protocol(proto_tcpcl, reinit_tcpcl);
-    (void)module_tcpcl;
+    prefs_register_bool_preference(
+        module_tcpcl,
+        "desegment_transfer",
+        "Reassemble the segments of each transfer",
+        "Whether the TCPCLv4 dissector should combine the sequential segments "
+        "of a transfer into the full bundle being transfered."
+        "To use this option, you must also enable "
+        "\"Allow subdissectors to reassemble TCP streams\" "
+        "in the TCP protocol settings.",
+        &tcpcl_desegment_transfer
+    );
+
+    reassembly_table_register(
+        &tcpcl_reassembly_table,
+        &addresses_ports_reassembly_table_functions
+    );
 
     /* Packaged extensions */
     proto_xferext_totallen = proto_register_protocol(
@@ -784,6 +959,8 @@ static void proto_reg_handoff_tcpcl(void) {
         dissector_handle_t dis_h = create_dissector_handle(dissect_xferext_totallen, proto_xferext_totallen);
         dissector_add_uint("tcpclv4.xfer_ext", 1, dis_h);
     }
+
+    reinit_tcpcl();
 }
 
 const char plugin_version[] = "0.0";
