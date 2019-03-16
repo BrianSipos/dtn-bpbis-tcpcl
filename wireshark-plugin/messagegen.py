@@ -22,39 +22,50 @@ class Worker(object):
         self._active_sock = None
         self._passive_sock = None
         
-        self.__active_tx_buf = bytes()
+        self.__active_tx_buf = bytearray()
+        self.__passive_tx_buf = bytearray()
     
-    def _active_tx(self, sock, *args, **kwargs):
+    def _chunked_tx(self, sock, cond, *args):
+        frombuf = args[0]
+        
         sent_size = 0
-        while len(self.__active_tx_buf) > 0:
-            data = self.__active_tx_buf[:self.CHUNK_SIZE]
-            self.__logger.debug('Sending message %d/%d octets', len(data), len(self.__active_tx_buf))
+        while len(frombuf) > 0:
+            data = frombuf[:self.CHUNK_SIZE]
+            self.__logger.debug('Sending chunk %d/%d octets', len(data), len(frombuf))
             try:
                 tx_size = sock.send(data)
-                self.__logger.debug('Sent %d octets', tx_size)
+                self.__logger.debug('Sent %d chunk %d octets', sock.fileno(), tx_size)
             except socket.error as err:
                 self.__logger.warning('Failed to send chunk: %s', err)
                 tx_size = None
             if tx_size:
-                self.__active_tx_buf = self.__active_tx_buf[tx_size:]
+                frombuf[:] = frombuf[tx_size:]
                 sent_size += tx_size
 
+        if len(self.__passive_tx_buf) + len(self.__active_tx_buf) == 0:
+            glib.timeout_add(100, lambda: self.stop())
+
         if sent_size == 0:
-            self.stop()
             return False
         return True
     
-    def _passive_rx(self, sock, *args, **kwargs):
+    def _chunked_rx(self, sock, cond, *args):
+        tobuf = args[0]
+        
         try:
             data = sock.recv(self.CHUNK_SIZE)
+            self.__logger.debug('Received %d chunk %d octets', sock.fileno(), len(data))
         except socket.error as err:
             self.__logger.warning('Failed to recv chunk: %s', err)
             data = None
+        
         if not data:
             # Connection closed
-            self.stop()
             return False
 
+        if tobuf is not None:
+            tobuf += data
+        
         return True
     
     def _accept(self, bindsock, *args, **kwargs):
@@ -62,10 +73,14 @@ class Worker(object):
         
         :return: True to continue listening.
         '''
-        newsock, fromaddr = bindsock.accept()
+        sock, fromaddr = bindsock.accept()
         self.__logger.info('Connecting')
-        self._passive_sock = newsock
-        glib.io_add_watch(self._passive_sock, glib.IO_IN, self._passive_rx)
+        self._passive_sock = sock
+        
+        glib.io_add_watch(self._passive_sock, glib.IO_OUT, self._chunked_tx, self.__passive_tx_buf)
+        glib.io_add_watch(self._passive_sock, glib.IO_IN, self._chunked_rx, None)
+        # Prime the TX
+        self._chunked_tx(sock, None, self.__passive_tx_buf)
         
         return True
 
@@ -88,7 +103,8 @@ class Worker(object):
         sock = socket.socket(socket.AF_INET)
         sock.connect(sockaddr)
         self._active_sock = sock
-        glib.io_add_watch(self._active_sock, glib.IO_OUT, self._active_tx)
+        glib.io_add_watch(self._active_sock, glib.IO_OUT, self._chunked_tx, self.__active_tx_buf)
+        glib.io_add_watch(self._active_sock, glib.IO_IN, self._chunked_rx, None)
         
         self.__active_tx_buf += bytes(contact.Head()/contact.ContactV4())
         self.__active_tx_buf += bytes(messages.MessageHead()/messages.SessionInit(
@@ -101,10 +117,39 @@ class Worker(object):
         self.__active_tx_buf += bytes(messages.MessageHead()/messages.SessionTerm(
             reason=messages.SessionTerm.Reason.RESOURCE_EXHAUSTION
         ))
+        self.__active_tx_buf += bytes(messages.MessageHead()/messages.TransferAck(
+            transfer_id=30,
+            length=24,
+        ))
+        self.__active_tx_buf += bytes(messages.MessageHead()/messages.TransferRefuse(
+            transfer_id=40,
+            reason=messages.TransferRefuse.Reason.RESOURCES,
+        ))
+        self.__active_tx_buf += bytes(messages.MessageHead()/messages.TransferSegment(
+            flags=messages.TransferSegment.Flag.START | messages.TransferSegment.Flag.END,
+            transfer_id=5,
+            data=b'hithere'
+        ))
+        
+        self.__passive_tx_buf += bytes(contact.Head()/contact.ContactV4())
+        self.__passive_tx_buf += bytes(messages.MessageHead()/messages.TransferRefuse(
+            transfer_id=5,
+            reason=messages.TransferRefuse.Reason.RESOURCES,
+        ))
+        self.__passive_tx_buf += bytes(messages.MessageHead()/messages.TransferAck(
+            transfer_id=5,
+            length=10,
+        ))
+        
+        # Prime the TX
+        self._chunked_tx(sock, None, self.__active_tx_buf)
 
     def stop(self):
         # Order of shutdown is significant, listener must be last
         for sock in (self._active_sock, self._passive_sock, self._listener):
+            if sock.fileno() < 0:
+                continue
+            self.__logger.debug('Shutting down FD:%d', sock.fileno())
             try:
                 sock.shutdown(socket.SHUT_RDWR)
             except socket.error as err:
