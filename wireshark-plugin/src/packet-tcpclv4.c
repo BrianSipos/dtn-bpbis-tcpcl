@@ -102,11 +102,11 @@ static int hf_xfer_flags = -1;
 static int hf_xfer_flags_start = -1;
 static int hf_xfer_flags_end = -1;
 static int hf_xfer_id = -1;
+static int hf_xfer_total_len = -1;
 static int hf_xfer_segment_extlist_len = -1;
 static int hf_xfer_segment_data_len = -1;
 static int hf_xfer_segment_data_load = -1;
 static int hf_xfer_segment_seen_len = -1;
-static int hf_xfer_segment_total_len = -1;
 static int hf_xfer_segment_related_ack = -1;
 static int hf_xfer_segment_time_diff = -1;
 static int hf_xfer_ack_ack_len = -1;
@@ -184,12 +184,12 @@ static hf_register_info fields[] = {
     {&hf_xfer_flags_start, {"START", "tcpclv4.xfer_flags.start", FT_UINT8, BASE_DEC, NULL, TCPCL_TRANSFER_FLAG_START, NULL, HFILL}},
     {&hf_xfer_flags_end, {"END", "tcpclv4.xfer_flags.end", FT_UINT8, BASE_DEC, NULL, TCPCL_TRANSFER_FLAG_END, NULL, HFILL}},
     {&hf_xfer_id, {"Transfer ID", "tcpclv4.xfer_id", FT_UINT64, BASE_HEX, NULL, 0x0, NULL, HFILL}},
+    {&hf_xfer_total_len, {"Expected Total Length", "tcpclv4.xfer.total_len", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
     // XFER_SEGMENT fields
     {&hf_xfer_segment_extlist_len, {"Extension Items Length (octets)", "tcpclv4.xfer_segment.extlist_len", FT_UINT32, BASE_DEC, NULL, 0x0, NULL, HFILL}},
     {&hf_xfer_segment_data_len, {"Data Length (octets)", "tcpclv4.xfer_segment.data_len", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
     {&hf_xfer_segment_data_load, {"Data", "tcpclv4.xfer_segment.data_load", FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_xfer_segment_seen_len, {"Seen Length", "tcpclv4.xfer_segment.seen_len", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
-    {&hf_xfer_segment_total_len, {"Expected Total Length", "tcpclv4.xfer_segment.total_len", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
     {&hf_xfer_segment_related_ack, {"Related XFER_ACK", "tcpclv4.xfer_segment.related_ack", FT_FRAMENUM, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_xfer_segment_time_diff, {"Acknowledgment Time", "tcpclv4.xfer_segment.time_diff", FT_RELATIVE_TIME, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     // XFER_ACK fields
@@ -1132,7 +1132,7 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                             && (seg_meta->seen_len != *(xfer->total_length))) {
                             expert_add_info(pinfo, item_seen, &ei_xfer_seg_mismatch_total_len);
                         }
-                        proto_item *item_total = proto_tree_add_uint64(tree_msg, hf_xfer_segment_total_len, tvb, 0, 0, *(xfer->total_length));
+                        proto_item *item_total = proto_tree_add_uint64(tree_msg, hf_xfer_total_len, tvb, 0, 0, *(xfer->total_length));
                         PROTO_ITEM_SET_GENERATED(item_total);
                     }
 
@@ -1235,6 +1235,10 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                         }
                     }
 
+                    if (xfer->total_length) {
+                        proto_item *item_total = proto_tree_add_uint64(tree_msg, hf_xfer_total_len, tvb, 0, 0, *(xfer->total_length));
+                        PROTO_ITEM_SET_GENERATED(item_total);
+                    }
                     if (ack_meta->related_seg) {
                         proto_item *item_rel = proto_tree_add_uint(tree_msg, hf_xfer_ack_related_seg, tvb, 0, 0, ack_meta->related_seg->frame_loc.frame_num);
                         PROTO_ITEM_SET_GENERATED(item_rel);
@@ -1332,8 +1336,8 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                 PROTO_ITEM_SET_GENERATED(item_nego);
             }
             {
-            proto_item *item_nego = proto_tree_add_boolean(tree_msg, hf_negotiate_use_tls, tvb, 0, 0, tcpcl_convo->session_use_tls);
-            PROTO_ITEM_SET_GENERATED(item_nego);
+                proto_item *item_nego = proto_tree_add_boolean(tree_msg, hf_negotiate_use_tls, tvb, 0, 0, tcpcl_convo->session_use_tls);
+                PROTO_ITEM_SET_GENERATED(item_nego);
             }
         }
     }
