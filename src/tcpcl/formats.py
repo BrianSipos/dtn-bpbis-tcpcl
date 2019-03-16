@@ -190,4 +190,4 @@ def verify_sized_item(length, item):
         raise VerifyError('Read length is missing')
     item_len = len(bytes(item))
     if read_len != item_len:
-        raise VerifyError('Read length {0} inconsistent with actual length {1} (of "{2}")'.format(read_len, item_len))
+        raise VerifyError('Read length {0} inconsistent with actual length {1}'.format(read_len, item_len))
