@@ -582,7 +582,8 @@ class Messenger(Connection):
                 elif msgcls == messages.TransferSegment:
                     self.recv_xfer_data(transfer_id=pkt.payload.transfer_id,
                                       data=pkt.payload.getfieldval('data'),
-                                      flags=pkt.getfieldval('flags'))
+                                      flags=pkt.getfieldval('flags'),
+                                      ext_items=pkt.ext_items)
                 elif msgcls == messages.TransferAck:
                     self.recv_xfer_ack(pkt.payload.transfer_id, pkt.payload.length)
                 elif msgcls == messages.TransferRefuse:
@@ -706,13 +707,15 @@ class Messenger(Connection):
             # Passive side listens first
             self._conhead_this = self.send_contact_header().payload
 
-    def recv_xfer_data(self, transfer_id, data, flags):
+    def recv_xfer_data(self, transfer_id, data, flags, ext_items):
         ''' Handle reception of XFER_DATA message.
         
         :param transfer_id: The bundle ID number.
         :type transfer_id: int
         :param data: The segment data.
         :type data: str
+        :param ext_items: Extension items which may be in the start segment.
+        :type ext_items: array
         '''
         self.__logger.debug('XFER_DATA %d %s', transfer_id, flags)
         if not self._in_sess:
@@ -804,6 +807,7 @@ class BundleItem(object):
     '''
     def __init__(self):
         self.transfer_id = None
+        self.total_length = None
         self.file = None
 
 class ContactHandler(Messenger, dbus.service.Object):
@@ -832,10 +836,8 @@ class ContactHandler(Messenger, dbus.service.Object):
         self._tx_map = {}
         #: Active TX bundle
         self._tx_tmp = None
-        #: Total segment count
-        self._tx_seg_num = None
-        #: Current segment index
-        self._tx_seg_ix = None
+        #: Accumulated TX length
+        self._tx_length = None
         self._process_queue_pend = None
         
         # Receive state
@@ -856,22 +858,23 @@ class ContactHandler(Messenger, dbus.service.Object):
         self._tx_next_id += 1
         return bid
     
-    def _rx_setup(self, transfer_id):
+    def _rx_setup(self, transfer_id, total_length):
         ''' Begin reception of a transfer. '''
         self._rx_tmp = BundleItem()
         self._rx_tmp.transfer_id = transfer_id
         self._rx_tmp.file = BytesIO()
+        self._rx_tmp.total_length = total_length  # may be None
         
-        self.recv_bundle_started(str(transfer_id))
+        self.recv_bundle_started(str(transfer_id), dbus.String() if total_length is None else total_length)
     
     def _rx_teardown(self):
         self._rx_tmp = None
     
-    def recv_xfer_data(self, transfer_id, data, flags):
-        Messenger.recv_xfer_data(self, transfer_id, data, flags)
+    def recv_xfer_data(self, transfer_id, data, flags, ext_items):
+        Messenger.recv_xfer_data(self, transfer_id, data, flags, ext_items)
         
         if flags & messages.TransferSegment.Flag.START:
-            self._rx_setup(transfer_id)
+            self._rx_setup(transfer_id, None)
         
         elif self._rx_tmp is None or self._rx_tmp.transfer_id != transfer_id:
             # Each ID in sequence after start must be identical
@@ -879,6 +882,7 @@ class ContactHandler(Messenger, dbus.service.Object):
         
         self._rx_tmp.file.write(data)
         
+        recv_length = self._rx_tmp.file.tell()
         if flags & messages.TransferSegment.Flag.END:
             if self._do_send_ack_final:
                 self.send_xfer_ack(transfer_id, self._rx_tmp.file.tell(), flags)
@@ -887,12 +891,13 @@ class ContactHandler(Messenger, dbus.service.Object):
             self._rx_bundles.append(item)
             self._rx_map[item.transfer_id] = item
             
-            self.__logger.info('Finished RX size %d', item.file.tell())
-            self.recv_bundle_finished(str(item.transfer_id))
+            self.__logger.info('Finished RX size %d', recv_length)
+            self.recv_bundle_finished(str(item.transfer_id), recv_length, 'success')
             self._rx_teardown()
         else:
             if self._do_send_ack_inter:
                 self.send_xfer_ack(transfer_id, self._rx_tmp.file.tell(), flags)
+                self.recv_bundle_intermediate(str(self._rx_tmp.transfer_id), recv_length)
     
     def recv_xfer_ack(self, transfer_id, length):
         Messenger.recv_xfer_ack(self, transfer_id, length)
@@ -902,11 +907,12 @@ class ContactHandler(Messenger, dbus.service.Object):
             if not self._do_send_ack_final:
                 raise RejectError(messages.RejectMsg.Reason.UNEXPECTED)
             
-            self.send_bundle_finished(str(item.transfer_id), 'success')
+            self.send_bundle_finished(str(item.transfer_id), length, 'success')
             self._tx_map.pop(transfer_id)
         else:
             if not self._do_send_ack_inter:
                 raise RejectError(messages.RejectMsg.Reason.UNEXPECTED)
+            self.send_bundle_intermediate(str(item.transfer_id), length)
     
     def recv_xfer_refuse(self, transfer_id, reason):
         Messenger.recv_xfer_refuse(self, transfer_id, reason)
@@ -963,20 +969,28 @@ class ContactHandler(Messenger, dbus.service.Object):
     def send_bundle_get_queue(self):
         return dbus.Array([str(bid) for bid in self._tx_map.keys()])
     
-    @dbus.service.signal(DBUS_IFACE, signature='s')
-    def send_bundle_started(self, bid):
+    @dbus.service.signal(DBUS_IFACE, signature='st')
+    def send_bundle_started(self, bid, length):
         pass
     
-    @dbus.service.signal(DBUS_IFACE, signature='ss')
-    def send_bundle_finished(self, bid, result):
+    @dbus.service.signal(DBUS_IFACE, signature='st')
+    def send_bundle_intermediate(self, bid, length):
         pass
     
-    @dbus.service.signal(DBUS_IFACE, signature='s')
-    def recv_bundle_started(self, bid):
+    @dbus.service.signal(DBUS_IFACE, signature='sts')
+    def send_bundle_finished(self, bid, length, result):
         pass
     
-    @dbus.service.signal(DBUS_IFACE, signature='s')
-    def recv_bundle_finished(self, bid):
+    @dbus.service.signal(DBUS_IFACE, signature='sv')
+    def recv_bundle_started(self, bid, length):
+        pass
+    
+    @dbus.service.signal(DBUS_IFACE, signature='st')
+    def recv_bundle_intermediate(self, bid, length):
+        pass
+    
+    @dbus.service.signal(DBUS_IFACE, signature='sts')
+    def recv_bundle_finished(self, bid, length, result):
         pass
     
     @dbus.service.method(DBUS_IFACE, in_signature='', out_signature='as')
@@ -1012,8 +1026,7 @@ class ContactHandler(Messenger, dbus.service.Object):
     def _tx_teardown(self):
         ''' Clear the TX bundle state. '''
         self._tx_tmp = None
-        self._tx_seg_ix = None
-        self._tx_seg_num = None
+        self._tx_length = None
     
     def _process_queue_trigger(self):
         if self._process_queue_pend is None:
@@ -1033,32 +1046,31 @@ class ContactHandler(Messenger, dbus.service.Object):
             self._tx_tmp = self._tx_bundles.pop(0)
             
             self._tx_tmp.file.seek(0, os.SEEK_END)
-            octet_count = self._tx_tmp.file.tell()
+            self._tx_tmp.total_length = self._tx_tmp.file.tell()
             self._tx_tmp.file.seek(0)
-            self._tx_seg_num = math.ceil(octet_count / float(self._send_segment_size))
-            self._tx_seg_ix = 0
+            self._tx_length = 0
             
-            self.send_bundle_started(str(self._tx_tmp.transfer_id))
+            self.send_bundle_started(str(self._tx_tmp.transfer_id), self._tx_tmp.total_length)
         
         # send next segment
-        data = self._tx_tmp.file.read(self._send_segment_size)
         flg = 0
         xfer_ext = []
-        if self._tx_seg_ix == 0:
+        if self._tx_length == 0:
             flg |= messages.TransferSegment.Flag.START
             xfer_ext.append(
-                messages.TransferExtendHeader()/xferextend.Length(total_length=octet_count)
+                messages.TransferExtendHeader()/xferextend.Length(total_length=self._tx_tmp.total_length)
             )
-        if self._tx_seg_ix == self._tx_seg_num - 1:
+        data = self._tx_tmp.file.read(self._send_segment_size)
+        self._tx_length += len(data)
+        if self._tx_length == self._tx_tmp.total_length:
             flg |= messages.TransferSegment.Flag.END
         
-        # Next segment of data
+        # Actual segment
         self.send_xfer_data(self._tx_tmp.transfer_id, data, flg, xfer_ext)
-        self._tx_seg_ix += 1
         
         if flg & messages.TransferSegment.Flag.END:
             if not self._do_send_ack_final:
-                self.send_bundle_finished(str(self._tx_tmp.transfer_id), 'unacknowledged')
+                self.send_bundle_finished(str(self._tx_tmp.transfer_id), self._tx_tmp.file.tell(), 'unacknowledged')
                 self._tx_map.pop(self._tx_tmp.transfer_id)
             
             # done sending segments regardless
