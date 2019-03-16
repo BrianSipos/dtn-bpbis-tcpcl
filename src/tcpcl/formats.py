@@ -139,7 +139,27 @@ class SdnvFieldLenField(SdnvField):
             x = self.adjust(pkt,x)
         return SdnvField.i2m(self, pkt, x)
 
-#class BlobField(fields.StrFixedLenField):
+class ExtensionListField(fields.PacketListField):
+    ''' Provide useful randval() that fixes scapy behavior. '''
+    
+    def randval(self):
+        count = volatile.RandNum(0, 4)
+        reprobj = self.cls()
+        items = []
+        for _ in range(count):
+            items.append(packet.fuzz(reprobj))
+        return items
+
+class StrLenFieldUtf8(fields.StrLenField):
+    ''' A UTF-8 safe text string. '''
+    def h2i(self, pkt, x):
+        from scapy.compat import plain_str
+        return plain_str(x).encode('utf-8')
+    def i2h(self, pkt, x):
+        return x.decode('utf-8')
+    def randval(self):
+        return volatile.RandString(volatile.RandNum(0,1200))
+
 class BlobField(fields.StrLenField):
     ''' Overload i2h and i2repr to hide the actual data contents. '''
     

@@ -83,6 +83,7 @@ static int hf_negotiate_keepalive = -1;
 static int hf_sess_term_flags = -1;
 static int hf_sess_term_flags_reply = -1;
 static int hf_sess_term_reason = -1;
+static int hf_sess_term_related = -1;
 
 static int hf_sessext_tree = -1;
 static int hf_sessext_flags = -1;
@@ -178,6 +179,7 @@ static hf_register_info fields[] = {
     {&hf_sess_term_flags, {"Flags", "tcpclv4.sess_term.flags", FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL}},
     {&hf_sess_term_flags_reply, {"REPLY", "tcpclv4.sess_term.flags.reply", FT_UINT8, BASE_DEC, NULL, TCPCL_SESS_TERM_FLAG_REPLY, NULL, HFILL}},
     {&hf_sess_term_reason, {"Reason", "tcpclv4.ses_term.reason", FT_UINT8, BASE_DEC, VALS(sess_term_reason_vals), 0x0, NULL, HFILL}},
+    {&hf_sess_term_related, {"Related SESS_TERM", "tcpclv4.ses_term.related", FT_FRAMENUM, BASE_NONE, NULL, 0x0, NULL, HFILL}},
 
     // Common transfer fields
     {&hf_xfer_flags, {"Transfer Flags", "tcpclv4.xfer_flags", FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL}},
@@ -318,7 +320,11 @@ static expert_field ei_invalid_sessext_type = EI_INIT;
 static expert_field ei_invalid_xferext_type = EI_INIT;
 static expert_field ei_extitem_critical = EI_INIT;
 static expert_field ei_chdr_duplicate = EI_INIT;
+static expert_field ei_sess_init_missing = EI_INIT;
 static expert_field ei_sess_init_duplicate = EI_INIT;
+static expert_field ei_sess_term_duplicate = EI_INIT;
+static expert_field ei_sess_term_reply_flag = EI_INIT;
+static expert_field ei_sess_term_reply_reason = EI_INIT;
 static expert_field ei_xfer_seg_over_seg_mru = EI_INIT;
 static expert_field ei_xfer_seg_missing_start = EI_INIT;
 static expert_field ei_xfer_seg_duplicate_start = EI_INIT;
@@ -339,7 +345,11 @@ static ei_register_info expertitems[] = {
     {&ei_invalid_xferext_type, { "tcpclv4.unknown_xferext_type", PI_UNDECODED, PI_WARN, "Transfer Extension type is unknown", EXPFILL}},
     {&ei_extitem_critical, { "tcpclv4.extitem_critical", PI_REQUEST_CODE, PI_CHAT, "Extension Item is critical", EXPFILL}},
     {&ei_chdr_duplicate, { "tcpclv4.chdr_duplicate", PI_SEQUENCE, PI_ERROR, "Duplicate Contact Header", EXPFILL}},
+    {&ei_sess_init_missing, { "tcpclv4.sess_init_missing", PI_SEQUENCE, PI_ERROR, "Expected SESS_INIT message first", EXPFILL}},
     {&ei_sess_init_duplicate, { "tcpclv4.sess_init_duplicate", PI_SEQUENCE, PI_ERROR, "Duplicate SESS_INIT message", EXPFILL}},
+    {&ei_sess_term_duplicate, { "tcpclv4.sess_term_duplicate", PI_SEQUENCE, PI_ERROR, "Duplicate SESS_TERM message", EXPFILL}},
+    {&ei_sess_term_reply_flag, { "tcpclv4.sess_term_reply_flag", PI_SEQUENCE, PI_ERROR, "Reply SESS_TERM missing flag", EXPFILL}},
+    {&ei_sess_term_reply_reason, { "tcpclv4.sess_term_reply_reason", PI_SEQUENCE, PI_ERROR, "Reply SESS_TERM reason mismatch", EXPFILL}},
     {&ei_xfer_seg_over_seg_mru, { "tcpclv4.xfer_seg_over_seg_mru", PI_PROTOCOL, PI_WARN, "Segment data size larger than peer MRU", EXPFILL}},
     {&ei_xfer_seg_missing_start, { "tcpclv4.xfer_seg_missing_start", PI_SEQUENCE, PI_ERROR, "First XFER_SEGMENT is missing START flag", EXPFILL}},
     {&ei_xfer_seg_duplicate_start, { "tcpclv4.xfer_seg_duplicate_start", PI_SEQUENCE, PI_ERROR, "Non-first XFER_SEGMENT has START flag", EXPFILL}},
@@ -601,6 +611,11 @@ typedef struct {
     /// Transfer MRU
     guint64 transfer_mru;
 
+    /// Frame number in which the SESS_TERM message starts
+    frame_loc_t sess_term_seen;
+    /// SESS_TERM reason
+    guint8 sess_term_reason;
+
     /// Map of frame number to possible associated transfer ID
     GHashTable *frame_to_transfer;
 
@@ -610,7 +625,7 @@ typedef struct {
 
 tcpcl_peer_t * tcpcl_peer_new(void) {
     tcpcl_peer_t *obj = wmem_new(wmem_file_scope(), tcpcl_peer_t);
-    *obj = (tcpcl_peer_t){ADDRESS_INIT_NONE, 0, FRAME_LOC_INIT, FALSE, FRAME_LOC_INIT, 0, 0, 0, NULL, NULL};
+    *obj = (tcpcl_peer_t){ADDRESS_INIT_NONE, 0, FRAME_LOC_INIT, FALSE, FRAME_LOC_INIT, 0, 0, 0, FRAME_LOC_INIT, 0, NULL, NULL};
     obj->frame_to_transfer = g_hash_table_new_full(frame_loc_hash, frame_loc_equal, guint32_delete, guint64_delete);
     obj->transfers = g_hash_table_new_full(g_int64_hash, g_int64_equal, guint64_delete, tcpcl_transfer_delete);
     return obj;
@@ -868,8 +883,10 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
         proto_item_set_len(item_chdr, offset);
 
         if (has_frame_loc(&(tx_peer->chdr_seen))) {
-            if (!frame_loc_equal(&(tx_peer->chdr_seen), cur_loc)) {
-                expert_add_info(pinfo, item_chdr, &ei_chdr_duplicate);
+            if (tcpcl_analyze_sequence) {
+                if (!frame_loc_equal(&(tx_peer->chdr_seen), cur_loc)) {
+                    expert_add_info(pinfo, item_chdr, &ei_chdr_duplicate);
+                }
             }
         }
         else {
@@ -958,8 +975,10 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                 offset += extlist_len;
 
                 if (has_frame_loc(&(tx_peer->sess_init_seen))) {
-                    if (!frame_loc_equal(&(tx_peer->sess_init_seen), cur_loc)) {
-                        expert_add_info(pinfo, item_msg, &ei_sess_init_duplicate);
+                    if (tcpcl_analyze_sequence) {
+                        if (!frame_loc_equal(&(tx_peer->sess_init_seen), cur_loc)) {
+                            expert_add_info(pinfo, item_msg, &ei_sess_init_duplicate);
+                        }
                     }
                 }
                 else {
@@ -974,13 +993,39 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
             case TCPCL_MSGTYPE_SESS_TERM: {
                 msgtype_name = "SESS_TERM";
 
-                tvb_get_guint8(tvb, offset);
+                guint8 flags = tvb_get_guint8(tvb, offset);
                 proto_tree_add_bitmask(tree_msg, tvb, offset, hf_sess_term_flags, ett_sess_term_flags, sess_term_flags, ENC_BIG_ENDIAN);
                 offset += 1;
 
                 guint8 reason = tvb_get_guint8(tvb, offset);
                 proto_tree_add_uint(tree_msg, hf_sess_term_reason, tvb, offset, 1, reason);
                 offset += 1;
+
+                if (has_frame_loc(&(tx_peer->sess_term_seen))) {
+                    if (tcpcl_analyze_sequence) {
+                        if (!frame_loc_equal(&(tx_peer->sess_term_seen), cur_loc)) {
+                            expert_add_info(pinfo, item_msg, &ei_sess_term_duplicate);
+                        }
+                    }
+                }
+                else {
+                    tx_peer->sess_term_seen = *cur_loc;
+                    tx_peer->sess_term_reason = reason;
+                }
+
+                if (tcpcl_analyze_sequence) {
+                    if (has_frame_loc(&(rx_peer->sess_term_seen))) {
+                        proto_item *item_rel = proto_tree_add_uint(tree_msg, hf_sess_term_related, tvb, 0, 0, rx_peer->sess_term_seen.frame_num);
+                        PROTO_ITEM_SET_GENERATED(item_rel);
+
+                        // Is this message after the other SESS_TERM?
+                        if (frame_loc_compare(&(tx_peer->sess_term_seen), &(rx_peer->sess_term_seen), NULL) > 0) {
+                            if (!(flags & TCPCL_SESS_TERM_FLAG_REPLY)) {
+                                expert_add_info(pinfo, item_msg, &ei_sess_term_reply_flag);
+                            }
+                        }
+                    }
+                }
 
                 break;
             }
@@ -1319,6 +1364,16 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
         proto_item_set_len(item_msg, offset);
         proto_item_append_text(item_msg, ", Type: %s (0x%x)%s", msgtype_name, msgtype, wmem_strbuf_get_str(suffix_text));
         wmem_strbuf_finalize(suffix_text);
+
+        if (tcpcl_analyze_sequence) {
+            // This message is before SESS_INIT (but is not the SESS_INIT)
+            const gint cmp_sess_init = frame_loc_compare(cur_loc, &(tx_peer->sess_init_seen), NULL);
+            if (!has_frame_loc(&(tx_peer->sess_init_seen))
+                || ((msgtype == TCPCL_MSGTYPE_SESS_INIT) && (cmp_sess_init < 0))
+                || ((msgtype != TCPCL_MSGTYPE_SESS_INIT) && (cmp_sess_init <= 0))) {
+                expert_add_info(pinfo, item_msg, &ei_sess_init_missing);
+            }
+        }
     }
 
     const gchar *coltext = col_get_text(pinfo->cinfo, COL_INFO);
@@ -1479,11 +1534,21 @@ static void proto_register_tcpcl(void) {
     prefs_register_bool_preference(
         module_tcpcl,
         "analyze_sequence",
-        "Analyze segment sequences",
+        "Analyze message sequences",
         "Whether the TCPCLv4 dissector should analyze the sequencing of "
-        "the XFER_SEGMENT and XFER_ACK messages for each transfer.",
+        "the messages within each session.",
         &tcpcl_analyze_sequence
     );
+    /*
+    prefs_register_bool_preference(
+        module_tcpcl,
+        "resync_unkown_message",
+        "Attempt resynchronization on unknown message",
+        "If the capture starts mid-session, there will be no Contact Header"
+        "and may not start on a message boundary. In this case, any ",
+        &tcpcl_resync_unkown_message
+    );
+    */
 
     reassembly_table_register(
         &tcpcl_reassembly_table,

@@ -3,6 +3,7 @@
 import sys
 import argparse
 import logging
+import random
 import scapy
 import socket
 from gi.repository import GLib as glib
@@ -12,6 +13,16 @@ from tcpcl import contact, messages
 class Worker(object):
     
     CHUNK_SIZE = 100 * 1024
+
+    AVAIL_MSGS = [
+        messages.SessionInit,
+        messages.SessionTerm,
+        messages.TransferSegment,
+        messages.TransferAck,
+        messages.TransferRefuse,
+        messages.Keepalive,
+        messages.RejectMsg,
+    ]
     
     def __init__(self, args):
         self.__logger = logging.getLogger(self.__class__.__name__)
@@ -41,6 +52,12 @@ class Worker(object):
             if tx_size:
                 frombuf[:] = frombuf[tx_size:]
                 sent_size += tx_size
+
+        if True:
+            for ix in range(random.randint(1, 10)):
+                pkt = messages.MessageHead()/random.choice(self.AVAIL_MSGS)()
+                pkt = scapy.packet.fuzz(pkt)
+                frombuf += bytes(pkt)
 
         if len(self.__passive_tx_buf) + len(self.__active_tx_buf) == 0:
             glib.timeout_add(100, lambda: self.stop())
@@ -106,40 +123,12 @@ class Worker(object):
         glib.io_add_watch(self._active_sock, glib.IO_OUT, self._chunked_tx, self.__active_tx_buf)
         glib.io_add_watch(self._active_sock, glib.IO_IN, self._chunked_rx, None)
         
-        self.__active_tx_buf += bytes(contact.Head()/contact.ContactV4())
-        self.__active_tx_buf += bytes(messages.MessageHead()/messages.SessionInit(
-            segment_mru=100,
-            transfer_mru=1000,
-        ))
-        self.__active_tx_buf += bytes(messages.MessageHead()/messages.RejectMsg(
-            reason=messages.RejectMsg.Reason.UNEXPECTED
-        ))
-        self.__active_tx_buf += bytes(messages.MessageHead()/messages.SessionTerm(
-            reason=messages.SessionTerm.Reason.RESOURCE_EXHAUSTION
-        ))
-        self.__active_tx_buf += bytes(messages.MessageHead()/messages.TransferAck(
-            transfer_id=30,
-            length=24,
-        ))
-        self.__active_tx_buf += bytes(messages.MessageHead()/messages.TransferRefuse(
-            transfer_id=40,
-            reason=messages.TransferRefuse.Reason.RESOURCES,
-        ))
-        self.__active_tx_buf += bytes(messages.MessageHead()/messages.TransferSegment(
-            flags=messages.TransferSegment.Flag.START | messages.TransferSegment.Flag.END,
-            transfer_id=5,
-            data=b'hithere'
-        ))
-        
-        self.__passive_tx_buf += bytes(contact.Head()/contact.ContactV4())
-        self.__passive_tx_buf += bytes(messages.MessageHead()/messages.TransferRefuse(
-            transfer_id=5,
-            reason=messages.TransferRefuse.Reason.RESOURCES,
-        ))
-        self.__passive_tx_buf += bytes(messages.MessageHead()/messages.TransferAck(
-            transfer_id=5,
-            length=10,
-        ))
+        # Mandatory contact
+        avail_bufs = [self.__active_tx_buf, self.__passive_tx_buf]
+        for buf in avail_bufs:
+            pkt = contact.Head()/contact.ContactV4(flags=0)
+            pkt = scapy.packet.fuzz(pkt)
+            buf += bytes(pkt)
         
         # Prime the TX
         self._chunked_tx(sock, None, self.__active_tx_buf)

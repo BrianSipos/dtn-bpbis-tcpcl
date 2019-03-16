@@ -57,19 +57,22 @@ class SessionInit(formats.NoPayloadPacket):
         
         formats.UInt16FieldLenField('eid_length', default=None,
                                     length_of='eid_data'),
-        fields.StrLenField('eid_data', default=b'',
-                           length_from=lambda pkt: pkt.eid_length),
+        formats.StrLenFieldUtf8('eid_data', default=u'',
+                                length_from=lambda pkt: pkt.eid_length),
         
         formats.UInt32FieldLenField('ext_size', default=None,
                                     length_of='ext_items'),
-        fields.PacketListField('ext_items', default=[],
-                               cls=SessionExtendHeader,
-                               length_from=lambda pkt: pkt.ext_size),
+        formats.ExtensionListField('ext_items', default=[],
+                                   cls=SessionExtendHeader,
+                                   length_from=lambda pkt: pkt.ext_size),
     ]
     
     def post_dissection(self, pkt):
         ''' Verify consistency of packet. '''
-        formats.verify_sized_item(self.eid_length, self.eid_data)
+        (field, val) = self.getfield_and_val('eid_data')
+        if val is not None:
+            encoded = field.addfield(self, b'', val)
+            formats.verify_sized_item(self.eid_length, encoded)
 
         (field, val) = self.getfield_and_val('ext_items')
         if val is not None:
@@ -84,7 +87,7 @@ class SessionTerm(formats.NoPayloadPacket):
     #: Flags must be in LSbit-first order
     @enum.unique
     class Flag(enum.IntEnum):
-        ACK = 0x01
+        REPLY = 0x01
     
     @enum.unique
     class Reason(enum.IntEnum):
@@ -98,7 +101,7 @@ class SessionTerm(formats.NoPayloadPacket):
     fields_desc = [
         fields.FlagsField('flags', default=0, size=8,
                           names=[item.name for item in Flag]),
-        fields.ByteEnumField('reason', default=None, 
+        fields.ByteEnumField('reason', default=Reason.UNKNOWN, 
                              enum={item.value: item.name for item in Reason}),
     ]
 
@@ -115,8 +118,8 @@ class RejectMsg(formats.NoPayloadPacket):
         UNEXPECTED = 3
     
     fields_desc = [
-        formats.UInt8Field('rej_msg_id', default=None),
-        fields.ByteEnumField('reason', default=None, 
+        formats.UInt8Field('rej_msg_id', default=0),
+        fields.ByteEnumField('reason', default=Reason.UNKNOWN, 
                              enum={item.value: item.name for item in Reason}),
     ]
 
@@ -134,9 +137,9 @@ class TransferRefuse(formats.NoPayloadPacket):
         RETRANSMIT = 0x3
     
     fields_desc = [
-        fields.ByteEnumField('reason', default=None,
+        fields.ByteEnumField('reason', default=Reason.UNKNOWN,
                              enum={item.value: item.name for item in Reason}),
-        formats.UInt64Field('transfer_id', default=None),
+        formats.UInt64Field('transfer_id', default=0),
     ]
 
 class TransferSegment(formats.NoPayloadPacket):
@@ -151,19 +154,19 @@ class TransferSegment(formats.NoPayloadPacket):
     fields_desc = [
         fields.FlagsField('flags', default=0, size=8,
                           names=[item.name for item in Flag]),
-        formats.UInt64Field('transfer_id', default=None),
+        formats.UInt64Field('transfer_id', default=0),
         fields.ConditionalField(
             cond=lambda pkt: pkt.flags & TransferSegment.Flag.START,
             fld=formats.UInt32FieldLenField('ext_size', default=None, length_of='ext_items'),
         ),
         fields.ConditionalField(
             cond=lambda pkt: pkt.flags & TransferSegment.Flag.START,
-            fld=fields.PacketListField('ext_items', default=[],
-                                       cls=TransferExtendHeader,
-                                       length_from=lambda pkt: pkt.ext_size),
+            fld=formats.ExtensionListField('ext_items', default=[],
+                                           cls=TransferExtendHeader,
+                                           length_from=lambda pkt: pkt.ext_size),
         ),
         formats.UInt64FieldLenField('length', default=None, length_of='data'),
-        formats.BlobField('data', b'', length_from=lambda pkt: pkt.length),
+        formats.BlobField('data', default=b'', length_from=lambda pkt: pkt.length),
     ]
     
     def post_dissection(self, pkt):
@@ -182,7 +185,7 @@ class TransferAck(formats.NoPayloadPacket):
     fields_desc = [
         fields.FlagsField('flags', default=0, size=8,
                           names=[item.name for item in TransferSegment.Flag]),
-        formats.UInt64Field('transfer_id', default=None),
+        formats.UInt64Field('transfer_id', default=0),
         formats.UInt64Field('length', default=None),
     ]
 
