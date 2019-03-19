@@ -368,37 +368,17 @@ static ei_register_info expertitems[] = {
  *
  * @param obj The object to delete.
  */
-void file_scope_delete(gpointer ptr) {
+static void file_scope_delete(gpointer ptr) {
     wmem_free(wmem_file_scope(), ptr);
 }
 
-guint32 * guint32_new(const guint32 val) {
-    guint32 *obj = wmem_new(wmem_file_scope(), guint32);
-    *obj = val;
-    return obj;
-}
-
-#define guint32_delete file_scope_delete
-
-guint64 * guint64_new(const guint64 val) {
+static guint64 * guint64_new(const guint64 val) {
     guint64 *obj = wmem_new(wmem_file_scope(), guint64);
     *obj = val;
     return obj;
 }
 
 #define guint64_delete file_scope_delete
-
-/// Finer grained locating than just the frame number
-typedef struct {
-    /// Index of the frame
-    guint32 frame_num;
-    /// Source index within the frame
-    gint src_ix;
-    /// Offset within the source TVB
-    gint raw_offset;
-} frame_loc_t;
-
-#define FRAME_LOC_INIT {0, -1, -1}
 
 void frame_loc_init(frame_loc_t *loc, const packet_info *pinfo, tvbuff_t *tvb, const gint offset) {
     loc->frame_num = pinfo->num;
@@ -421,17 +401,20 @@ frame_loc_t * frame_loc_new(const packet_info *pinfo, tvbuff_t *tvb, const gint 
     return obj;
 }
 
+void frame_loc_delete(gpointer ptr) {
+    file_scope_delete(ptr);
+}
+
 frame_loc_t * frame_loc_clone(const frame_loc_t *loc) {
     frame_loc_t *obj = wmem_new(wmem_file_scope(), frame_loc_t);
     *obj = *loc;
     return obj;
 }
 
-#define frame_loc_delete file_scope_delete
+gboolean frame_loc_valid(const frame_loc_t *loc) {
+    return (loc->raw_offset >= 0);
+}
 
-
-/** Function to match the GCompareDataFunc signature.
- */
 gint frame_loc_compare(gconstpointer a, gconstpointer b, gpointer user_data _U_) {
     const frame_loc_t *aloc = a;
     const frame_loc_t *bloc = b;
@@ -459,8 +442,6 @@ gint frame_loc_compare(gconstpointer a, gconstpointer b, gpointer user_data _U_)
     return 0;
 }
 
-/** Function to match the GCompareFunc signature.
- */
 gboolean frame_loc_equal(gconstpointer a, gconstpointer b) {
     const frame_loc_t *aloc = a;
     const frame_loc_t *bloc = b;
@@ -471,8 +452,6 @@ gboolean frame_loc_equal(gconstpointer a, gconstpointer b) {
     );
 }
 
-/** Function to match the GHashFunc signature.
- */
 guint frame_loc_hash(gconstpointer key) {
     return (
         g_int_hash(&(((frame_loc_t *)key)->frame_num))
@@ -499,7 +478,7 @@ struct seg_meta {
     ack_meta_t *related_ack;
 };
 
-seg_meta_t * seg_meta_new(const packet_info *pinfo, const frame_loc_t *loc) {
+static seg_meta_t * seg_meta_new(const packet_info *pinfo, const frame_loc_t *loc) {
     seg_meta_t *obj = wmem_new(wmem_file_scope(), seg_meta_t);
     obj->frame_loc = *loc;
     obj->frame_time = pinfo->abs_ts;
@@ -511,7 +490,7 @@ seg_meta_t * seg_meta_new(const packet_info *pinfo, const frame_loc_t *loc) {
 
 #define seg_meta_delete file_scope_delete
 
-gint segment_compare_loc(gconstpointer a, gconstpointer b, gpointer user_data _U_) {
+static gint segment_compare_loc(gconstpointer a, gconstpointer b, gpointer user_data _U_) {
     return frame_loc_compare(
         &(((seg_meta_t *)a)->frame_loc),
         &(((seg_meta_t *)b)->frame_loc),
@@ -533,7 +512,7 @@ struct ack_meta {
     seg_meta_t *related_seg;
 };
 
-ack_meta_t * ack_meta_new(const packet_info *pinfo, const frame_loc_t *loc) {
+static ack_meta_t * ack_meta_new(const packet_info *pinfo, const frame_loc_t *loc) {
     ack_meta_t *obj = wmem_new(wmem_file_scope(), ack_meta_t);
     obj->frame_loc = *loc;
     obj->frame_time = pinfo->abs_ts;
@@ -545,7 +524,7 @@ ack_meta_t * ack_meta_new(const packet_info *pinfo, const frame_loc_t *loc) {
 
 #define ack_meta_delete file_scope_delete
 
-gint ack_compare_loc(gconstpointer a, gconstpointer b, gpointer user_data _U_) {
+static gint ack_compare_loc(gconstpointer a, gconstpointer b, gpointer user_data _U_) {
     return frame_loc_compare(
         &(((seg_meta_t *)a)->frame_loc),
         &(((seg_meta_t *)b)->frame_loc),
@@ -566,7 +545,7 @@ typedef struct {
     guint64 *total_length;
 } tcpcl_transfer_t;
 
-tcpcl_transfer_t * tcpcl_transfer_new(void) {
+static tcpcl_transfer_t * tcpcl_transfer_new(void) {
     tcpcl_transfer_t *obj = wmem_new(wmem_file_scope(), tcpcl_transfer_t);
     obj->seg_list = g_sequence_new(seg_meta_delete);
     obj->ack_list = g_sequence_new(ack_meta_delete);
@@ -574,7 +553,7 @@ tcpcl_transfer_t * tcpcl_transfer_new(void) {
     return obj;
 }
 
-void tcpcl_transfer_delete(gpointer ptr) {
+static void tcpcl_transfer_delete(gpointer ptr) {
     tcpcl_transfer_t *obj = ptr;
     g_sequence_free(obj->seg_list);
     g_sequence_free(obj->ack_list);
@@ -582,7 +561,7 @@ void tcpcl_transfer_delete(gpointer ptr) {
     file_scope_delete(ptr);
 }
 
-tcpcl_transfer_t * get_or_create_transfer_t(GHashTable *table, const guint64 xfer_id) {
+static tcpcl_transfer_t * get_or_create_transfer_t(GHashTable *table, const guint64 xfer_id) {
     tcpcl_transfer_t *xfer = g_hash_table_lookup(table, &xfer_id);
     if (!xfer) {
         xfer = tcpcl_transfer_new();
@@ -616,33 +595,35 @@ typedef struct {
     /// SESS_TERM reason
     guint8 sess_term_reason;
 
-    /// Map of frame number to possible associated transfer ID
-    GHashTable *frame_to_transfer;
+    /// Map of frame_loc_t to possible associated transfer ID
+    GHashTable *frame_loc_to_transfer;
 
     /// Table of tcpcl_transfer_t pointers for transfer IDs sent from this peer
     GHashTable *transfers;
 } tcpcl_peer_t;
 
-tcpcl_peer_t * tcpcl_peer_new(void) {
+static tcpcl_peer_t * tcpcl_peer_new(void) {
     tcpcl_peer_t *obj = wmem_new(wmem_file_scope(), tcpcl_peer_t);
     *obj = (tcpcl_peer_t){ADDRESS_INIT_NONE, 0, FRAME_LOC_INIT, FALSE, FRAME_LOC_INIT, 0, 0, 0, FRAME_LOC_INIT, 0, NULL, NULL};
-    obj->frame_to_transfer = g_hash_table_new_full(frame_loc_hash, frame_loc_equal, guint32_delete, guint64_delete);
+    obj->frame_loc_to_transfer = g_hash_table_new_full(frame_loc_hash, frame_loc_equal, frame_loc_delete, guint64_delete);
     obj->transfers = g_hash_table_new_full(g_int64_hash, g_int64_equal, guint64_delete, tcpcl_transfer_delete);
     return obj;
 }
 
-void tcpcl_peer_delete(gpointer ptr) {
+#if 0
+static void tcpcl_peer_delete(gpointer ptr) {
     tcpcl_peer_t *obj = ptr;
-    g_hash_table_destroy(obj->frame_to_transfer);
+    g_hash_table_destroy(obj->frame_loc_to_transfer);
     g_hash_table_destroy(obj->transfers);
     file_scope_delete(ptr);
 }
+#endif
 
-void tcpcl_peer_associate_transfer(tcpcl_peer_t *peer, const frame_loc_t *loc, const guint64 xfer_id) {
+static void tcpcl_peer_associate_transfer(tcpcl_peer_t *peer, const frame_loc_t *loc, const guint64 xfer_id) {
     frame_loc_t *key = frame_loc_clone(loc);
-    gpointer *xfer = g_hash_table_lookup(peer->frame_to_transfer, key);
+    gpointer *xfer = g_hash_table_lookup(peer->frame_loc_to_transfer, key);
     if (!xfer) {
-        g_hash_table_insert(peer->frame_to_transfer, key, guint64_new(xfer_id));
+        g_hash_table_insert(peer->frame_loc_to_transfer, key, guint64_new(xfer_id));
     }
     frame_loc_delete(key);
 }
@@ -666,7 +647,7 @@ typedef struct {
     guint16 sess_keepalive;
 } tcpcl_conversation_t;
 
-tcpcl_conversation_t * tcpcl_conversation_new() {
+static tcpcl_conversation_t * tcpcl_conversation_new() {
     tcpcl_conversation_t *obj = wmem_new(wmem_file_scope(), tcpcl_conversation_t);
     *obj = (tcpcl_conversation_t){NULL, NULL, FALSE, FALSE, FRAME_LOC_INIT, FALSE, 0};
     obj->active = tcpcl_peer_new();
@@ -696,26 +677,17 @@ static void get_peers(tcpcl_peer_t **tx_peer, tcpcl_peer_t **rx_peer, const tcpc
     }
 }
 
-/** Determine if the frame location has been set.
- *
- * @param loc The location to check.
- * @return TRUE if the value is set.
- */
-static gboolean has_frame_loc(const frame_loc_t *loc) {
-    return (loc->raw_offset >= 0);
-}
-
 static void try_negotiate(tcpcl_conversation_t *tcpcl_convo, packet_info *pinfo, const frame_loc_t *loc) {
     if (!(tcpcl_convo->contact_negotiated)
-        && has_frame_loc(&(tcpcl_convo->active->chdr_seen))
-        && has_frame_loc(&(tcpcl_convo->passive->chdr_seen))) {
+        && frame_loc_valid(&(tcpcl_convo->active->chdr_seen))
+        && frame_loc_valid(&(tcpcl_convo->passive->chdr_seen))) {
         tcpcl_convo->session_use_tls = (
             tcpcl_convo->active->can_tls & tcpcl_convo->passive->can_tls
         );
         tcpcl_convo->contact_negotiated = TRUE;
 
         if (tcpcl_convo->session_use_tls
-            && (!has_frame_loc(&(tcpcl_convo->session_tls_start)))) {
+            && (!frame_loc_valid(&(tcpcl_convo->session_tls_start)))) {
             col_append_str(pinfo->cinfo, COL_INFO, " [STARTTLS]");
             tcpcl_convo->session_tls_start = *loc;
             ssl_starttls_ack(handle_ssl, pinfo, handle_tcpcl);
@@ -723,8 +695,8 @@ static void try_negotiate(tcpcl_conversation_t *tcpcl_convo, packet_info *pinfo,
     }
 
     if (!(tcpcl_convo->sess_negotiated)
-        && has_frame_loc(&(tcpcl_convo->active->sess_init_seen))
-        && has_frame_loc(&(tcpcl_convo->passive->sess_init_seen))) {
+        && frame_loc_valid(&(tcpcl_convo->active->sess_init_seen))
+        && frame_loc_valid(&(tcpcl_convo->passive->sess_init_seen))) {
         tcpcl_convo->sess_keepalive = MIN(
             tcpcl_convo->active->keepalive,
             tcpcl_convo->passive->keepalive
@@ -752,7 +724,7 @@ static guint get_message_len(packet_info *pinfo, tvbuff_t *tvb, int ext_offset, 
     fprintf(stdout, "LEN scanning at %d|%d|%d ...\n", cur_loc->frame_num, cur_loc->src_ix, cur_loc->raw_offset);
 #endif
     const gboolean is_contact = (
-        !has_frame_loc(&(tx_peer->chdr_seen))
+        !frame_loc_valid(&(tx_peer->chdr_seen))
         || frame_loc_equal(&(tx_peer->chdr_seen), cur_loc)
     );
     if (is_contact) {
@@ -853,13 +825,13 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
     fprintf(stdout, "DISSECT scanning...\n");
 #endif
     const gboolean is_contact = (
-        !has_frame_loc(&(tx_peer->chdr_seen))
+        !frame_loc_valid(&(tx_peer->chdr_seen))
         || frame_loc_equal(&(tx_peer->chdr_seen), cur_loc)
     );
     if (is_contact) {
         msgtype_name = "Contact Header";
 
-        proto_item *item_chdr = proto_tree_add_item(tree, hf_chdr_tree, tvb, offset, 0, ENC_BIG_ENDIAN);
+        proto_item *item_chdr = proto_tree_add_item(tree, hf_chdr_tree, tvb, offset, 0, ENC_NA);
         tree_msg = proto_item_add_subtree(item_chdr, ett_chdr);
 
         const void *magic_data = tvb_memdup(wmem_packet_scope(), tvb, offset, 4);
@@ -882,7 +854,7 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
 
         proto_item_set_len(item_chdr, offset);
 
-        if (has_frame_loc(&(tx_peer->chdr_seen))) {
+        if (frame_loc_valid(&(tx_peer->chdr_seen))) {
             if (tcpcl_analyze_sequence) {
                 if (!frame_loc_equal(&(tx_peer->chdr_seen), cur_loc)) {
                     expert_add_info(pinfo, item_chdr, &ei_chdr_duplicate);
@@ -895,7 +867,7 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
         }
     }
     else {
-        proto_item *item_msg = proto_tree_add_item(tree, hf_mhdr_tree, tvb, offset, 0, ENC_BIG_ENDIAN);
+        proto_item *item_msg = proto_tree_add_item(tree, hf_mhdr_tree, tvb, offset, 0, ENC_NA);
         tree_msg = proto_item_add_subtree(item_msg, ett_mhdr);
 
         msgtype = tvb_get_guint8(tvb, offset);
@@ -937,7 +909,7 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                 gint extlist_offset = 0;
                 while (extlist_offset < (int)extlist_len) {
                     gint extitem_offset = 0;
-                    proto_item *item_ext = proto_tree_add_item(tree_msg, hf_sessext_tree, tvb, offset + extlist_offset, 0, ENC_BIG_ENDIAN);
+                    proto_item *item_ext = proto_tree_add_item(tree_msg, hf_sessext_tree, tvb, offset + extlist_offset, 0, ENC_NA);
                     proto_tree *tree_ext = proto_item_add_subtree(item_ext, ett_sessext);
 
                     guint8 extitem_flags = tvb_get_guint8(tvb, offset + extlist_offset + extitem_offset);
@@ -974,7 +946,7 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                 // advance regardless of any internal offset processing
                 offset += extlist_len;
 
-                if (has_frame_loc(&(tx_peer->sess_init_seen))) {
+                if (frame_loc_valid(&(tx_peer->sess_init_seen))) {
                     if (tcpcl_analyze_sequence) {
                         if (!frame_loc_equal(&(tx_peer->sess_init_seen), cur_loc)) {
                             expert_add_info(pinfo, item_msg, &ei_sess_init_duplicate);
@@ -1001,7 +973,7 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                 proto_tree_add_uint(tree_msg, hf_sess_term_reason, tvb, offset, 1, reason);
                 offset += 1;
 
-                if (has_frame_loc(&(tx_peer->sess_term_seen))) {
+                if (frame_loc_valid(&(tx_peer->sess_term_seen))) {
                     if (tcpcl_analyze_sequence) {
                         if (!frame_loc_equal(&(tx_peer->sess_term_seen), cur_loc)) {
                             expert_add_info(pinfo, item_msg, &ei_sess_term_duplicate);
@@ -1014,7 +986,7 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                 }
 
                 if (tcpcl_analyze_sequence) {
-                    if (has_frame_loc(&(rx_peer->sess_term_seen))) {
+                    if (frame_loc_valid(&(rx_peer->sess_term_seen))) {
                         proto_item *item_rel = proto_tree_add_uint(tree_msg, hf_sess_term_related, tvb, 0, 0, rx_peer->sess_term_seen.frame_num);
                         PROTO_ITEM_SET_GENERATED(item_rel);
 
@@ -1048,7 +1020,7 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                     gint extlist_offset = 0;
                     while (extlist_offset < (int)extlist_len) {
                         gint extitem_offset = 0;
-                        proto_item *item_ext = proto_tree_add_item(tree_msg, hf_xferext_tree, tvb, offset + extlist_offset, 0, ENC_BIG_ENDIAN);
+                        proto_item *item_ext = proto_tree_add_item(tree_msg, hf_xferext_tree, tvb, offset + extlist_offset, 0, ENC_NA);
                         proto_tree *tree_ext = proto_item_add_subtree(item_ext, ett_xferext);
 
                         guint8 extitem_flags = tvb_get_guint8(tvb, offset + extlist_offset + extitem_offset);
@@ -1368,7 +1340,7 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
         if (tcpcl_analyze_sequence) {
             // This message is before SESS_INIT (but is not the SESS_INIT)
             const gint cmp_sess_init = frame_loc_compare(cur_loc, &(tx_peer->sess_init_seen), NULL);
-            if (!has_frame_loc(&(tx_peer->sess_init_seen))
+            if (!frame_loc_valid(&(tx_peer->sess_init_seen))
                 || ((msgtype == TCPCL_MSGTYPE_SESS_INIT) && (cmp_sess_init < 0))
                 || ((msgtype != TCPCL_MSGTYPE_SESS_INIT) && (cmp_sess_init <= 0))) {
                 expert_add_info(pinfo, item_msg, &ei_sess_init_missing);
@@ -1455,7 +1427,7 @@ static int dissect_tcpcl(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
     fprintf(stdout, "\n");
 #endif
 
-    proto_item *item_tcpcl = proto_tree_add_item(tree, hf_tcpcl, tvb, 0, 0, ENC_BIG_ENDIAN);
+    proto_item *item_tcpcl = proto_tree_add_item(tree, hf_tcpcl, tvb, 0, 0, ENC_NA);
     proto_tree *tree_tcpcl = proto_item_add_subtree(item_tcpcl, ett_tcpcl);
 
     tcp_dissect_pdus(tvb, pinfo, tree_tcpcl, TRUE, 1, get_message_len, dissect_message, data);
@@ -1488,7 +1460,7 @@ static int dissect_xferext_totallen(tvbuff_t *tvb, packet_info *pinfo _U_, proto
 
     if (tcpcl_analyze_sequence && tcpcl_convo) {
         frame_loc_t *key = frame_loc_new(pinfo, tvb, 0);
-        guint64 *xfer_id = g_hash_table_lookup(tx_peer->frame_to_transfer, key);
+        guint64 *xfer_id = g_hash_table_lookup(tx_peer->frame_loc_to_transfer, key);
         if (xfer_id) {
             tcpcl_transfer_t *xfer = get_or_create_transfer_t(tx_peer->transfers, *xfer_id);
             xfer->total_length = guint64_new(total_len);
@@ -1577,11 +1549,12 @@ static void proto_reg_handoff_tcpcl(void) {
     reinit_tcpcl();
 }
 
-const char plugin_version[] = "0.0";
-
-const char plugin_release[] = "2.6";
-
-void plugin_register(void) {
+/// Interface for wireshark plugin
+WS_DLL_PUBLIC_DEF const char plugin_version[] = "0.0";
+/// Interface for wireshark plugin
+WS_DLL_PUBLIC_DEF const char plugin_release[] = "2.6";
+/// Interface for wireshark plugin
+WS_DLL_PUBLIC_DEF void plugin_register(void) {
     static proto_plugin plugin_tcpcl;
     plugin_tcpcl.register_protoinfo = proto_register_tcpcl;
     plugin_tcpcl.register_handoff = proto_reg_handoff_tcpcl;

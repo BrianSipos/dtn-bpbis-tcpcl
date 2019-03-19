@@ -2,7 +2,7 @@ import binascii
 import unittest
 from scapy.packet import Raw
 from ..messages import *
-from .. import xferextend
+from .. import extend
 
 class TestSessionInit(unittest.TestCase):
     
@@ -184,7 +184,7 @@ class TestTransferSegment(unittest.TestCase):
             flags=TransferSegment.Flag.START, 
             transfer_id=1234,
             ext_items=[
-                TransferExtendHeader(flags='CRITICAL')/xferextend.Length(total_length=800)
+                TransferExtendHeader(flags='CRITICAL')/extend.TransferTotalLength(total_length=800)
             ],
             data=b'hello',
         )
@@ -219,7 +219,7 @@ class TestTransferSegment(unittest.TestCase):
         self.assertEqual(item.flags, TransferExtendHeader.Flag.CRITICAL)
         self.assertEqual(item.type, 1)
         self.assertEqual(item.length, 8)
-        self.assertIsInstance(item.payload, xferextend.Length)
+        self.assertIsInstance(item.payload, extend.TransferTotalLength)
         self.assertEqual(item.payload.total_length, 800)
 
     def testSerializeMidData(self):

@@ -15,19 +15,27 @@ else(MSVC)
 endif(MSVC)
 
 find_package(PkgConfig)
+
 pkg_check_modules(WIRESHARK REQUIRED wireshark>=2.6)
 pkg_get_variable(WIRESHARK_SYSTEM_PLUGINDIR wireshark plugindir)
 set(INSTALL_MODULE_PATH "${WIRESHARK_SYSTEM_PLUGINDIR}/epan" CACHE FILEPATH "path to install the plugin module")
 
-file(GLOB ALL_H src/*.h)
-file(GLOB ALL_C src/*.c)
-add_library(tcpcl MODULE ${ALL_H} ${ALL_C})
-target_compile_definitions(tcpcl PRIVATE -DHAVE_PLUGINS)
-target_include_directories(tcpcl PUBLIC ${WIRESHARK_INCLUDE_DIRS})
-target_link_libraries(tcpcl PUBLIC ${WIRESHARK_LINK_LIBRARIES})
+pkg_check_modules(LIBCBOR REQUIRED libcbor>=0.5)
+
+
+add_library(tcpclv4 MODULE src/packet-tcpclv4.h src/packet-tcpclv4.c)
+target_compile_definitions(tcpclv4 PRIVATE -DHAVE_PLUGINS)
+target_include_directories(tcpclv4 PUBLIC ${WIRESHARK_INCLUDE_DIRS})
+target_link_libraries(tcpclv4 PUBLIC ${WIRESHARK_LINK_LIBRARIES})
+
+add_library(bpv6 MODULE src/packet-bpv6.h src/packet-bpv6.c)
+target_compile_definitions(bpv6 PRIVATE -DHAVE_PLUGINS)
+target_include_directories(bpv6 PUBLIC ${WIRESHARK_INCLUDE_DIRS})
+target_link_libraries(bpv6 PUBLIC ${WIRESHARK_LINK_LIBRARIES})
+
 if(INSTALL_MODULE_PATH)
     install(
-        TARGETS tcpcl
+        TARGETS tcpclv4 bpv6
         LIBRARY DESTINATION ${INSTALL_MODULE_PATH}
     )
 endif(INSTALL_MODULE_PATH)
