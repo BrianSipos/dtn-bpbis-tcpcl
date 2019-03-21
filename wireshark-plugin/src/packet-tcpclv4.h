@@ -7,7 +7,7 @@
 #include <epan/tvbuff.h>
 #include <epan/packet_info.h>
 
-enum TcpclMessageType {
+typedef enum {
     TCPCL_MSGTYPE_XFER_SEGMENT = 0x01,
     TCPCL_MSGTYPE_XFER_ACK = 0x02,
     TCPCL_MSGTYPE_XFER_REFUSE = 0x03,
@@ -15,24 +15,24 @@ enum TcpclMessageType {
     TCPCL_MSGTYPE_SESS_TERM = 0x05,
     TCPCL_MSGTYPE_MSG_REJECT = 0x06,
     TCPCL_MSGTYPE_SESS_INIT = 0x07,
-};
+} TcpclMessageType;
 
-enum ContactFlag {
+typedef enum {
     TCPCL_CONTACT_FLAG_CANTLS = 0x01,
-};
+} ContactFlag;
 
-enum SessTermFlag {
+typedef enum {
     TCPCL_SESS_TERM_FLAG_REPLY = 0x01,
-};
+} SessTermFlag;
 
-enum TransferFlag {
+typedef enum {
     TCPCL_TRANSFER_FLAG_START = 0x02,
     TCPCL_TRANSFER_FLAG_END = 0x01,
-};
+} TransferFlag;
 
-enum ExtensionFlag {
+typedef enum {
     TCPCL_EXTENSION_FLAG_CRITICAL = 0x01,
-};
+} ExtensionFlag;
 
 /// Finer grained locating than just the frame number
 typedef struct {
@@ -48,10 +48,16 @@ typedef struct {
 
 void frame_loc_init(frame_loc_t *loc, const packet_info *pinfo, tvbuff_t *tvb, const gint offset);
 
+/** Construct a new object on the file allocator.
+ */
 frame_loc_t * frame_loc_new(const packet_info *pinfo, tvbuff_t *tvb, const gint offset);
 
+/** Function to match the GDestroyNotify signature.
+ */
 void frame_loc_delete(gpointer ptr);
 
+/** Construct a new object on the file allocator.
+ */
 frame_loc_t * frame_loc_clone(const frame_loc_t *loc);
 
 /** Determine if the frame location has been set.

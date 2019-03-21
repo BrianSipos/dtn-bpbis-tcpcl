@@ -16,10 +16,10 @@
 static const guint TCPCL_PORT_NUM = 4556;
 static gboolean tcpcl_desegment_transfer = TRUE;
 static gboolean tcpcl_analyze_sequence = TRUE;
+static gboolean tcpcl_decode_bundle = TRUE;
 
 /// Protocol handles
 static int proto_tcpcl = -1;
-static int proto_xferext_totallen = -1;
 
 /// Dissector handles
 static dissector_handle_t handle_tcpcl;
@@ -132,7 +132,7 @@ static int hf_xferload_reassembled_data = -1;
 static gint ett_xferload_fragment = -1;
 static gint ett_xferload_fragments = -1;
 
-static int hf_xferext_totallen_total_len = -1;
+static int hf_xferext_transferlen_total_len = -1;
 /// Field definitions
 static hf_register_info fields[] = {
     {&hf_tcpcl, {"TCP Convergence Layer Version 4", "tcpclv4", FT_PROTOCOL, BASE_NONE, NULL, 0x0, NULL, HFILL}},
@@ -242,7 +242,7 @@ static hf_register_info fields[] = {
         FT_BYTES, BASE_NONE, NULL, 0x00, NULL, HFILL } },
 
     // Specific extensions
-    {&hf_xferext_totallen_total_len, {"Total Length (octets)", "tcpclv4.xferext.totallen.total_len", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+    {&hf_xferext_transferlen_total_len, {"Total Length (octets)", "tcpclv4.xferext.transfer_length.total_len", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
 };
 static const int *chdr_flags[] = {
     &hf_chdr_flags_cantls,
@@ -1383,15 +1383,32 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
 
     if (xferload_tvb) {
         col_append_str(pinfo->cinfo, COL_INFO, " [Bundle]");
-        dissector_table_t dissect_media = find_dissector_table("media_type");
-        guint sublen = dissector_try_string(
-            dissect_media,
-            "application/cbor",
-            xferload_tvb,
-            pinfo,
-            proto_item_get_parent(tree),
-            data
-        );
+        gint sublen = 0;
+
+        if (tcpcl_decode_bundle) {
+            dissector_handle_t dissect_bp = find_dissector("bpv7");
+            if (dissect_bp) {
+                sublen = call_dissector(
+                    dissect_bp,
+                    xferload_tvb,
+                    pinfo,
+                    proto_item_get_parent(tree)
+                );
+            }
+        }
+        if (sublen == 0) {
+            dissector_table_t dissect_media = find_dissector_table("media_type");
+            if (dissect_media) {
+                sublen = dissector_try_string(
+                    dissect_media,
+                    "application/cbor",
+                    xferload_tvb,
+                    pinfo,
+                    proto_item_get_parent(tree),
+                    data
+                );
+            }
+        }
         if (sublen == 0) {
             call_data_dissector(
                 xferload_tvb,
@@ -1438,7 +1455,7 @@ static int dissect_tcpcl(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
     return buflen;
 }
 
-static int dissect_xferext_totallen(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, void *data _U_) {
+static int dissect_xferext_transferlen(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, void *data _U_) {
     conversation_t *convo = find_or_create_conversation(pinfo);
     tcpcl_conversation_t *tcpcl_convo = (tcpcl_conversation_t *)conversation_get_proto_data(convo, proto_tcpcl);
     tcpcl_peer_t *tx_peer, *rx_peer;
@@ -1452,7 +1469,7 @@ static int dissect_xferext_totallen(tvbuff_t *tvb, packet_info *pinfo _U_, proto
     int offset = 0;
 
     guint64 total_len = tvb_get_guint64(tvb, offset, ENC_BIG_ENDIAN);
-    proto_item *item_len = proto_tree_add_uint64(tree, hf_xferext_totallen_total_len, tvb, offset, 8, total_len);
+    proto_item *item_len = proto_tree_add_uint64(tree, hf_xferext_transferlen_total_len, tvb, offset, 8, total_len);
     offset += 8;
     if (total_len > rx_peer->transfer_mru) {
         expert_add_info(pinfo, item_len, &ei_xferload_over_xfer_mru);
@@ -1483,13 +1500,12 @@ static void proto_register_tcpcl(void) {
 
     proto_register_field_array(proto_tcpcl, fields, array_length(fields));
     proto_register_subtree_array(ett, array_length(ett));
-    sess_ext_dissector = register_dissector_table("tcpclv4.sess_ext", "TCPCLv4 Session Extension", proto_tcpcl, FT_UINT16, BASE_HEX);
-    xfer_ext_dissector = register_dissector_table("tcpclv4.xfer_ext", "TCPCLv4 Transfer Extension", proto_tcpcl, FT_UINT16, BASE_HEX);
-
     expert_module_t *expert = expert_register_protocol(proto_tcpcl);
     expert_register_field_array(expert, expertitems, array_length(expertitems));
-
     handle_tcpcl = register_dissector("tcpclv4", dissect_tcpcl, proto_tcpcl);
+
+    sess_ext_dissector = register_dissector_table("tcpclv4.sess_ext", "TCPCLv4 Session Extension", proto_tcpcl, FT_UINT16, BASE_HEX);
+    xfer_ext_dissector = register_dissector_table("tcpclv4.xfer_ext", "TCPCLv4 Transfer Extension", proto_tcpcl, FT_UINT16, BASE_HEX);
 
     module_t *module_tcpcl = prefs_register_protocol(proto_tcpcl, reinit_tcpcl);
     prefs_register_bool_preference(
@@ -1511,6 +1527,14 @@ static void proto_register_tcpcl(void) {
         "the messages within each session.",
         &tcpcl_analyze_sequence
     );
+    prefs_register_bool_preference(
+        module_tcpcl,
+        "decode_bundle",
+        "Decode bundle data",
+        "If enabled, the bundle will be decoded as BPv7 content. "
+        "Otherwise, it is assumed to be plain CBOR.",
+        &tcpcl_decode_bundle
+    );
     /*
     prefs_register_bool_preference(
         module_tcpcl,
@@ -1528,11 +1552,6 @@ static void proto_register_tcpcl(void) {
     );
 
     /* Packaged extensions */
-    proto_xferext_totallen = proto_register_protocol(
-        "DTN TCPCLv4 Transfer Total Length", /* name */
-        "TCPCLv4-xferext-totallen", /* short name */
-        "tcpclv4-xferext-totallen" /* abbrev */
-    );
 }
 
 static void proto_reg_handoff_tcpcl(void) {
@@ -1542,7 +1561,7 @@ static void proto_reg_handoff_tcpcl(void) {
 
     /* Packaged extensions */
     {
-        dissector_handle_t dis_h = create_dissector_handle(dissect_xferext_totallen, proto_xferext_totallen);
+        dissector_handle_t dis_h = create_dissector_handle(dissect_xferext_transferlen, proto_tcpcl);
         dissector_add_uint("tcpclv4.xfer_ext", 1, dis_h);
     }
 
