@@ -106,7 +106,6 @@ static int hf_xfer_id = -1;
 static int hf_xfer_total_len = -1;
 static int hf_xfer_segment_extlist_len = -1;
 static int hf_xfer_segment_data_len = -1;
-static int hf_xfer_segment_data_load = -1;
 static int hf_xfer_segment_seen_len = -1;
 static int hf_xfer_segment_related_ack = -1;
 static int hf_xfer_segment_time_diff = -1;
@@ -190,7 +189,6 @@ static hf_register_info fields[] = {
     // XFER_SEGMENT fields
     {&hf_xfer_segment_extlist_len, {"Extension Items Length (octets)", "tcpclv4.xfer_segment.extlist_len", FT_UINT32, BASE_DEC, NULL, 0x0, NULL, HFILL}},
     {&hf_xfer_segment_data_len, {"Data Length (octets)", "tcpclv4.xfer_segment.data_len", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
-    {&hf_xfer_segment_data_load, {"Data", "tcpclv4.xfer_segment.data_load", FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_xfer_segment_seen_len, {"Seen Length", "tcpclv4.xfer_segment.seen_len", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
     {&hf_xfer_segment_related_ack, {"Related XFER_ACK", "tcpclv4.xfer_segment.related_ack", FT_FRAMENUM, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_xfer_segment_time_diff, {"Acknowledgment Time", "tcpclv4.xfer_segment.time_diff", FT_RELATIVE_TIME, BASE_NONE, NULL, 0x0, NULL, HFILL}},
@@ -812,6 +810,8 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
         return 0;
     }
     gint offset = 0;
+    // Length of non-protocol 'payload' data in this message
+    gint payload_len = 0;
 
     frame_loc_t *cur_loc = frame_loc_new(pinfo, tvb, 0);
     tcpcl_peer_t *tx_peer, *rx_peer;
@@ -1070,10 +1070,10 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                     expert_add_info(pinfo, item_len, &ei_xfer_seg_over_seg_mru);
                 }
 
-                const void *data_load = tvb_memdup(wmem_packet_scope(), tvb, offset, data_len);
-                proto_tree_add_bytes(tree_msg, hf_xfer_segment_data_load, tvb, offset, data_len, data_load);
+                // Treat data as payload layer
                 const gint data_offset = offset;
                 offset += data_len;
+                payload_len = data_len;
 
                 wmem_strbuf_append_printf(suffix_text, ", Xfer ID: %" PRIu64, xfer_id);
 
@@ -1169,6 +1169,7 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                 }
                 if (tcpcl_desegment_transfer) {
                     // Reassemble the segments
+                    const void *data_load = tvb_memdup(wmem_packet_scope(), tvb, data_offset, data_len);
                     fragment_head *xferload_frag_msg = fragment_add_seq_next(
                         &tcpcl_reassembly_table,
                         tvb, data_offset, pinfo,
@@ -1184,6 +1185,15 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                         xferload_frag_msg,
                         &xferload_frag_items,
                         &update_info,
+                        proto_item_get_parent(tree)
+                    );
+                }
+                else {
+                    // show the segment data in isolation
+                    tvbuff_t *xferdata_tvb = tvb_new_subset_length(tvb, data_offset, data_len);
+                    call_data_dissector(
+                        xferdata_tvb,
+                        pinfo,
                         proto_item_get_parent(tree)
                     );
                 }
@@ -1333,7 +1343,7 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                 break;
         }
 
-        proto_item_set_len(item_msg, offset);
+        proto_item_set_len(item_msg, offset - payload_len);
         proto_item_append_text(item_msg, ", Type: %s (0x%x)%s", msgtype_name, msgtype, wmem_strbuf_get_str(suffix_text));
         wmem_strbuf_finalize(suffix_text);
 
@@ -1359,7 +1369,7 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
     if (is_contact) {
         if (tcpcl_convo->contact_negotiated) {
             {
-                proto_item *item_nego = proto_tree_add_uint(tree_msg, hf_chdr_related, tvb, offset, 0, rx_peer->chdr_seen.frame_num);
+                proto_item *item_nego = proto_tree_add_uint(tree_msg, hf_chdr_related, tvb, 0, 0, rx_peer->chdr_seen.frame_num);
                 PROTO_ITEM_SET_GENERATED(item_nego);
             }
             {
@@ -1371,11 +1381,11 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
     else if (msgtype == TCPCL_MSGTYPE_SESS_INIT) {
         if (tcpcl_convo->sess_negotiated) {
             {
-                proto_item *item_nego = proto_tree_add_uint(tree_msg, hf_sess_init_related, tvb, offset, 0, rx_peer->sess_init_seen.frame_num);
+                proto_item *item_nego = proto_tree_add_uint(tree_msg, hf_sess_init_related, tvb, 0, 0, rx_peer->sess_init_seen.frame_num);
                 PROTO_ITEM_SET_GENERATED(item_nego);
             }
             {
-                proto_item *item_nego = proto_tree_add_uint(tree_msg, hf_negotiate_keepalive, tvb, offset, 0, tcpcl_convo->sess_keepalive);
+                proto_item *item_nego = proto_tree_add_uint(tree_msg, hf_negotiate_keepalive, tvb, 0, 0, tcpcl_convo->sess_keepalive);
                 PROTO_ITEM_SET_GENERATED(item_nego);
             }
         }
@@ -1440,9 +1450,6 @@ static int dissect_tcpcl(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "TCPCLv4");
     /* Clear out stuff in the info column */
     col_clear(pinfo->cinfo, COL_INFO);
-#if 0
-    fprintf(stdout, "\n");
-#endif
 
     proto_item *item_tcpcl = proto_tree_add_item(tree, hf_tcpcl, tvb, 0, 0, ENC_NA);
     proto_tree *tree_tcpcl = proto_item_add_subtree(item_tcpcl, ett_tcpcl);
@@ -1508,6 +1515,24 @@ static void proto_register_tcpcl(void) {
     xfer_ext_dissector = register_dissector_table("tcpclv4.xfer_ext", "TCPCLv4 Transfer Extension", proto_tcpcl, FT_UINT16, BASE_HEX);
 
     module_t *module_tcpcl = prefs_register_protocol(proto_tcpcl, reinit_tcpcl);
+    /*
+    prefs_register_bool_preference(
+        module_tcpcl,
+        "resync_unkown_message",
+        "Attempt resynchronization on unknown message",
+        "If the capture starts mid-session, there will be no Contact Header"
+        "and may not start on a message boundary. In this case, any ",
+        &tcpcl_resync_unkown_message
+    );
+    */
+    prefs_register_bool_preference(
+        module_tcpcl,
+        "analyze_sequence",
+        "Analyze message sequences",
+        "Whether the TCPCLv4 dissector should analyze the sequencing of "
+        "the messages within each session.",
+        &tcpcl_analyze_sequence
+    );
     prefs_register_bool_preference(
         module_tcpcl,
         "desegment_transfer",
@@ -1521,30 +1546,12 @@ static void proto_register_tcpcl(void) {
     );
     prefs_register_bool_preference(
         module_tcpcl,
-        "analyze_sequence",
-        "Analyze message sequences",
-        "Whether the TCPCLv4 dissector should analyze the sequencing of "
-        "the messages within each session.",
-        &tcpcl_analyze_sequence
-    );
-    prefs_register_bool_preference(
-        module_tcpcl,
         "decode_bundle",
         "Decode bundle data",
         "If enabled, the bundle will be decoded as BPv7 content. "
         "Otherwise, it is assumed to be plain CBOR.",
         &tcpcl_decode_bundle
     );
-    /*
-    prefs_register_bool_preference(
-        module_tcpcl,
-        "resync_unkown_message",
-        "Attempt resynchronization on unknown message",
-        "If the capture starts mid-session, there will be no Contact Header"
-        "and may not start on a message boundary. In this case, any ",
-        &tcpcl_resync_unkown_message
-    );
-    */
 
     reassembly_table_register(
         &tcpcl_reassembly_table,

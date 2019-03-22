@@ -3,12 +3,17 @@
 #include <epan/prefs.h>
 #include <epan/proto.h>
 #include <epan/expert.h>
+#include <wsutil/crc16.h>
+#include <wsutil/crc32.h>
 #include <cbor.h>
 #include <stdio.h>
 #include <inttypes.h>
 
+const guint16 ITU_V42_CRC16_VALID = 0x1D0F;
+const guint32 ITU_V42_CRC32_VALID = 0xC704DD7B;
+
 /// Protocol preferences and defaults
-static gboolean bp_compute_crc = FALSE;
+static gboolean bp_compute_crc = TRUE;
 
 /// Protocol handles
 static int proto_bp = -1;
@@ -33,7 +38,13 @@ static const value_string sess_term_reason_vals[]={
 */
 
 static int hf_bundle = -1;
+static int hf_bundle_head = -1;
+static int hf_bundle_break = -1;
 static int hf_block = -1;
+static int hf_crc_field_int16 = -1;
+static int hf_crc_field_int32 = -1;
+static int hf_crc_actual_int16 = -1;
+static int hf_crc_actual_int32 = -1;
 
 static int hf_primary_version = -1;
 static int hf_primary_bundle_flags = -1;
@@ -57,9 +68,7 @@ static int hf_primary_create_ts_utctime = -1;
 static int hf_primary_create_ts_seqno = -1;
 static int hf_primary_lifetime = -1;
 static int hf_primary_frag_offset = -1;
-static int hf_primary_crc_value = -1;
-static int hf_primary_crc_value16 = -1;
-static int hf_primary_crc_value32 = -1;
+static int hf_primary_crc_field = -1;
 
 static int hf_canonical_type_code = -1;
 static int hf_canonical_block_num = -1;
@@ -71,18 +80,25 @@ static int hf_canonical_block_flags_replicate_in_fragment = -1;
 static int hf_canonical_crc_type = -1;
 static int hf_canonical_data = -1;
 static int hf_canonical_data_len = -1;
-static int hf_canonical_crc_value = -1;
-static int hf_canonical_crc_value16 = -1;
-static int hf_canonical_crc_value32 = -1;
+static int hf_canonical_crc_field = -1;
 
 static int hf_payload = -1;
 static int hf_previous_node_eid = -1;
 static int hf_bundle_age_time = -1;
+static int hf_hop_count_limit = -1;
+static int hf_hop_count_current = -1;
 
 /// Field definitions
 static hf_register_info fields[] = {
     {&hf_bundle, {"Bundle Protocol Version 7", "bpv7", FT_PROTOCOL, BASE_NONE, NULL, 0x0, NULL, HFILL}},
+    {&hf_bundle_head, {"Indefinite Array", "bpv7.bundle_head", FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL}},
+    {&hf_bundle_break, {"Indefinite Break", "bpv7.bundle_break", FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL}},
+
     {&hf_block, {"Block", "bpv7.block", FT_PROTOCOL, BASE_NONE, NULL, 0x0, NULL, HFILL}},
+    {&hf_crc_field_int16, {"CRC Field Integer", "bpv7.crc_field_int", FT_UINT16, BASE_HEX, NULL, 0x0, NULL, HFILL}},
+    {&hf_crc_field_int32, {"CRC field Integer", "bpv7.crc_field_int", FT_UINT32, BASE_HEX, NULL, 0x0, NULL, HFILL}},
+    {&hf_crc_actual_int16, {"CRC Result Integer", "bpv7.crc_actual_int", FT_UINT16, BASE_HEX, NULL, 0x0, NULL, HFILL}},
+    {&hf_crc_actual_int32, {"CRC Result Integer", "bpv7.crc_actual_int", FT_UINT32, BASE_HEX, NULL, 0x0, NULL, HFILL}},
 
     {&hf_primary_version, {"Version", "bpv7.primary.version", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
     {&hf_primary_bundle_flags, {"Bundle Flags", "bpv7.primary.bundle_flags", FT_UINT16, BASE_HEX, NULL, 0x0, NULL, HFILL}},
@@ -106,9 +122,7 @@ static hf_register_info fields[] = {
     {&hf_primary_create_ts_seqno, {"Sequence Number", "bpv7.primary.create_ts.seqno", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
     {&hf_primary_lifetime, {"Lifetime (us)", "bpv7.primary.lifetime", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
     {&hf_primary_frag_offset, {"Fragment Offset", "bpv7.primary.frag_offset", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
-    {&hf_primary_crc_value, {"CRC Value", "bpv7.primary.crc_value", FT_UINT64, BASE_HEX, NULL, 0x0, NULL, HFILL}},
-    {&hf_primary_crc_value16, {"CRC Value", "bpv7.primary.crc_value16", FT_UINT16, BASE_HEX, NULL, 0x0, NULL, HFILL}},
-    {&hf_primary_crc_value32, {"CRC Value", "bpv7.primary.crc_value32", FT_UINT32, BASE_HEX, NULL, 0x0, NULL, HFILL}},
+    {&hf_primary_crc_field, {"CRC Field", "bpv7.primary.crc_field", FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL}},
 
     {&hf_canonical_type_code, {"Type Code", "bpv7.canonical.type_code", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
     {&hf_canonical_block_num, {"Block Number", "bpv7.canonical.block_num", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
@@ -120,14 +134,16 @@ static hf_register_info fields[] = {
     {&hf_canonical_crc_type, {"CRC Type", "bpv7.canonical.crc_type", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
     {&hf_canonical_data, {"Block Data", "bpv7.canonical.data", FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_canonical_data_len, {"Data Length (octets)", "bpv7.canonical.data_len", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
-    {&hf_canonical_crc_value, {"CRC Value", "bpv7.canonical.crc_value", FT_UINT64, BASE_HEX, NULL, 0x0, NULL, HFILL}},
-    {&hf_canonical_crc_value16, {"CRC Value", "bpv7.canonical.crc_value16", FT_UINT16, BASE_HEX, NULL, 0x0, NULL, HFILL}},
-    {&hf_canonical_crc_value32, {"CRC Value", "bpv7.canonical.crc_value32", FT_UINT32, BASE_HEX, NULL, 0x0, NULL, HFILL}},
+    {&hf_canonical_crc_field, {"CRC Field", "bpv7.canonical.crc_field", FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL}},
 
     {&hf_payload, {"BP Payload", "bpv7.payload", FT_PROTOCOL, BASE_NONE, NULL, 0x0, NULL, HFILL}},
+
     {&hf_previous_node_eid, {"Previous Node EID", "bpv7.previous_node.eid", FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL}},
+
     {&hf_bundle_age_time, {"Bundle Age (us)", "bpv7.bundle_age.time", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
 
+    {&hf_hop_count_limit, {"Hop Limit", "bpv7.hop_count.limit", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+    {&hf_hop_count_current, {"Hop Count", "bpv7.hop_count.current", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
 };
 
 static const int *bundle_flags[] = {
@@ -175,6 +191,7 @@ static expert_field ei_invalid_bp_version = EI_INIT;
 static expert_field ei_block_type_unknown = EI_INIT;
 static expert_field ei_block_num_primary = EI_INIT;
 static expert_field ei_block_partial_decode = EI_INIT;
+static expert_field ei_block_failed_crc = EI_INIT;
 static ei_register_info expertitems[] = {
     {&ei_cbor_invalid, { "bpv7.cbor_invalid", PI_MALFORMED, PI_ERROR, "CBOR cannot be decoded", EXPFILL}},
     {&ei_cbor_wrong_type, { "bpv7.cbor_wrong_type", PI_MALFORMED, PI_ERROR, "CBOR is wrong type", EXPFILL}},
@@ -184,6 +201,7 @@ static ei_register_info expertitems[] = {
     {&ei_block_type_unknown, { "bpv7.block_type_unknown", PI_UNDECODED, PI_WARN, "Unknown block type code", EXPFILL}},
     {&ei_block_num_primary, { "bpv7.block_num_primary", PI_PROTOCOL, PI_WARN, "Invalid primary block number", EXPFILL}},
     {&ei_block_partial_decode, { "bpv7.block_partial_decode", PI_UNDECODED, PI_WARN, "Block data not fully dissected", EXPFILL}},
+    {&ei_block_failed_crc, { "bpv7.block_failed_crc", PI_CHECKSUM, PI_WARN, "Block failed CRC", EXPFILL}},
 };
 
 bp_block_primary_t * bp_block_primary_new() {
@@ -221,16 +239,27 @@ void bp_bundle_delete(gpointer ptr) {
 }
 
 static cbor_item_t * cbor_array_get_safe(const cbor_item_t *array, size_t index) {
+    if (array->type != CBOR_TYPE_ARRAY) {
+        return NULL;
+    }
     if (cbor_array_size(array) <= index) {
         return NULL;
     }
     return cbor_array_get(array, index);
 }
 
+static const cbor_item_t * cbor_skip_tags(const cbor_item_t *item) {
+    while (item && (item->type == CBOR_TYPE_TAG)) {
+        item = cbor_tag_item(item);
+    }
+    return item;
+}
+
 static guint64 * cbor_require_uint64(const cbor_item_t *item) {
     if (!item) {
         return NULL;
     }
+    item = cbor_skip_tags(item);
     switch (item->type) {
         case CBOR_TYPE_UINT: {
             guint64 *result = wmem_new(wmem_file_scope(), guint64);
@@ -246,6 +275,7 @@ static gint64 * cbor_require_int64(const cbor_item_t *item) {
     if (!item) {
         return NULL;
     }
+    item = cbor_skip_tags(item);
     switch (item->type) {
         case CBOR_TYPE_UINT: {
             gint64 *result = wmem_new(wmem_file_scope(), gint64);
@@ -268,6 +298,7 @@ static tvbuff_t * cbor_require_string(tvbuff_t *parent, const cbor_item_t *item)
     if (!item) {
         return NULL;
     }
+    item = cbor_skip_tags(item);
 
     size_t len = 0;
     guint8 *buf = NULL;
@@ -316,29 +347,28 @@ static proto_item * proto_tree_add_cbor_bitmask64(proto_tree *tree, int hfindex,
 }
 
 static proto_item * proto_tree_add_cbor_textstring(proto_tree *tree, int hfindex, packet_info *pinfo, tvbuff_t *tvb) {
+    gint length = 0;
     const gchar *value = NULL;
     if (tvb) {
-        value = tvb_memdup(wmem_packet_scope(), tvb, 0, tvb_captured_length(tvb));
+        length = tvb_captured_length(tvb);
+        value = tvb_memdup(wmem_packet_scope(), tvb, 0, length);
     }
-    proto_item *item = proto_tree_add_string(tree, hfindex, tvb, 0, tvb_captured_length(tvb), value);
+    proto_item *item = proto_tree_add_string(tree, hfindex, tvb, 0, length, value);
     if (!tvb) {
         expert_add_info(pinfo, item, &ei_item_missing);
     }
     return item;
 }
 
-static proto_item * proto_tree_add_crc(proto_tree *tree, int hfindex, packet_info *pinfo, tvbuff_t *tvb, guint64 crc_type _U_, const guint64 *crc_value) {
-    proto_item *item;
-    switch (crc_type) {
-        case BP_CRC_16:
-        case BP_CRC_32:
-            item = proto_tree_add_uint(tree, hfindex, tvb, 0, 0, crc_value ? *crc_value : 0);
-            break;
-        default:
-            item = NULL;
-            break;
+static proto_item * proto_tree_add_cbor_bytestring(proto_tree *tree, int hfindex, packet_info *pinfo, tvbuff_t *tvb) {
+    gint length = 0;
+    const guint8 *value = NULL;
+    if (tvb) {
+        length = tvb_captured_length(tvb);
+        value = tvb_memdup(wmem_packet_scope(), tvb, 0, length);
     }
-    if (!crc_value) {
+    proto_item *item = proto_tree_add_bytes(tree, hfindex, tvb, 0, length, value);
+    if (!tvb) {
         expert_add_info(pinfo, item, &ei_item_missing);
     }
     return item;
@@ -346,6 +376,7 @@ static proto_item * proto_tree_add_crc(proto_tree *tree, int hfindex, packet_inf
 
 static int dissect_bp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_) {
     const guint buflen = tvb_captured_length(tvb);
+    gint offset = 0;
 
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "BPv7");
     col_clear(pinfo->cinfo, COL_INFO);
@@ -355,171 +386,187 @@ static int dissect_bp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void 
 
     bp_bundle_t *bundle = bp_bundle_new();
 
-    /* Load the whole bundle at-once and extract parts below. */
-    void *buf = tvb_memdup(wmem_packet_scope(), tvb, 0, buflen);
-    struct cbor_load_result load_result;
-    cbor_item_t *cbor_root = cbor_load(buf, buflen, &load_result);
-    proto_item_set_len(item_bundle, load_result.read);
-    if (!cbor_root) {
-        expert_add_info_format(pinfo, item_bundle, &ei_cbor_invalid, "Bundle is invalid");
+    // Read blocks directly from buffer with same addresses as #tvb
+    guint8 *buf = tvb_memdup(wmem_packet_scope(), tvb, 0, buflen);
+
+    // Require indefinite-length array type
+    const guint8 bundle_head = tvb_get_guint8(tvb, offset);
+    proto_item *item_head = proto_tree_add_item(tree_bundle, hf_bundle_head, tvb, offset, 1, ENC_BIG_ENDIAN);
+    offset += 1;
+    if (bundle_head != 0x9F) {
+        expert_add_info_format(pinfo, item_head, &ei_cbor_invalid, "Array header expected 0x9F");
     }
-    else if (cbor_root->type != CBOR_TYPE_ARRAY) {
-        expert_add_info_format(pinfo, item_bundle, &ei_cbor_wrong_type, "Bundle has type %d", cbor_root->type);
-    }
-    else if (cbor_array_size(cbor_root) < 1) {
-        expert_add_info_format(pinfo, item_bundle, &ei_array_wrong_size, "Bundle has %" PRIu64 " items", cbor_array_size(cbor_root));
-    }
-    else {
-        const size_t bundle_len = cbor_array_size(cbor_root);
-        for (size_t block_ix = 0; block_ix < bundle_len; ++block_ix) {
-            proto_item *item_block = proto_tree_add_item(tree_bundle, hf_block, tvb, 0, 0, ENC_NA);
-            proto_tree *tree_block = proto_item_add_subtree(item_block, ett_block);
+    // continue on assuming its an array
 
-            cbor_item_t *cbor_block = cbor_array_get(cbor_root, block_ix);
-            if (!cbor_block) {
-                expert_add_info_format(pinfo, item_block, &ei_cbor_invalid, "Block is invalid");
-                continue;
-            }
-            const size_t block_size = cbor_array_size(cbor_block);
-            proto_item_append_text(item_block, ", Count: %" PRIu64, block_size);
+    int block_ix = 0;
+    while (TRUE) {
+        if (offset >= (gint)buflen) {
+            proto_item *item_break = proto_tree_add_item(tree_bundle, hf_bundle_break, tvb, offset, 0, ENC_NA);
+            expert_add_info_format(pinfo, item_break, &ei_cbor_invalid, "Array break missing");
+            break;
+        }
+        const guint8 try_break = tvb_get_guint8(tvb, offset);
+        if (try_break == 0xFF) {
+            proto_tree_add_item(tree_bundle, hf_bundle_break, tvb, offset, 1, ENC_BIG_ENDIAN);
+            offset += 1;
+            break;
+        }
 
-            if (block_ix == 0) {
-                // Primary block
-                proto_item_prepend_text(item_block, "Primary ");
+        // Load just this block
+        struct cbor_load_result load_result;
+        cbor_item_t *cbor_block = cbor_load(buf + offset, buflen - offset, &load_result);
+        const guint block_offset = offset;
+        const guint block_len = load_result.read;
+        offset += block_len;
 
-                if (cbor_block->type != CBOR_TYPE_ARRAY) {
-                    expert_add_info_format(pinfo, item_block, &ei_cbor_wrong_type, "Block has type %d", cbor_block->type);
-                }
-                else if (block_size < 8) {
-                    expert_add_info_format(pinfo, item_block, &ei_array_wrong_size, "Block has %" PRIu64 " items", block_size);
-                }
-                else {
-                    size_t field_ix = 0;
-                    bp_block_primary_t *block = bp_block_primary_new();
+        proto_item *item_block = proto_tree_add_item(tree_bundle, hf_block, tvb, block_offset, block_len, ENC_NA);
+        proto_tree *tree_block = proto_item_add_subtree(item_block, ett_block);
+        if (!cbor_block) {
+            expert_add_info_format(pinfo, item_block, &ei_cbor_invalid, "Block is invalid: error code %d at offset %" PRIu64, load_result.error.code, load_result.error.position);
+            break;
+        }
+        else if (cbor_block->type != CBOR_TYPE_ARRAY) {
+            expert_add_info_format(pinfo, item_block, &ei_cbor_wrong_type, "Block has type %d", cbor_block->type);
+            break;
+        }
+        const size_t block_size = cbor_array_size(cbor_block);
+        proto_item_append_text(item_block, ", Count: %" PRIu64, block_size);
 
-                    const guint64 *version = cbor_require_uint64(cbor_array_get(cbor_block, field_ix++));
-                    proto_item *item_version = proto_tree_add_cbor_uint64(tree_block, hf_primary_version, pinfo, tvb, version);
-                    if (version && (*version != 7)) {
-                        expert_add_info(pinfo, item_version, &ei_invalid_bp_version);
-                    }
+        const guint64 *crc_type = NULL;
+        tvbuff_t *crc_field = NULL;
+        proto_item *item_crc_field = NULL;
+        if (block_ix == 0) {
+            // Primary block
+            proto_item_prepend_text(item_block, "Primary ");
 
-                    const guint64 *flags = cbor_require_uint64(cbor_array_get(cbor_block, field_ix++));
-                    proto_tree_add_cbor_bitmask64(tree_block, hf_primary_bundle_flags, ett_bundle_flags, bundle_flags, pinfo, tvb, flags);
-                    block->flags = flags;
-
-                    const guint64 *crc_type = cbor_require_uint64(cbor_array_get(cbor_block, field_ix++));
-                    proto_tree_add_cbor_uint64(tree_block, hf_primary_crc_type, pinfo, tvb, crc_type);
-                    block->crc_type = crc_type;
-
-                    tvbuff_t *tvb_dst_eid = cbor_require_string(tvb, cbor_array_get(cbor_block, field_ix++));
-                    proto_tree_add_cbor_textstring(tree_block, hf_primary_dst_eid, pinfo, tvb_dst_eid);
-                    block->dst_eid = tvb_dst_eid;
-
-                    tvbuff_t *tvb_src_eid = cbor_require_string(tvb, cbor_array_get(cbor_block, field_ix++));
-                    proto_tree_add_cbor_textstring(tree_block, hf_primary_src_eid, pinfo, tvb_src_eid);
-                    block->src_eid = tvb_src_eid;
-
-                    tvbuff_t *tvb_rep_eid = cbor_require_string(tvb, cbor_array_get(cbor_block, field_ix++));
-                    proto_tree_add_cbor_textstring(tree_block, hf_primary_report_eid, pinfo, tvb_rep_eid);
-                    block->rep_eid = tvb_rep_eid;
-
-                    // Complex type
-                    cbor_item_t *cbor_create_ts = cbor_array_get_safe(cbor_block, field_ix++);
-                    proto_item *item_ts = proto_tree_add_item(tree_block, hf_primary_create_ts, tvb, 0, 0, ENC_NA);
-                    if (!cbor_create_ts) {
-                        expert_add_info(pinfo, item_ts, &ei_item_missing);
-                    }
-                    else {
-                        proto_tree *tree_ts = proto_item_add_subtree(item_ts, ett_primary_create_ts);
-
-                        if (cbor_create_ts->type != CBOR_TYPE_ARRAY) {
-                            expert_add_info_format(pinfo, item_ts, &ei_cbor_wrong_type, "Timestamp has type %d", cbor_create_ts->type);
-                        }
-                        else if (cbor_array_size(cbor_create_ts) != 2) {
-                            expert_add_info_format(pinfo, item_ts, &ei_array_wrong_size, "Timestamp has %" PRIu64 " items", cbor_array_size(cbor_create_ts));
-                        }
-                        else {
-                            const gint64 *dtntime = cbor_require_int64(cbor_array_get_safe(cbor_create_ts, 0));
-                            proto_tree_add_cbor_int64(tree_ts, hf_primary_create_ts_dtntime, pinfo, tvb, dtntime);
-
-                            if (dtntime) {
-                                // Offset from Section 4.1.6
-                                nstime_t utctime;
-                                utctime.secs = 946684800 + *dtntime;
-                                utctime.nsecs = 0;
-                                proto_item *item_utctime = proto_tree_add_time(tree_ts, hf_primary_create_ts_utctime, tvb, 0, 0, &utctime);
-                                PROTO_ITEM_SET_GENERATED(item_utctime);
-                            }
-
-                            const guint64 *seqno = cbor_require_uint64(cbor_array_get_safe(cbor_create_ts, 1));
-                            proto_tree_add_cbor_uint64(tree_ts, hf_primary_create_ts_seqno, pinfo, tvb, seqno);
-                        }
-                    }
-
-                    const guint64 *lifetime = cbor_require_uint64(cbor_array_get(cbor_block, field_ix++));
-                    proto_tree_add_cbor_uint64(tree_block, hf_primary_lifetime, pinfo, tvb, lifetime);
-
-                    // optional items
-                    if (flags && (*flags & BP_BUNDLE_IS_FRAGMENT)) {
-                        const guint64 *frag_offset = cbor_require_uint64(cbor_array_get_safe(cbor_block, field_ix++));
-                        proto_tree_add_cbor_uint64(tree_block, hf_primary_frag_offset, pinfo, tvb, frag_offset);
-                    }
-                    if (crc_type && (*crc_type != 0)) {
-                        const int hf_crc = (*crc_type == BP_CRC_16 ? hf_primary_crc_value16 : hf_primary_crc_value32);
-                        const guint64 *crc_value = cbor_require_uint64(cbor_array_get_safe(cbor_block, field_ix++));
-                        proto_tree_add_crc(tree_block, hf_crc, pinfo, tvb, *crc_type, crc_value);
-                        block->crc_value = crc_value;
-                    }
-
-                    bundle->primary = block;
-                }
+            if (block_size < 8) {
+                expert_add_info_format(pinfo, item_block, &ei_array_wrong_size, "Block has %" PRIu64 " items", block_size);
             }
             else {
-                // Non-primary block
-                if (cbor_block->type != CBOR_TYPE_ARRAY) {
-                    expert_add_info_format(pinfo, item_block, &ei_cbor_wrong_type, "Block has type %d", cbor_block->type);
+                size_t field_ix = 0;
+                bp_block_primary_t *block = bp_block_primary_new();
+
+                const guint64 *version = cbor_require_uint64(cbor_array_get(cbor_block, field_ix++));
+                proto_item *item_version = proto_tree_add_cbor_uint64(tree_block, hf_primary_version, pinfo, tvb, version);
+                if (version && (*version != 7)) {
+                    expert_add_info(pinfo, item_version, &ei_invalid_bp_version);
                 }
-                else if (block_size < 5) {
-                    expert_add_info_format(pinfo, item_block, &ei_array_wrong_size, "Block has %" PRIu64 " items", block_size);
+
+                const guint64 *flags = cbor_require_uint64(cbor_array_get(cbor_block, field_ix++));
+                proto_tree_add_cbor_bitmask64(tree_block, hf_primary_bundle_flags, ett_bundle_flags, bundle_flags, pinfo, tvb, flags);
+                block->flags = flags;
+
+                crc_type = cbor_require_uint64(cbor_array_get(cbor_block, field_ix++));
+                proto_tree_add_cbor_uint64(tree_block, hf_primary_crc_type, pinfo, tvb, crc_type);
+                block->crc_type = crc_type;
+
+                tvbuff_t *tvb_dst_eid = cbor_require_string(tvb, cbor_array_get(cbor_block, field_ix++));
+                proto_tree_add_cbor_textstring(tree_block, hf_primary_dst_eid, pinfo, tvb_dst_eid);
+                block->dst_eid = tvb_dst_eid;
+
+                tvbuff_t *tvb_src_eid = cbor_require_string(tvb, cbor_array_get(cbor_block, field_ix++));
+                proto_tree_add_cbor_textstring(tree_block, hf_primary_src_eid, pinfo, tvb_src_eid);
+                block->src_eid = tvb_src_eid;
+
+                tvbuff_t *tvb_rep_eid = cbor_require_string(tvb, cbor_array_get(cbor_block, field_ix++));
+                proto_tree_add_cbor_textstring(tree_block, hf_primary_report_eid, pinfo, tvb_rep_eid);
+                block->rep_eid = tvb_rep_eid;
+
+                // Complex type
+                cbor_item_t *cbor_create_ts = cbor_array_get_safe(cbor_block, field_ix++);
+                proto_item *item_ts = proto_tree_add_item(tree_block, hf_primary_create_ts, tvb, 0, 0, ENC_NA);
+                if (!cbor_create_ts) {
+                    expert_add_info(pinfo, item_ts, &ei_item_missing);
                 }
                 else {
-                    size_t field_ix = 0;
-                    bp_block_canonical_t *block = bp_block_canonical_new();
+                    proto_tree *tree_ts = proto_item_add_subtree(item_ts, ett_primary_create_ts);
 
-                    const guint64 *type_code = cbor_require_uint64(cbor_array_get(cbor_block, field_ix++));
-                    proto_item *item_type = proto_tree_add_cbor_uint64(tree_block, hf_canonical_type_code, pinfo, tvb, type_code);
-                    block->type_code = type_code;
-                    proto_item_append_text(item_block, ", Type: %" PRIu64, *type_code);
-
-                    const guint64 *block_num = cbor_require_uint64(cbor_array_get(cbor_block, field_ix++));
-                    proto_tree_add_cbor_uint64(tree_block, hf_canonical_block_num, pinfo, tvb, block_num);
-                    block->block_number = block_num;
-
-                    const guint64 *flags = cbor_require_uint64(cbor_array_get(cbor_block, field_ix++));
-                    proto_tree_add_cbor_bitmask64(tree_block, hf_canonical_block_flags, ett_block_flags, block_flags, pinfo, tvb, flags);
-                    block->flags = flags;
-
-                    const guint64 *crc_type = cbor_require_uint64(cbor_array_get(cbor_block, field_ix++));
-                    proto_tree_add_cbor_uint64(tree_block, hf_canonical_crc_type, pinfo, tvb, crc_type);
-                    block->crc_type = crc_type;
-
-                    tvbuff_t *tvb_data = cbor_require_string(tvb, cbor_array_get(cbor_block, field_ix++));
-                    dissector_handle_t data_dissect = NULL;
-                    if (type_code) {
-                        data_dissect = dissector_get_uint_handle(block_dissector, *type_code);
+                    if (cbor_create_ts->type != CBOR_TYPE_ARRAY) {
+                        expert_add_info_format(pinfo, item_ts, &ei_cbor_wrong_type, "Timestamp has type %d", cbor_create_ts->type);
                     }
-                    block->data = tvb_data;
-
-                    if (crc_type && (*crc_type != 0)) {
-                        const int hf_crc = (*crc_type == BP_CRC_16 ? hf_canonical_crc_value16 : hf_canonical_crc_value32);
-                        const guint64 *crc_value = cbor_require_uint64(cbor_array_get_safe(cbor_block, field_ix++));
-                        proto_tree_add_crc(tree_block, hf_crc, pinfo, tvb, *crc_type, crc_value);
-                        block->crc_value = crc_value;
+                    else if (cbor_array_size(cbor_create_ts) != 2) {
+                        expert_add_info_format(pinfo, item_ts, &ei_array_wrong_size, "Timestamp has %" PRIu64 " items", cbor_array_size(cbor_create_ts));
                     }
+                    else {
+                        const gint64 *dtntime = cbor_require_int64(cbor_array_get_safe(cbor_create_ts, 0));
+                        proto_tree_add_cbor_int64(tree_ts, hf_primary_create_ts_dtntime, pinfo, tvb, dtntime);
 
+                        if (dtntime) {
+                            // Offset from Section 4.1.6
+                            nstime_t utctime;
+                            utctime.secs = 946684800 + *dtntime;
+                            utctime.nsecs = 0;
+                            proto_item *item_utctime = proto_tree_add_time(tree_ts, hf_primary_create_ts_utctime, tvb, 0, 0, &utctime);
+                            PROTO_ITEM_SET_GENERATED(item_utctime);
+                        }
+
+                        const guint64 *seqno = cbor_require_uint64(cbor_array_get_safe(cbor_create_ts, 1));
+                        proto_tree_add_cbor_uint64(tree_ts, hf_primary_create_ts_seqno, pinfo, tvb, seqno);
+                    }
+                }
+
+                const guint64 *lifetime = cbor_require_uint64(cbor_array_get(cbor_block, field_ix++));
+                proto_tree_add_cbor_uint64(tree_block, hf_primary_lifetime, pinfo, tvb, lifetime);
+
+                // optional items
+                if (flags && (*flags & BP_BUNDLE_IS_FRAGMENT)) {
+                    const guint64 *frag_offset = cbor_require_uint64(cbor_array_get_safe(cbor_block, field_ix++));
+                    proto_tree_add_cbor_uint64(tree_block, hf_primary_frag_offset, pinfo, tvb, frag_offset);
+                }
+                if (crc_type && (*crc_type != 0)) {
+                    crc_field = cbor_require_string(tvb, cbor_array_get_safe(cbor_block, field_ix++));
+                    item_crc_field = proto_tree_add_cbor_bytestring(tree_block, hf_primary_crc_field, pinfo, crc_field);
+                    block->crc_field = crc_field;
+                }
+
+                bundle->primary = block;
+            }
+        }
+        else {
+            // Non-primary block
+            if (block_size < 5) {
+                expert_add_info_format(pinfo, item_block, &ei_array_wrong_size, "Block has %" PRIu64 " items", block_size);
+            }
+            else {
+                size_t field_ix = 0;
+                bp_block_canonical_t *block = bp_block_canonical_new();
+
+                const guint64 *type_code = cbor_require_uint64(cbor_array_get(cbor_block, field_ix++));
+                proto_item *item_type = proto_tree_add_cbor_uint64(tree_block, hf_canonical_type_code, pinfo, tvb, type_code);
+                block->type_code = type_code;
+                proto_item_append_text(item_block, ", Block Type: %" PRIu64, *type_code);
+                dissector_handle_t data_dissect = NULL;
+                if (type_code) {
+                    data_dissect = dissector_get_uint_handle(block_dissector, *type_code);
+                }
+
+                const guint64 *block_num = cbor_require_uint64(cbor_array_get(cbor_block, field_ix++));
+                proto_tree_add_cbor_uint64(tree_block, hf_canonical_block_num, pinfo, tvb, block_num);
+                block->block_number = block_num;
+
+                const guint64 *flags = cbor_require_uint64(cbor_array_get(cbor_block, field_ix++));
+                proto_tree_add_cbor_bitmask64(tree_block, hf_canonical_block_flags, ett_block_flags, block_flags, pinfo, tvb, flags);
+                block->flags = flags;
+
+                crc_type = cbor_require_uint64(cbor_array_get(cbor_block, field_ix++));
+                proto_tree_add_cbor_uint64(tree_block, hf_canonical_crc_type, pinfo, tvb, crc_type);
+                block->crc_type = crc_type;
+
+                tvbuff_t *tvb_data = cbor_require_string(tvb, cbor_array_get(cbor_block, field_ix++));
+                block->data = tvb_data;
+
+                if (crc_type && (*crc_type != 0)) {
+                    crc_field = cbor_require_string(tvb, cbor_array_get_safe(cbor_block, field_ix++));
+                    item_crc_field = proto_tree_add_cbor_bytestring(tree_block, hf_canonical_crc_field, pinfo, crc_field);
+                    block->crc_field = crc_field;
+                }
+
+                if (!tvb_data) {
+                    expert_add_info_format(pinfo, item_block, &ei_item_missing, "Data field is missing");
+                }
+                else {
                     proto_item *item_len = proto_tree_add_uint64(tree_block, hf_canonical_data_len, tvb, 0, 0, tvb_captured_length(tvb_data));
                     PROTO_ITEM_SET_GENERATED(item_len);
-                    add_new_data_source(pinfo, tvb, "Block Data");
 
                     // sub-dissect after all is read
                     if (!data_dissect) {
@@ -535,18 +582,77 @@ static int dissect_bp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void 
                             expert_add_info(pinfo, tree_block, &ei_block_partial_decode);
                         }
                     }
-
-                    g_sequence_append(bundle->blocks, block);
                 }
+
+                g_sequence_append(bundle->blocks, block);
             }
-            cbor_decref(&cbor_block);
         }
+
+        if (crc_type && (*crc_type != 0)) {
+            // Display the data field information
+            if (crc_field) {
+                int hf_crc_field;
+                gint hf_crc_len;
+                switch (*crc_type) {
+                    case BP_CRC_16:
+                        hf_crc_field = hf_crc_field_int16;
+                        hf_crc_len = 2;
+                        break;
+                    case BP_CRC_32:
+                        hf_crc_field = hf_crc_field_int32;
+                        hf_crc_len = 4;
+                        break;
+                    default:
+                        hf_crc_field = -1;
+                        hf_crc_len = 0;
+                        break;
+                }
+                proto_item *item_crc_int = proto_tree_add_item(tree_block, hf_crc_field, crc_field, 0, hf_crc_len, ENC_BIG_ENDIAN);
+                PROTO_ITEM_SET_GENERATED(item_crc_int);
+                proto_tree_move_item(tree_block, item_crc_field, item_crc_int);
+            }
+
+            proto_item_append_text(item_block, ", CRC Type: %" PRIu64, *crc_type);
+
+            // Compare against expected result
+            if (bp_compute_crc) {
+                const int hf_crc_actual = (*crc_type == BP_CRC_16 ? hf_crc_actual_int16 : hf_crc_actual_int32);
+                guint64 crc_expect;
+                guint64 crc_actual;
+                wmem_strbuf_t *expect_text = wmem_strbuf_new(wmem_packet_scope(), NULL);
+                switch (*crc_type) {
+                    case BP_CRC_16:
+                        crc_expect = ITU_V42_CRC16_VALID;
+                        crc_actual = crc16_ccitt(buf + block_offset, block_len);
+                        wmem_strbuf_append_printf(expect_text, "0x%" PRIx16, ITU_V42_CRC16_VALID);
+                        break;
+                    case BP_CRC_32:
+                        crc_expect = ITU_V42_CRC32_VALID;
+                        crc_actual = crc32_ccitt(buf + block_offset, block_len);
+                        wmem_strbuf_append_printf(expect_text, "0x%" PRIx32, ITU_V42_CRC32_VALID);
+                        break;
+                    default:
+                        crc_expect = 0;
+                        crc_actual = 0;
+                        break;
+                }
+                proto_item *item_crc_actual = proto_tree_add_uint(tree_block, hf_crc_actual, tvb, block_offset, block_len, crc_actual);
+                PROTO_ITEM_SET_GENERATED(item_crc_actual);
+
+                if (crc_actual != crc_expect) {
+                    expert_add_info_format(pinfo, item_crc_actual, &ei_block_failed_crc, "Expected CRC value %s", wmem_strbuf_get_str(expect_text));
+                }
+                wmem_free(wmem_packet_scope(), expect_text);
+            }
+        }
+
+        cbor_decref(&cbor_block);
+        block_ix++;
     }
 
-    cbor_decref(&cbor_root);
     wmem_free(wmem_packet_scope(), buf);
     bp_bundle_delete(bundle);
-    return load_result.read;
+    return offset;
 }
 
 static void reinit_bp(void) {
@@ -568,7 +674,7 @@ static int dissect_block_payload(tvbuff_t *tvb, packet_info *pinfo, proto_tree *
     // Back up to top-level
     proto_item *parent = proto_item_get_parent_nth(tree, 2);
     // Visible in new source
-    //add_new_data_source(pinfo, tvb, "Bundle Payload");
+    add_new_data_source(pinfo, tvb, "Bundle Payload");
     proto_item_prepend_text(proto_tree_get_parent(tree), "Payload ");
 
     const gchar *eid = NULL;
@@ -601,6 +707,7 @@ static int dissect_block_prev_node(tvbuff_t *tvb, packet_info *pinfo, proto_tree
     tvbuff_t *tvb_eid = cbor_require_string(tvb, cbor_root);
     proto_tree_add_cbor_textstring(tree, hf_previous_node_eid, pinfo, tvb_eid);
 
+    wmem_free(wmem_packet_scope(), buf);
     return load_result.read;
 }
 
@@ -618,6 +725,27 @@ static int dissect_block_bundle_age(tvbuff_t *tvb, packet_info *pinfo, proto_tre
     const guint64 *age = cbor_require_uint64(cbor_root);
     proto_tree_add_cbor_uint64(tree, hf_bundle_age_time, pinfo, tvb, age);
 
+    wmem_free(wmem_packet_scope(), buf);
+    return load_result.read;
+}
+
+/** Dissector for Hop Count block.
+ */
+static int dissect_block_hop_count(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_) {
+    const guint buflen = tvb_captured_length(tvb);
+
+    /* Load the whole bundle at-once and extract parts below. */
+    void *buf = tvb_memdup(wmem_packet_scope(), tvb, 0, buflen);
+    struct cbor_load_result load_result;
+    cbor_item_t *cbor_root = cbor_load(buf, buflen, &load_result);
+
+    const guint64 *limit = cbor_require_uint64(cbor_array_get_safe(cbor_root, 0));
+    proto_tree_add_cbor_uint64(tree, hf_hop_count_limit, pinfo, tvb, limit);
+
+    const guint64 *current = cbor_require_uint64(cbor_array_get_safe(cbor_root, 1));
+    proto_tree_add_cbor_uint64(tree, hf_hop_count_current, pinfo, tvb, current);
+
+    wmem_free(wmem_packet_scope(), buf);
     return load_result.read;
 }
 
@@ -662,6 +790,10 @@ static void proto_reg_handoff_bp(void) {
     {
         dissector_handle_t hdl = create_dissector_handle(dissect_block_bundle_age, proto_bp);
         dissector_add_uint("bpv7.block_type", 8, hdl);
+    }
+    {
+        dissector_handle_t hdl = create_dissector_handle(dissect_block_hop_count, proto_bp);
+        dissector_add_uint("bpv7.block_type", 9, hdl);
     }
 
     reinit_bp();

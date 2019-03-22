@@ -74,7 +74,8 @@ typedef struct {
     /// Report-to EID
     tvbuff_t *rep_eid;
     const guint64 *crc_type;
-    const guint64 *crc_value;
+    /// Raw bytes of CRC field
+    const tvbuff_t *crc_field;
 } bp_block_primary_t;
 
 /** Construct a new object on the file allocator.
@@ -90,7 +91,8 @@ typedef struct {
     const guint64 *block_number;
     const guint64 *flags;
     const guint64 *crc_type;
-    const guint64 *crc_value;
+    /// Raw bytes of CRC field
+    const tvbuff_t *crc_field;
     /// Type-specific data
     tvbuff_t *data;
 } bp_block_canonical_t;

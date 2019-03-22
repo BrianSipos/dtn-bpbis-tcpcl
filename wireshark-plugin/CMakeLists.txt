@@ -28,14 +28,16 @@ target_compile_definitions(tcpclv4 PRIVATE -DHAVE_PLUGINS)
 target_include_directories(tcpclv4 PUBLIC ${WIRESHARK_INCLUDE_DIRS})
 target_link_libraries(tcpclv4 PUBLIC ${WIRESHARK_LINK_LIBRARIES})
 
-add_library(bpv6 MODULE src/packet-bpv6.h src/packet-bpv6.c)
-target_compile_definitions(bpv6 PRIVATE -DHAVE_PLUGINS)
-target_include_directories(bpv6 PUBLIC ${WIRESHARK_INCLUDE_DIRS})
-target_link_libraries(bpv6 PUBLIC ${WIRESHARK_LINK_LIBRARIES})
+add_library(bpv7 MODULE src/packet-bpv7.h src/packet-bpv7.c)
+target_compile_definitions(bpv7 PRIVATE -DHAVE_PLUGINS)
+target_include_directories(bpv7 PUBLIC ${WIRESHARK_INCLUDE_DIRS})
+target_link_libraries(bpv7 PUBLIC ${WIRESHARK_LIBRARIES})
+target_include_directories(bpv7 PUBLIC ${LIBCBOR_INCLUDE_DIRS})
+target_link_libraries(bpv7 PUBLIC ${LIBCBOR_LIBRARIES})
 
 if(INSTALL_MODULE_PATH)
     install(
-        TARGETS tcpclv4 bpv6
+        TARGETS tcpclv4 bpv7
         LIBRARY DESTINATION ${INSTALL_MODULE_PATH}
     )
 endif(INSTALL_MODULE_PATH)
