@@ -924,7 +924,7 @@ SESS_TERM Exchange
           <list style="hanging">
             <t hangText="magic:">
               A four-octet field that always contains the octet sequence 0x64
-              0x74 0x6e 0x21, i.e., the text string &quot;dtn!&quot; in US-ASCII
+              0x74 0x6E 0x21, i.e., the text string &quot;dtn!&quot; in US-ASCII
               (and UTF-8).
             </t>
             <t hangText="Version:">
@@ -934,11 +934,11 @@ SESS_TERM Exchange
             <t hangText="Flags:">
               A one-octet field of single-bit flags, interpreted according to the
               descriptions in
-              <xref target="tab-session-flags" />.
+              <xref target="tab-contact-header-flags" />.
             </t>
           </list>
         </t>
-        <texttable anchor="tab-session-flags" title="Contact Header Flags">
+        <texttable anchor="tab-contact-header-flags" title="Contact Header Flags">
           <ttcol>Name</ttcol>
           <ttcol>Code</ttcol>
           <ttcol>Description</ttcol>
@@ -1113,39 +1113,47 @@ SESS_TERM Exchange
           </list>
         </t>
         <texttable anchor="tab-msg-types" title="TCPCL Message Types">
-          <ttcol>Type</ttcol>
+          <ttcol>Name</ttcol>
+          <ttcol>Code</ttcol>
           <ttcol>Description</ttcol>
           <c>SESS_INIT</c>
+          <c>0x07</c>
           <c>
             Contains the session parameter inputs from one of the entities,
             as described in <xref target="sec-SESS_INIT" />.
           </c>
+          <c>SESS_TERM</c>
+          <c>0x05</c>
+          <c>
+            Indicates that one of the entities participating in the session wishes to cleanly terminate the session, as described in
+            <xref target="sec-termination" />.
+          </c>
           <c>XFER_SEGMENT</c>
+          <c>0x01</c>
           <c>
             Indicates the transmission of a segment of bundle data, as described in
             <xref target="sec-XFER_SEGMENT" />.
           </c>
           <c>XFER_ACK</c>
+          <c>0x02</c>
           <c>
             Acknowledges reception of a data segment, as described in
             <xref target="sec-XFER_ACK" />.
           </c>
           <c>XFER_REFUSE</c>
+          <c>0x03</c>
           <c>
             Indicates that the transmission of the current bundle SHALL be stopped, as described in
             <xref target="sec-XFER_REFUSE" />.
           </c>
           <c>KEEPALIVE</c>
+          <c>0x04</c>
           <c>
             Used to keep TCPCL session active, as described in
             <xref target="sec-keepalive" />.
           </c>
-          <c>SESS_TERM</c>
-          <c>
-            Indicates that one of the entities participating in the session wishes to cleanly terminate the session, as described in
-            <xref target="sec-termination" />.
-          </c>
           <c>MSG_REJECT</c>
+          <c>0x06</c>
           <c>
             Contains a TCPCL message rejection, as described in
             <xref target="sec-MSG_REJECT" />.
@@ -1422,7 +1430,7 @@ SESS_TERM Exchange
             If configurable, the idle timeout duration SHOULD be no shorter 
             than twice the keepalive interval.
             If not configurable, the idle timeout duration SHOULD be exactly 
-            twice the keepout interval.
+            twice the keepalive interval.
           </t>
         </section>
 
@@ -1455,7 +1463,7 @@ SESS_TERM Exchange
               <t hangText="Reason Code:">
                 A one-octet refusal reason code interpreted according to the
                 descriptions in
-                <xref target="tab-reject-reasons" />.
+                <xref target="tab-MSG_REJECT-reasons" />.
               </t>
               <t hangText="Rejected Message Header:">
                 The Rejected Message Header is a copy of the Message Header to which the
@@ -1463,7 +1471,7 @@ SESS_TERM Exchange
               </t>
             </list>
           </t>
-          <texttable anchor="tab-reject-reasons" title="MSG_REJECT Reason Codes">
+          <texttable anchor="tab-MSG_REJECT-reasons" title="MSG_REJECT Reason Codes">
             <ttcol>Name</ttcol>
             <ttcol>Code</ttcol>
             <ttcol>Description</ttcol>
@@ -1753,25 +1761,31 @@ SESS_TERM Exchange
               <t hangText="Reason Code:">
                 A one-octet refusal reason code interpreted according to the
                 descriptions in
-                <xref target="tab-rcode-values" />.
+                <xref target="tab-XFER_REFUSE-reasons" />.
               </t>
               <t hangText="Transfer ID:">
                 A 64-bit unsigned integer identifying the transfer being refused.
               </t>
             </list>
           </t>
-          <texttable anchor="tab-rcode-values" title="XFER_REFUSE Reason Codes">
+          <texttable anchor="tab-XFER_REFUSE-reasons" title="XFER_REFUSE Reason Codes">
             <ttcol>Name</ttcol>
-            <ttcol>Semantics</ttcol>
+            <ttcol>Code</ttcol>
+            <ttcol>Description</ttcol>
             <c>Unknown</c>
+            <c>0x00</c>
             <c>Reason for refusal is unknown or not specified.</c>
             <c>Extension Failure</c>
+            <c>0x01</c>
             <c>A failure processing the Transfer Extension Items ha occurred.</c>
             <c>Completed</c>
+            <c>0x02</c>
             <c>The receiver already has the complete bundle. The sender MAY consider the bundle as completely received.</c>
             <c>No Resources</c>
+            <c>0x03</c>
             <c>The receiver's resources are exhausted. The sender SHOULD apply reactive bundle fragmentation before retrying.</c>
             <c>Retransmit</c>
+            <c>0x04</c>
             <c>The receiver has encountered a problem that requires the bundle to be retransmitted in its entirety.</c>
           </texttable>
           <t>
@@ -1875,10 +1889,16 @@ SESS_TERM Exchange
               </t>
               <t>
                 Multiple Transfer Length extension items SHALL NOT
-                occurr within the same transfer.
+                occur within the same transfer.
                 The lack of a Transfer Length extension item in any transfer 
                 SHALL NOT imply anything about the potential length of the transfer.
                 The Transfer Length extension SHALL be assigned transfer extension type ID 0x0001.
+              </t>
+              <t>
+                If a transfer occupies exactly one segment (i.e. both START and END bits are set)
+                the Transfer Length extension SHOULD NOT be present.
+                The extension does not provide any additional information for
+                single-segment transfers.
               </t>
               <t>
                 The format of the Transfer Length data is as follows in
@@ -1973,7 +1993,7 @@ SESS_TERM Exchange
             <t hangText="Reason Code:">
               A one-octet refusal reason code interpreted according to the
               descriptions in
-              <xref target="tab-shutdown-reasons" />.
+              <xref target="tab-SESS_TERM-reasons" />.
             </t>
           </list>
         </t>
@@ -1987,20 +2007,27 @@ SESS_TERM Exchange
           <c>Reserved</c>
           <c>others</c>
         </texttable>
-        <texttable anchor="tab-shutdown-reasons" title="SESS_TERM Reason Codes">
+        <texttable anchor="tab-SESS_TERM-reasons" title="SESS_TERM Reason Codes">
           <ttcol>Name</ttcol>
+          <ttcol>Code</ttcol>
           <ttcol>Description</ttcol>
           <c>Unknown</c>
+          <c>0x00</c>
           <c>A termination reason is not available.</c>
           <c>Idle timeout</c>
+          <c>0x01</c>
           <c>The session is being closed due to idleness.</c>
           <c>Version mismatch</c>
+          <c>0x02</c>
           <c>The node cannot conform to the specified TCPCL protocol version.</c>
           <c>Busy</c>
+          <c>0x03</c>
           <c>The node is too busy to handle the current session.</c>
           <c>Contact Failure</c>
+          <c>0x04</c>
           <c>The node cannot interpret or negotiate contact header option.</c>
           <c>Resource Exhaustion</c>
+          <c>0x05</c>
           <c>The node has run into some resource limit and cannot continue the session.</c>
         </texttable>
         <t>
@@ -2044,7 +2071,7 @@ SESS_TERM Exchange
           that amount of time, then either node MAY terminate the session by
           transmitting a SESS_TERM message indicating the reason code of "Idle
           timeout" (as described in
-          <xref target="tab-shutdown-reasons" />).
+          <xref target="tab-SESS_TERM-reasons" />).
         </t>
       </section>
     </section>
@@ -2226,7 +2253,7 @@ SESS_TERM Exchange
             <xref target="RFC7242" />
           </c>
           <c>4</c>
-          <c>TCPCLbis</c>
+          <c>TCPCLv4</c>
           <c>This specification.</c>
           <c>5-255</c>
           <c>Unassigned</c>
@@ -2241,18 +2268,18 @@ SESS_TERM Exchange
           &quot;Bundle Protocol TCP Convergence-Layer Version 4 Session Extension Types&quot;
           and initialize it with the contents of
           <xref target="tab-iana-header-extension-type" />.
-          The registration procedure is RFC Required within the lower range 0x0001--0x7fff.
-          Values in the range 0x8000--0xffff are reserved for use on private networks
+          The registration procedure is RFC Required within the lower range 0x0001--0x7FFF.
+          Values in the range 0x8000--0xFFFF are reserved for use on private networks
           for functions not published to the IANA.
         </t>
         <texttable anchor="tab-iana-header-extension-type" title="Session Extension Type Codes">
           <ttcol>Code</ttcol>
-          <ttcol>Message Type</ttcol>
+          <ttcol>Session Extension Type</ttcol>
           <c>0x0000</c>
           <c>Reserved</c>
-          <c>0x0001--0x7fff</c>
+          <c>0x0001--0x7FFF</c>
           <c>Unassigned</c>
-          <c>0x8000--0xffff</c>
+          <c>0x8000--0xFFFF</c>
           <c>Private/Experimental Use</c>
         </texttable>
       </section>
@@ -2265,20 +2292,20 @@ SESS_TERM Exchange
           &quot;Bundle Protocol TCP Convergence-Layer Version 4 Transfer Extension Types&quot;
           and initialize it with the contents of
           <xref target="tab-iana-transfer-extension-type" />.
-          The registration procedure is RFC Required within the lower range 0x0001--0x7fff.
-          Values in the range 0x8000--0xffff are reserved for use on private networks
+          The registration procedure is RFC Required within the lower range 0x0001--0x7FFF.
+          Values in the range 0x8000--0xFFFF are reserved for use on private networks
           for functions not published to the IANA.
         </t>
         <texttable anchor="tab-iana-transfer-extension-type" title="Transfer Extension Type Codes">
           <ttcol>Code</ttcol>
-          <ttcol>Message Type</ttcol>
+          <ttcol>Transfer Extension Type</ttcol>
           <c>0x0000</c>
           <c>Reserved</c>
           <c>0x0001</c>
           <c>Transfer Length Extension</c>
-          <c>0x0002--0x7fff</c>
+          <c>0x0002--0x7FFF</c>
           <c>Unassigned</c>
-          <c>0x8000--0xffff</c>
+          <c>0x8000--0xFFFF</c>
           <c>Private/Experimental Use</c>
         </texttable>
       </section>
@@ -2310,12 +2337,14 @@ SESS_TERM Exchange
           <c>SESS_TERM</c>
           <c>0x06</c>
           <c>MSG_REJECT</c>
-          <c>0x07--0xf</c>
+          <c>0x07</c>
+          <c>SESS_INIT</c>
+          <c>0x08--0xf</c>
           <c>Unassigned</c>
         </texttable>
       </section>
 
-      <section anchor="sec-iana-refuse-codes" title="XFER_REFUSE Reason Codes">
+      <section anchor="sec-iana-XFER_REFUSE-codes" title="XFER_REFUSE Reason Codes">
         <t>EDITOR NOTE: sub-registry to-be-created upon publication of this specification.</t>
         <t>
           IANA will create, under the &quot;Bundle Protocol&quot; registry,
@@ -2328,24 +2357,24 @@ SESS_TERM Exchange
         <texttable anchor="tab-iana-XFER_REFUSE-codes" title="XFER_REFUSE Reason Codes">
           <ttcol>Code</ttcol>
           <ttcol>Refusal Reason</ttcol>
-          <c>0x0</c>
+          <c>0x00</c>
           <c>Unknown</c>
-          <c>0x1</c>
+          <c>0x01</c>
           <c>Extension Failure</c>
-          <c>0x2</c>
+          <c>0x02</c>
           <c>Completed</c>
-          <c>0x3</c>
+          <c>0x03</c>
           <c>No Resources</c>
-          <c>0x4</c>
+          <c>0x04</c>
           <c>Retransmit</c>
-          <c>0x5--0x7</c>
+          <c>0x05--0x07</c>
           <c>Unassigned</c>
-          <c>0x8--0xf</c>
+          <c>0x08--0xFF</c>
           <c>Reserved for future usage</c>
         </texttable>
       </section>
 
-      <section anchor="sec-iana-shutdown-codes" title="SESS_TERM Reason Codes">
+      <section anchor="sec-iana-SESS_TERM-codes" title="SESS_TERM Reason Codes">
         <t>EDITOR NOTE: sub-registry to-be-created upon publication of this specification.</t>
         <t>
           IANA will create, under the &quot;Bundle Protocol&quot; registry,
@@ -2357,7 +2386,7 @@ SESS_TERM Exchange
         </t>
         <texttable anchor="tab-iana-SESS_TERM-codes" title="SESS_TERM Reason Codes">
           <ttcol>Code</ttcol>
-          <ttcol>Shutdown Reason</ttcol>
+          <ttcol>Termination Reason</ttcol>
           <c>0x00</c>
           <c>Unknown</c>
           <c>0x01</c>
@@ -2375,17 +2404,17 @@ SESS_TERM Exchange
         </texttable>
       </section>
 
-      <section anchor="sec-iana-reject-codes" title="MSG_REJECT Reason Codes">
+      <section anchor="sec-iana-MSG_REJECT-codes" title="MSG_REJECT Reason Codes">
         <t>EDITOR NOTE: sub-registry to-be-created upon publication of this specification.</t>
         <t>
           IANA will create, under the &quot;Bundle Protocol&quot; registry,
           a sub-registry titled
           &quot;Bundle Protocol TCP Convergence-Layer Version 4 MSG_REJECT Reason Codes&quot;
           and initialize it with the contents of
-          <xref target="tab-iana-reject-codes" />.
+          <xref target="tab-iana-MSG_REJECT-codes" />.
           The registration procedure is RFC Required.
         </t>
-        <texttable anchor="tab-iana-reject-codes" title="REJECT Reason Codes">
+        <texttable anchor="tab-iana-MSG_REJECT-codes" title="MSG_REJECT Reason Codes">
           <ttcol>Code</ttcol>
           <ttcol>Rejection Reason</ttcol>
           <c>0x00</c>
