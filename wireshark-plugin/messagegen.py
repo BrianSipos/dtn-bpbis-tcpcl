@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 ''' A dummy PCAP generator to exercise wireshark dissector.
 '''
 import sys

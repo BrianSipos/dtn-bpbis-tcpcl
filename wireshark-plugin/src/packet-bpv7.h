@@ -4,6 +4,7 @@
 
 #include <ws_symbol_export.h>
 #include <epan/tvbuff.h>
+#include <epan/proto.h>
 #include <glib.h>
 
 /** Bundle CRC types.
@@ -62,20 +63,52 @@ typedef enum {
  * Section 4.2.3 and Section 4.3.
  */
 typedef enum {
+    /// Payload (data)
     BP_BLOCKTYPE_PAYLOAD = 1,
+    /// Previous Node
+    BP_BLOCKTYPE_PREV_NODE = 7,
+    /// Bundle Age
+    BP_BLOCKTYPE_BUNDLE_AGE = 8,
+    /// Hop Count
+    BP_BLOCKTYPE_HOP_COUNT = 9,
 } BlockTypeCode;
 
+/// Creation Timestamp used to correlate bundles
 typedef struct {
-    const guint64 *flags;
+    /// DTN timestamp
+    gint64 dtntime;
+    /// Sequence number
+    guint64 seqno;
+} bp_creation_ts_t;
+
+
+/** Construct a new timestamp.
+ */
+bp_creation_ts_t * bp_creation_ts_new();
+
+/** Function to match the GDestroyNotify signature.
+ */
+void bp_creation_ts_delete(gpointer ptr);
+
+/** Function to match the GCompareDataFunc signature.
+ */
+gint bp_creation_ts_compare(gconstpointer a, gconstpointer b, gpointer user_data);
+
+typedef struct {
+    /// Bundle flags (assumed zero)
+    guint64 flags;
     /// Destination EID
     tvbuff_t *dst_eid;
     /// Source EID
     tvbuff_t *src_eid;
     /// Report-to EID
     tvbuff_t *rep_eid;
-    const guint64 *crc_type;
+    /// Creation Timestamp
+    bp_creation_ts_t ts;
+    /// CRC type code (assumed zero)
+    BundleCrcType crc_type;
     /// Raw bytes of CRC field
-    const tvbuff_t *crc_field;
+    tvbuff_t *crc_field;
 } bp_block_primary_t;
 
 /** Construct a new object on the file allocator.
@@ -87,23 +120,39 @@ bp_block_primary_t * bp_block_primary_new();
 void bp_block_primary_delete(gpointer ptr);
 
 typedef struct {
+    /// The index of the block within the bundle.
+    /// This is for internal bookkeeping, *not* the block number.
+    guint64 index;
+
     const guint64 *type_code;
     const guint64 *block_number;
-    const guint64 *flags;
-    const guint64 *crc_type;
+    guint64 flags;
+    /// CRC type code (assumed zero)
+    BundleCrcType crc_type;
     /// Raw bytes of CRC field
-    const tvbuff_t *crc_field;
+    tvbuff_t *crc_field;
+
     /// Type-specific data
     tvbuff_t *data;
 } bp_block_canonical_t;
 
 /** Construct a new object on the file allocator.
+ * @param index The index of the block within the bundle.
+ * The canonical index is always greater than zero.
  */
-bp_block_canonical_t * bp_block_canonical_new();
+bp_block_canonical_t * bp_block_canonical_new(guint64 index);
 
 /** Function to match the GDestroyNotify signature.
  */
 void bp_block_canonical_delete(gpointer ptr);
+
+/** Function to match the GCompareDataFunc signature.
+ */
+gint bp_block_compare_index(gconstpointer a, gconstpointer b, gpointer user_data);
+
+/** Function to match the GCompareDataFunc signature.
+ */
+gint bp_block_compare_block_number(gconstpointer a, gconstpointer b, gpointer user_data);
 
 typedef struct {
     /// Required primary block
@@ -127,6 +176,6 @@ typedef struct {
     const bp_bundle_t *bundle;
     /// This block being decoded
     const bp_block_canonical_t *block;
-} block_dissector_data_t;
+} bp_dissector_data_t;
 
 #endif /* WIRESHARK_PLUGIN_SRC_PACKET_BPV7_H_ */

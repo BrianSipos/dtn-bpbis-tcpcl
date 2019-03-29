@@ -329,6 +329,7 @@ static expert_field ei_xfer_seg_duplicate_start = EI_INIT;
 static expert_field ei_xfer_seg_missing_end = EI_INIT;
 static expert_field ei_xfer_seg_duplicate_end = EI_INIT;
 static expert_field ei_xfer_seg_no_relation = EI_INIT;
+static expert_field ei_xfer_seg_large_xferid = EI_INIT;
 static expert_field ei_xfer_seg_over_total_len = EI_INIT;
 static expert_field ei_xfer_seg_mismatch_total_len = EI_INIT;
 static expert_field ei_xfer_ack_mismatch_flags = EI_INIT;
@@ -354,6 +355,7 @@ static ei_register_info expertitems[] = {
     {&ei_xfer_seg_missing_end, { "tcpclv4.xfer_seg_missing_end", PI_SEQUENCE, PI_ERROR, "Last XFER_SEGMENT is missing END flag", EXPFILL}},
     {&ei_xfer_seg_duplicate_end, { "tcpclv4.xfer_seg_duplicate_end", PI_SEQUENCE, PI_ERROR, "Non-last XFER_SEGMENT has END flag", EXPFILL}},
     {&ei_xfer_seg_no_relation, { "tcpclv4.xfer_seg_no_relation", PI_SEQUENCE, PI_NOTE, "XFER_SEGMENT has no related XFER_ACK", EXPFILL}},
+    {&ei_xfer_seg_large_xferid, { "tcpclv4.xfer_seg_large_xferid", PI_REASSEMBLE, PI_NOTE, "XFER_SEGMENT has a transfer ID larger than Wireshark can handle", EXPFILL}},
     {&ei_xfer_seg_over_total_len, { "tcpclv4.xfer_seg_over_total_len", PI_SEQUENCE, PI_ERROR, "XFER_SEGMENT has accumulated length beyond the Transfer Total Length extension", EXPFILL}},
     {&ei_xfer_seg_mismatch_total_len, { "tcpclv4.xfer_seg_over_total_len", PI_SEQUENCE, PI_ERROR, "Transfer has total length different than the Transfer Total Length extension", EXPFILL}},
     {&ei_xfer_ack_mismatch_flags, { "tcpclv4.xfer_ack_mismatch_flags", PI_SEQUENCE, PI_ERROR, "XFER_ACK does not have flags matching XFER_SEGMENT", EXPFILL}},
@@ -488,6 +490,8 @@ static seg_meta_t * seg_meta_new(const packet_info *pinfo, const frame_loc_t *lo
 
 #define seg_meta_delete file_scope_delete
 
+/** Function to match the GCompareDataFunc signature.
+ */
 static gint segment_compare_loc(gconstpointer a, gconstpointer b, gpointer user_data _U_) {
     return frame_loc_compare(
         &(((seg_meta_t *)a)->frame_loc),
@@ -522,6 +526,8 @@ static ack_meta_t * ack_meta_new(const packet_info *pinfo, const frame_loc_t *lo
 
 #define ack_meta_delete file_scope_delete
 
+/** Function to match the GCompareDataFunc signature.
+ */
 static gint ack_compare_loc(gconstpointer a, gconstpointer b, gpointer user_data _U_) {
     return frame_loc_compare(
         &(((seg_meta_t *)a)->frame_loc),
@@ -898,8 +904,11 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                 proto_tree_add_uint(tree_msg, hf_sess_init_eid_len, tvb, offset, 2, eid_len);
                 offset += 2;
 
-                guint8 *eid_data = tvb_get_string_enc(wmem_packet_scope(), tvb, offset, eid_len, ENC_UTF_8);
-                proto_tree_add_string(tree_msg, hf_sess_init_eid_data, tvb, offset, eid_len, (const char *)eid_data);
+                {
+                    guint8 *eid_data = tvb_get_string_enc(wmem_packet_scope(), tvb, offset, eid_len, ENC_UTF_8);
+                    proto_tree_add_string(tree_msg, hf_sess_init_eid_data, tvb, offset, eid_len, (const char *)eid_data);
+                    wmem_free(wmem_packet_scope(), eid_data);
+                }
                 offset += eid_len;
 
                 guint32 extlist_len = tvb_get_guint32(tvb, offset, ENC_BIG_ENDIAN);
@@ -1009,7 +1018,7 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                 offset += 1;
 
                 guint64 xfer_id = tvb_get_guint64(tvb, offset, ENC_BIG_ENDIAN);
-                proto_tree_add_uint64(tree_msg, hf_xfer_id, tvb, offset, 8, xfer_id);
+                proto_item *item_xfer_id = proto_tree_add_uint64(tree_msg, hf_xfer_id, tvb, offset, 8, xfer_id);
                 offset += 8;
 
                 if (flags & TCPCL_TRANSFER_FLAG_START) {
@@ -1167,26 +1176,34 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                         expert_add_info(pinfo, item_msg, &ei_xfer_seg_no_relation);
                     }
                 }
-                if (tcpcl_desegment_transfer) {
-                    // Reassemble the segments
-                    const void *data_load = tvb_memdup(wmem_packet_scope(), tvb, data_offset, data_len);
-                    fragment_head *xferload_frag_msg = fragment_add_seq_next(
-                        &tcpcl_reassembly_table,
-                        tvb, data_offset, pinfo,
-                        xfer_id & 0xFFFFFFFF, /* Truncate to 32-bits */
-                        data_load, data_len,
-                        !(flags & TCPCL_TRANSFER_FLAG_END)
-                    );
 
-                    gboolean update_info = TRUE;
-                    xferload_tvb = process_reassembled_data(
-                        tvb, data_offset, pinfo,
-                        "Reassembled Transfer",
-                        xferload_frag_msg,
-                        &xferload_frag_items,
-                        &update_info,
-                        proto_item_get_parent(tree)
-                    );
+                if (tcpcl_desegment_transfer) {
+                    // wireshark fragment set IDs are 32-bits only
+                    const guint32 corr_id = xfer_id & 0xFFFFFFFF;
+                    if (corr_id != xfer_id) {
+                        expert_add_info(pinfo, item_xfer_id, &ei_xfer_seg_large_xferid);
+                    }
+                    else {
+                        // Reassemble the segments
+                        const void *data_load = tvb_memdup(wmem_packet_scope(), tvb, data_offset, data_len);
+                        fragment_head *xferload_frag_msg = fragment_add_seq_next(
+                                &tcpcl_reassembly_table,
+                                tvb, data_offset, pinfo,
+                                corr_id,
+                                data_load, data_len,
+                                !(flags & TCPCL_TRANSFER_FLAG_END)
+                        );
+
+                        gboolean update_info = TRUE;
+                        xferload_tvb = process_reassembled_data(
+                                tvb, data_offset, pinfo,
+                                "Reassembled Transfer",
+                                xferload_frag_msg,
+                                &xferload_frag_items,
+                                &update_info,
+                                proto_tree_get_parent_tree(tree)
+                        );
+                    }
                 }
                 else {
                     // show the segment data in isolation
@@ -1194,7 +1211,7 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                     call_data_dissector(
                         xferdata_tvb,
                         pinfo,
-                        proto_item_get_parent(tree)
+                        proto_tree_get_parent_tree(tree)
                     );
                 }
 
@@ -1402,7 +1419,7 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                     dissect_bp,
                     xferload_tvb,
                     pinfo,
-                    proto_item_get_parent(tree)
+                    proto_tree_get_parent_tree(tree)
                 );
             }
         }
@@ -1414,7 +1431,7 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                     "application/cbor",
                     xferload_tvb,
                     pinfo,
-                    proto_item_get_parent(tree),
+                    proto_tree_get_parent_tree(tree),
                     data
                 );
             }
@@ -1423,7 +1440,7 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
             call_data_dissector(
                 xferload_tvb,
                 pinfo,
-                proto_item_get_parent(tree)
+                proto_tree_get_parent_tree(tree)
             );
         }
     }
