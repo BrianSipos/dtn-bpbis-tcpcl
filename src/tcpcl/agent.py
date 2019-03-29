@@ -140,7 +140,7 @@ class Connection(object):
 
         # Best effort to close active socket
         for sock in (self.__s_tls, self.__s_notls):
-            if sock is None:
+            if sock is None or sock.fileno() < 0:
                 continue
             try:
                 sock.shutdown(socket.SHUT_RDWR)
@@ -1083,8 +1083,16 @@ class ContactHandler(Messenger, dbus.service.Object):
             and self._tx_tmp is None
         )
 
+    @dbus.service.method(DBUS_IFACE, in_signature='y', out_signature='')
+    def terminate(self, reason_code=None):
+        ''' Perform the termination procedure. '''
+        if reason_code is None:
+            reason_code = messages.SessionTerm.Reason.UNKNOWN
+        self.send_sess_term(reason_code, False)
+
     @dbus.service.method(DBUS_IFACE, in_signature='', out_signature='')
     def close(self):
+        ''' Close the TCP connection immediately. '''
         if tuple(self.locations):
             self.remove_from_connection()
 
@@ -1319,7 +1327,7 @@ class Agent(dbus.service.Object):
             return True
 
         for hdl in self._handlers:
-            hdl.send_sess_term(messages.SessionTerm.Reason.UNKNOWN, False)
+            hdl.terminate()
         self.__logger.info('Waiting on sessions to terminate')
         return False
 
@@ -1350,7 +1358,7 @@ class Agent(dbus.service.Object):
         sock = socket.socket(socket.AF_INET)
         sock.bind(bindspec)
 
-        self.__logger.info('Listening on %s:%d', address, port)
+        self.__logger.info('Listening on %s:%d', address or '*', port)
         sock.listen(1)
         self._bindsocks[bindspec] = sock
         glib.io_add_watch(sock, glib.IO_IN, self._accept)
@@ -1362,7 +1370,7 @@ class Agent(dbus.service.Object):
             raise dbus.DBusException('Not listening')
 
         sock = self._bindsocks.pop(bindspec)
-        self.__logger.info('Un-listening on %s:%d', address, port)
+        self.__logger.info('Un-listening on %s:%d', address or '*', port)
         try:
             sock.shutdown(socket.SHUT_RDWR)
         except socket.error as err:
@@ -1409,8 +1417,8 @@ def str2bool(v):
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
 
-def main():
-    parser = argparse.ArgumentParser()
+def main(*argv):
+    parser = argparse.ArgumentParser(argv[0])
     parser.add_argument('--log-level', dest='log_level', default='info',
                         metavar='LEVEL',
                         help='Console logging lowest level displayed.')
@@ -1454,7 +1462,7 @@ def main():
     parser_conn.add_argument('--port', type=int, default=4556,
                              help='Host TCP port')
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv[1:])
 
     logging.basicConfig(level=args.log_level.upper())
     logging.debug('command args: %s', args)
@@ -1496,17 +1504,8 @@ def main():
     agent = Agent(config, bus_kwargs=dict(conn=config.bus_conn,
                                           object_path='/org/ietf/dtn/tcpcl/Agent'))
     if args.action == 'listen':
-        #config.ssl_ctx.verify_mode = ssl.CERT_OPTIONAL
-        #onfig.ssl_ctx.check_hostname = False
         agent.listen(args.address, args.port)
     elif args.action == 'connect':
-        if args.tls_enable:
-            if False:
-                config.ssl_ctx.verify_mode = ssl.CERT_REQUIRED
-                config.ssl_ctx.check_hostname = True
-            else:
-                config.ssl_ctx.verify_mode = ssl.CERT_NONE
-                config.ssl_ctx.check_hostname = False
         agent.connect(args.address, args.port)
 
     eloop = glib.MainLoop()
@@ -1519,4 +1518,4 @@ def main():
             eloop.run()
 
 if __name__ == '__main__':
-    sys.exit(main())
+    sys.exit(main(*sys.argv))
