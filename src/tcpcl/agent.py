@@ -752,6 +752,10 @@ class Messenger(Connection):
 
     def send_raw(self, size):
         ''' Pop some data from the TX queue.
+
+        :param size: The maximum size to pop from the queue.
+        :return: The chunk of data popped from the queue.
+        :rtype: bytes
         '''
         data = self.__tx_buf[:size]
         if data:
@@ -980,9 +984,11 @@ class ContactHandler(Messenger, dbus.service.Object):
         # Transmit state
         #: Next sequential bundle ID
         self._tx_next_id = 1
-        #: Pending TX bundles (as BundleItem)
-        self._tx_bundles = []
-        #: Names of pending TX bundles
+        #: TX bundles pending start (as BundleItem) in queue order
+        self._tx_pend_start = []
+        #: TX bundles pending full ACK (as BundleItem)
+        self._tx_pend_ack = set()
+        #: Names of pending TX bundles in _tx_pend_start and _tx_pend_ack
         self._tx_map = {}
         #: Active TX bundle
         self._tx_tmp = None
@@ -1031,8 +1037,8 @@ class ContactHandler(Messenger, dbus.service.Object):
         Messenger.recv_sess_term(self, reason)
 
         # No further processing
-        while self._tx_bundles:
-            item = self._tx_bundles.pop(0)
+        while self._tx_pend_start:
+            item = self._tx_pend_start.pop(0)
             self.__logger.warning('Terminating and ignoring transfer %d', item.transfer_id)
             self.send_bundle_finished(
                 str(item.transfer_id),
@@ -1094,8 +1100,8 @@ class ContactHandler(Messenger, dbus.service.Object):
                 raise RejectError(messages.RejectMsg.Reason.UNEXPECTED)
 
             self.send_bundle_finished(str(item.transfer_id), length, 'success')
+            self._tx_pend_ack.remove(item)
             self._tx_map.pop(transfer_id)
-            self._tx_teardown()
             self._check_sess_term()
         else:
             if not self._do_send_ack_inter:
@@ -1106,7 +1112,8 @@ class ContactHandler(Messenger, dbus.service.Object):
         Messenger.recv_xfer_refuse(self, transfer_id, reason)
 
         self.send_bundle_finished(transfer_id, 'refused with code %s', reason)
-        self._tx_map.pop(transfer_id)
+        item = self._tx_map.pop(transfer_id)
+        self._tx_pend_ack.remove(item)
 
         # interrupt in-progress
         if self._tx_tmp is not None and self._tx_tmp.transfer_id == transfer_id:
@@ -1124,7 +1131,8 @@ class ContactHandler(Messenger, dbus.service.Object):
             Messenger.is_sess_idle(self)
             and self._rx_tmp is None
             and self._tx_tmp is None
-            and not self._tx_bundles
+            and not self._tx_pend_start
+            and not self._tx_pend_ack
         )
 
     @dbus.service.method(DBUS_IFACE, in_signature='y', out_signature='')
@@ -1178,7 +1186,7 @@ class ContactHandler(Messenger, dbus.service.Object):
         if item.transfer_id is None:
             item.transfer_id = self.next_id()
 
-        self._tx_bundles.append(item)
+        self._tx_pend_start.append(item)
         self._tx_map[item.transfer_id] = item
 
         self._process_queue_trigger()
@@ -1239,14 +1247,15 @@ class ContactHandler(Messenger, dbus.service.Object):
         if self._send_segment_size is None:
             return
 
-        if buf_use < 2 * self._send_segment_size:
+        # heuristic for when to attempt to put new segments in
+        if buf_use < 5 * self._send_segment_size:
             self._process_queue_trigger()
 
     def _tx_teardown(self):
-        ''' Clear the TX bundle state. '''
+        ''' Clear the TX in-progress bundle state. '''
         self._tx_tmp = None
         self._tx_length = None
-        self._process_queue_trigger();
+        self._process_queue_trigger()
 
     def _process_queue_trigger(self):
         if self._process_queue_pend is None:
@@ -1254,24 +1263,26 @@ class ContactHandler(Messenger, dbus.service.Object):
 
     def _process_queue(self):
         ''' Perform the next TX segment if possible.
+        Only a single transfer is handled at a time to avoid blocking the
+        socket processing event loop.
 
         :return: True to continue processing at a later time.
         :rtype: bool
         '''
         self._process_queue_pend = None
         self.__logger.debug('Processing queue of %d items',
-                            len(self._tx_bundles))
+                            len(self._tx_pend_start))
 
         # work from the head of the list
         if self._tx_tmp is None:
             if not self._in_sess:
                 # waiting for session
                 return True
-            if not self._tx_bundles:
+            if not self._tx_pend_start:
                 # nothing to do
                 return False
 
-            self._tx_tmp = self._tx_bundles.pop(0)
+            self._tx_tmp = self._tx_pend_start.pop(0)
 
             self._tx_tmp.file.seek(0, os.SEEK_END)
             self._tx_tmp.total_length = self._tx_tmp.file.tell()
@@ -1308,9 +1319,14 @@ class ContactHandler(Messenger, dbus.service.Object):
         if flg & messages.TransferSegment.Flag.END:
             if not self._do_send_ack_final:
                 self.send_bundle_finished(
-                    str(self._tx_tmp.transfer_id), self._tx_tmp.file.tell(), 'unacknowledged')
+                    str(self._tx_tmp.transfer_id),
+                    self._tx_tmp.file.tell(),
+                    'unacknowledged'
+                )
                 self._tx_map.pop(self._tx_tmp.transfer_id)
-            # done sending segments but no teardown until final XFER_ACK
+            # done sending segments but will not yet be fully acknowledged
+            self._tx_pend_ack.add(self._tx_tmp)
+            self._tx_teardown()
 
         return False
 
