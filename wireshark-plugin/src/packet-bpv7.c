@@ -4,7 +4,6 @@
 #include <epan/expert.h>
 #include <wsutil/crc16.h>
 #include <wsutil/crc32.h>
-#include <cbor.h>
 #include <stdio.h>
 #include <inttypes.h>
 
@@ -14,12 +13,10 @@ static gboolean bp_compute_crc = TRUE;
 /// Protocol handles
 static int proto_bp = -1;
 
-/// Dissector handles
-static dissector_handle_t handle_bp;
-
 /// Extension sub-dissectors
-static dissector_table_t block_dissector;
-static dissector_table_t payload_dissector;
+static dissector_table_t block_dissectors;
+static dissector_table_t payload_dissectors;
+static dissector_table_t admin_dissectors;
 
 static int hf_bundle = -1;
 static int hf_bundle_head = -1;
@@ -74,19 +71,15 @@ static int hf_hop_count_current = -1;
 
 static int hf_admin_record = -1;
 static int hf_admin_record_type = -1;
+static int hf_status_rep = -1;
 static int hf_status_rep_status_info = -1;
-static int hf_status_rep_received_val = -1;
-static int hf_status_rep_received_dtntime = -1;
-static int hf_status_rep_received_utctime = -1;
-static int hf_status_rep_forwarded_val = -1;
-static int hf_status_rep_forwarded_dtntime = -1;
-static int hf_status_rep_forwarded_utctime = -1;
-static int hf_status_rep_delivered_val = -1;
-static int hf_status_rep_delivered_dtntime = -1;
-static int hf_status_rep_delivered_utctime = -1;
-static int hf_status_rep_deleted_val = -1;
-static int hf_status_rep_deleted_dtntime = -1;
-static int hf_status_rep_deleted_utctime = -1;
+static int hf_status_assert_val = -1;
+static int hf_status_assert_dtntime = -1;
+static int hf_status_assert_utctime = -1;
+static int hf_status_rep_received = -1;
+static int hf_status_rep_forwarded = -1;
+static int hf_status_rep_delivered = -1;
+static int hf_status_rep_deleted = -1;
 static int hf_status_rep_reason_code = -1;
 static int hf_status_rep_source_id = -1;
 static int hf_status_rep_subj_ts = -1;
@@ -96,8 +89,8 @@ static int hf_status_rep_subj_payload_len = -1;
 /// Field definitions
 static hf_register_info fields[] = {
     {&hf_bundle, {"Bundle Protocol Version 7", "bpv7", FT_PROTOCOL, BASE_NONE, NULL, 0x0, NULL, HFILL}},
-    {&hf_bundle_head, {"Indefinite Array", "bpv7.bundle_head", FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL}},
-    {&hf_bundle_break, {"Indefinite Break", "bpv7.bundle_break", FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL}},
+    {&hf_bundle_head, {"Indefinite Array", "bpv7.bundle_head", FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL}},
+    {&hf_bundle_break, {"Indefinite Break", "bpv7.bundle_break", FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL}},
 
     {&hf_block, {"Block", "bpv7.block", FT_PROTOCOL, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_crc_field_int16, {"CRC Field Integer", "bpv7.crc_field_int", FT_UINT16, BASE_HEX, NULL, 0x0, NULL, HFILL}},
@@ -137,8 +130,8 @@ static hf_register_info fields[] = {
     {&hf_canonical_block_flags_remove_no_process, {"Remove if not processed", "bpv7.canonical.block_flags.remove_if_no_process", FT_UINT8, BASE_DEC, NULL, BP_BLOCK_REMOVE_IF_NO_PROCESS, NULL, HFILL}},
     {&hf_canonical_block_flags_replicate_in_fragment, {"Replicate in fragment", "bpv7.canonical.block_flags.replicate_in_fragment", FT_UINT8, BASE_DEC, NULL, BP_BLOCK_REPLICATE_IN_FRAGMENT, NULL, HFILL}},
     {&hf_canonical_crc_type, {"CRC Type", "bpv7.canonical.crc_type", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
-    {&hf_canonical_data, {"Block Data", "bpv7.canonical.data", FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL}},
-    {&hf_canonical_data_len, {"Data Length (octets)", "bpv7.canonical.data_len", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+    {&hf_canonical_data, {"Type-Specific Data", "bpv7.canonical.data", FT_PROTOCOL, BASE_NONE, NULL, 0x0, NULL, HFILL}},
+    {&hf_canonical_data_len, {"Type-Specific Data Length (octets)", "bpv7.canonical.data_len", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
     {&hf_canonical_crc_field, {"CRC Field", "bpv7.canonical.crc_field", FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL}},
 
     {&hf_previous_node_eid, {"Previous Node EID", "bpv7.previous_node.eid", FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL}},
@@ -148,21 +141,18 @@ static hf_register_info fields[] = {
     {&hf_hop_count_limit, {"Hop Limit", "bpv7.hop_count.limit", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
     {&hf_hop_count_current, {"Hop Count", "bpv7.hop_count.current", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
 
-    {&hf_admin_record, {"Administrative Record", "bpv7.admin_rec", FT_PROTOCOL, BASE_NONE, NULL, 0x0, NULL, HFILL}},
+    {&hf_admin_record, {"BPv7 Administrative Record", "bpv7.admin_rec", FT_PROTOCOL, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_admin_record_type, {"Record Type Code", "bpv7.admin_rec.type_code", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+
+    {&hf_status_rep, {"Status Report", "bpv7.status_rep", FT_PROTOCOL, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_status_rep_status_info, {"Status Information", "bpv7.status_rep.status_info", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL}},
-    {&hf_status_rep_received_val, {"Reporting node received bundle", "bpv7.status_rep.received_val", FT_BOOLEAN, BASE_NONE, NULL, 0x0, NULL, HFILL}},
-    {&hf_status_rep_received_dtntime, {"Reporting node received at", "bpv7.status_rep.received_dtntime", FT_INT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
-    {&hf_status_rep_received_utctime, {"Reporting node received at", "bpv7.status_rep.received_utctime", FT_ABSOLUTE_TIME, ABSOLUTE_TIME_UTC, NULL, 0x0, NULL, HFILL}},
-    {&hf_status_rep_forwarded_val, {"Reporting node forwarded bundle", "bpv7.status_rep.forwarded_val", FT_BOOLEAN, BASE_NONE, NULL, 0x0, NULL, HFILL}},
-    {&hf_status_rep_forwarded_dtntime, {"Reporting node forwarded at", "bpv7.status_rep.forwarded_dtntime", FT_INT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
-    {&hf_status_rep_forwarded_utctime, {"Reporting node forwarded at", "bpv7.status_rep.forwarded_utctime", FT_ABSOLUTE_TIME, ABSOLUTE_TIME_UTC, NULL, 0x0, NULL, HFILL}},
-    {&hf_status_rep_delivered_val, {"Reporting node delivered bundle", "bpv7.status_rep.delivered_val", FT_BOOLEAN, BASE_NONE, NULL, 0x0, NULL, HFILL}},
-    {&hf_status_rep_delivered_dtntime, {"Reporting node delivered at", "bpv7.status_rep.delivered_dtntime", FT_INT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
-    {&hf_status_rep_delivered_utctime, {"Reporting node delivered at", "bpv7.status_rep.delivered_utctime", FT_ABSOLUTE_TIME, ABSOLUTE_TIME_UTC, NULL, 0x0, NULL, HFILL}},
-    {&hf_status_rep_deleted_val, {"Reporting node deleted bundle", "bpv7.status_rep.deleted_val", FT_BOOLEAN, BASE_NONE, NULL, 0x0, NULL, HFILL}},
-    {&hf_status_rep_deleted_dtntime, {"Reporting node deleted at", "bpv7.status_rep.deleted_dtntime", FT_INT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
-    {&hf_status_rep_deleted_utctime, {"Reporting node deleted at", "bpv7.status_rep.deleted_utctime", FT_ABSOLUTE_TIME, ABSOLUTE_TIME_UTC, NULL, 0x0, NULL, HFILL}},
+    {&hf_status_assert_val, {"Status Value", "bpv7.status_assert.val", FT_BOOLEAN, BASE_NONE, NULL, 0x0, NULL, HFILL}},
+    {&hf_status_assert_dtntime, {"Received at", "bpv7.status_assert.dtntime", FT_INT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+    {&hf_status_assert_utctime, {"Received at", "bpv7.status_assert.utctime", FT_ABSOLUTE_TIME, ABSOLUTE_TIME_UTC, NULL, 0x0, NULL, HFILL}},
+    {&hf_status_rep_received, {"Reporting node received bundle", "bpv7.status_rep.received", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL}},
+    {&hf_status_rep_forwarded, {"Reporting node forwarded bundle", "bpv7.status_rep.forwarded", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL}},
+    {&hf_status_rep_delivered, {"Reporting node delivered bundle", "bpv7.status_rep.delivered", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL}},
+    {&hf_status_rep_deleted, {"Reporting node deleted bundle", "bpv7.status_rep.deleted", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_status_rep_reason_code, {"Reason Code", "bpv7.status_rep.reason_code", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
     {&hf_status_rep_source_id, {"Source Node EID", "bpv7.status_rep.source_node_id", FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_status_rep_subj_ts, {"Subject Creation Timestamp", "bpv7.status_rep.subj_ts", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL}},
@@ -195,25 +185,30 @@ static const int *block_flags[] = {
 static int ett_bundle = -1;
 static int ett_bundle_flags = -1;
 static int ett_block = -1;
-static int ett_primary_create_ts = -1;
+static int ett_create_ts = -1;
 static int ett_block_flags = -1;
+static int ett_canonical_data = -1;
 static int ett_payload = -1;
 static int ett_admin = -1;
+static int ett_status_rep = -1;
 static int ett_status_info = -1;
-static int ett_status_subj_ts = -1;
+static int ett_status_assert = -1;
 static int *ett[] = {
     &ett_bundle,
     &ett_bundle_flags,
     &ett_block,
-    &ett_primary_create_ts,
+    &ett_create_ts,
     &ett_block_flags,
+    &ett_canonical_data,
     &ett_payload,
     &ett_admin,
+    &ett_status_rep,
     &ett_status_info,
-    &ett_status_subj_ts,
+    &ett_status_assert,
 };
 
 static expert_field ei_cbor_invalid = EI_INIT;
+static expert_field ei_cbor_overflow = EI_INIT;
 static expert_field ei_cbor_wrong_type = EI_INIT;
 static expert_field ei_array_wrong_size = EI_INIT;
 static expert_field ei_item_missing = EI_INIT;
@@ -228,8 +223,9 @@ static expert_field ei_block_payload_dupe = EI_INIT;
 static expert_field ei_admin_type_unknown = EI_INIT;
 static ei_register_info expertitems[] = {
     {&ei_cbor_invalid, { "bpv7.cbor_invalid", PI_MALFORMED, PI_ERROR, "CBOR cannot be decoded", EXPFILL}},
+    {&ei_cbor_overflow, { "bpv7.cbor_overflow", PI_UNDECODED, PI_ERROR, "CBOR overflow of Wireshark value", EXPFILL}},
     {&ei_cbor_wrong_type, { "bpv7.cbor_wrong_type", PI_MALFORMED, PI_ERROR, "CBOR is wrong type", EXPFILL}},
-    {&ei_array_wrong_size, { "bpv7.array_wrong_size", PI_MALFORMED, PI_ERROR, "CBOR array is the wrong size", EXPFILL}},
+    {&ei_array_wrong_size, { "bpv7.array_wrong_size", PI_MALFORMED, PI_WARN, "CBOR array is the wrong size", EXPFILL}},
     {&ei_item_missing, { "bpv7.item_missing", PI_MALFORMED, PI_ERROR, "CBOR item is missing or incorrect type", EXPFILL}},
     {&ei_invalid_bp_version, { "bpv7.invalid_bp_version", PI_MALFORMED, PI_ERROR, "Invalid BP version", EXPFILL}},
     {&ei_block_type_unknown, { "bpv7.block_type_unknown", PI_UNDECODED, PI_WARN, "Unknown block type code", EXPFILL}},
@@ -241,6 +237,156 @@ static ei_register_info expertitems[] = {
     {&ei_block_payload_dupe, { "bpv7.block_payload_dupe", PI_PROTOCOL, PI_WARN, "Duplicate payload block", EXPFILL}},
     {&ei_admin_type_unknown, { "bpv7.admin_type_unknown", PI_UNDECODED, PI_WARN, "Unknown administrative type code", EXPFILL}},
 };
+
+/** Delete an arbitrary object allocated under this file scope.
+ *
+ * @param obj The object to delete.
+ */
+static void file_scope_delete(gpointer ptr) {
+    wmem_free(wmem_file_scope(), ptr);
+}
+
+static void cbor_scan_unsigned(bp_cbor_head_t *head, tvbuff_t *tvb) {
+    switch (head->type_minor) {
+        case 0x18:
+            head->rawvalue = tvb_get_guint8(tvb, head->start + head->length);
+            head->length += 1;
+            break;
+        case 0x19:
+            head->rawvalue = tvb_get_guint16(tvb, head->start + head->length, ENC_BIG_ENDIAN);
+            head->length += 2;
+            break;
+        case 0x1A:
+            head->rawvalue = tvb_get_guint32(tvb, head->start + head->length, ENC_BIG_ENDIAN);
+            head->length += 4;
+            break;
+        case 0x1B: {
+            guint64 val = tvb_get_guint64(tvb, head->start + head->length, ENC_BIG_ENDIAN);
+            if (val > INT64_MAX) {
+                val = INT64_MAX;
+                head->error = &ei_cbor_overflow;
+            }
+            head->rawvalue = val;
+            head->length += 8;
+            break;
+        }
+        default:
+            if (head->type_minor <= 0x17) {
+                head->rawvalue = head->type_minor;
+            }
+            break;
+    }
+}
+
+bp_cbor_head_t * bp_scan_cbor_head(tvbuff_t *tvb, gint start) {
+    bp_cbor_head_t *head = wmem_new0(wmem_file_scope(), bp_cbor_head_t);
+
+    head->start = start;
+    const guint8 first = tvb_get_guint8(tvb, head->start);
+    head->length += 1;
+
+    // Match libcbor enums
+    head->type_major = (first & 0xe0) >> 5;
+    head->type_minor = (first & 0x1f);
+    switch ((cbor_type)(head->type_major)) {
+        case CBOR_TYPE_UINT:
+        case CBOR_TYPE_TAG:
+            cbor_scan_unsigned(head, tvb);
+            if (head->type_minor > 0x1B) {
+                head->error = &ei_cbor_invalid;
+            }
+            break;
+        case CBOR_TYPE_NEGINT:
+            cbor_scan_unsigned(head, tvb);
+            if (head->type_minor > 0x1B) {
+                head->error = &ei_cbor_invalid;
+            }
+            head->rawvalue = -(head->rawvalue) - 1;
+            break;
+        case CBOR_TYPE_BYTESTRING:
+        case CBOR_TYPE_STRING:
+        case CBOR_TYPE_ARRAY:
+        case CBOR_TYPE_MAP:
+        case CBOR_TYPE_FLOAT_CTRL:
+            cbor_scan_unsigned(head, tvb);
+            if ((head->type_minor > 0x1B) && (head->type_minor < 0x1F)) {
+                head->error = &ei_cbor_invalid;
+            }
+            break;
+
+        default:
+            head->error = &ei_cbor_invalid;
+            break;
+    }
+
+    return head;
+}
+
+void bp_cbor_head_delete(gpointer ptr) {
+    file_scope_delete(ptr);
+}
+
+bp_cbor_chunk_t * bp_scan_cbor_chunk(tvbuff_t *tvb, gint start) {
+    const gint buflen = tvb_captured_length(tvb);
+
+    bp_cbor_chunk_t *chunk = wmem_new0(wmem_file_scope(), bp_cbor_chunk_t);
+    chunk->errors = g_sequence_new(NULL);
+    chunk->tags = g_sequence_new(file_scope_delete);
+    chunk->start = start;
+
+    gint offset = start;
+    while (offset < buflen) {
+        bp_cbor_head_t *head = bp_scan_cbor_head(tvb, offset);
+        if (!head) {
+            break;
+        }
+        offset += head->length;
+        chunk->head_length += head->length;
+        if (head->error) {
+            g_sequence_append(chunk->errors, head->error);
+        }
+        if (head->type_major == CBOR_TYPE_TAG) {
+            gint64 *tag = wmem_new(wmem_file_scope(), gint64);
+            *tag = head->rawvalue;
+            g_sequence_append(chunk->tags, tag);
+            bp_cbor_head_delete(head);
+            continue;
+        }
+        // An actual (non-tag) header
+        chunk->type_major = head->type_major;
+        chunk->type_minor = head->type_minor;
+        chunk->head_value = head->rawvalue;
+
+        switch ((cbor_type)(head->type_major)) {
+            case CBOR_TYPE_BYTESTRING:
+            case CBOR_TYPE_STRING:
+                chunk->data_length = chunk->head_length + chunk->head_value;
+                break;
+            default:
+                chunk->data_length = chunk->head_length;
+                break;
+        }
+
+        bp_cbor_head_delete(head);
+        break;
+    }
+
+    return chunk;
+}
+
+void bp_cbor_chunk_mark_errors(packet_info *pinfo, proto_item *item, const bp_cbor_chunk_t *chunk) {
+    for (GSequenceIter *it = g_sequence_get_begin_iter(chunk->errors);
+        !g_sequence_iter_is_end(it); it = g_sequence_iter_next(it)) {
+        expert_add_info(pinfo, item, (expert_field *)(g_sequence_get(it)));
+    }
+}
+
+void bp_cbor_chunk_delete(gpointer ptr) {
+    bp_cbor_chunk_t *obj = (bp_cbor_chunk_t *)ptr;
+    g_sequence_free(obj->errors);
+    g_sequence_free(obj->tags);
+    file_scope_delete(ptr);
+}
 
 bp_creation_ts_t * bp_creation_ts_new() {
     bp_creation_ts_t *obj = wmem_new0(wmem_file_scope(), bp_creation_ts_t);
@@ -349,32 +495,99 @@ nstime_t dtn_to_utctime(const gint64 dtntime) {
     return utctime;
 }
 
-static cbor_item_t * cbor_array_get_safe(const cbor_item_t *array, size_t index) {
-    if (array->type != CBOR_TYPE_ARRAY) {
-        return NULL;
-    }
-    if (cbor_array_size(array) <= index) {
-        return NULL;
-    }
-    return cbor_array_get(array, index);
+gboolean cbor_is_indefinite_break(const bp_cbor_chunk_t *chunk) {
+    return (
+        (chunk->type_major == CBOR_TYPE_FLOAT_CTRL)
+        && (chunk->type_minor == 31)
+    );
 }
 
-static const cbor_item_t * cbor_skip_tags(const cbor_item_t *item) {
-    while (item && (item->type == CBOR_TYPE_TAG)) {
-        item = cbor_tag_item(item);
+/** Recursively skip items from a stream.
+ *
+ * @param tvb The data buffer.
+ * @param offset The initial offset to read and skip over.
+ * @return True if the skipped item was an indefinite break.
+ */
+static gboolean cbor_skip_next_item(tvbuff_t *tvb, gint *offset) {
+    bp_cbor_chunk_t *chunk = bp_scan_cbor_chunk(tvb, *offset);
+    *offset += chunk->data_length;
+    switch (chunk->type_major) {
+        case CBOR_TYPE_UINT:
+        case CBOR_TYPE_NEGINT:
+        case CBOR_TYPE_TAG:
+        case CBOR_TYPE_FLOAT_CTRL:
+        case CBOR_TYPE_BYTESTRING:
+        case CBOR_TYPE_STRING:
+            break;
+        case CBOR_TYPE_ARRAY: {
+            if (chunk->type_minor == 31) {
+                // wait for indefinite break
+                while (!cbor_skip_next_item(tvb, offset)) {}
+            }
+            else {
+                const gint64 count = chunk->head_value;
+                for (int ix = 0; ix < count; ++ix) {
+                    cbor_skip_next_item(tvb, offset);
+                }
+            }
+            break;
+        }
+        case CBOR_TYPE_MAP: {
+            if (chunk->type_minor == 31) {
+                // wait for indefinite break
+                while (!cbor_skip_next_item(tvb, offset)) {}
+            }
+            else {
+                const gint64 count = 2 * chunk->head_value;
+                for (int ix = 0; ix < count; ++ix) {
+                    cbor_skip_next_item(tvb, offset);
+                }
+            }
+            break;
+        }
     }
-    return item;
+    const gboolean is_break = cbor_is_indefinite_break(chunk);
+    bp_cbor_chunk_delete(chunk);
+    return is_break;
 }
 
-static guint64 * cbor_require_uint64(const cbor_item_t *item) {
-    if (!item) {
-        return NULL;
+/** Make some assertions about a CBOR array.
+ *
+ * @param[in,out] offset The starting offset within @c tvb.
+ * @param head If non-null, the array header already read.
+ * @param count_read The number of items read so far.
+ * @param count_min The minimum required array size.
+ * @param count_max The maximum required array size.
+ * @return The array header chunk, if the array is valid.
+ */
+static bp_cbor_chunk_t * cbor_require_array_size(tvbuff_t *tvb, packet_info *pinfo, proto_item *item, gint *offset, bp_cbor_chunk_t *head, gint64 count_read, gint64 count_min, gint64 count_max) {
+    if (!head) {
+        head = bp_scan_cbor_chunk(tvb, *offset);
+        *offset += head->data_length;
     }
-    item = cbor_skip_tags(item);
-    switch (item->type) {
+
+    if (head->type_major != CBOR_TYPE_ARRAY) {
+        expert_add_info_format(pinfo, item, &ei_cbor_wrong_type, "Should-be-array has type %d, should be %d", head->type_major, CBOR_TYPE_ARRAY);
+        bp_cbor_chunk_delete(head);
+        head = NULL;
+    }
+    else if ((head->head_value < count_min) || (head->head_value > count_max)) {
+        expert_add_info_format(pinfo, item, &ei_array_wrong_size, "Array has %" PRId64 " items, should be between [%"PRId64", %"PRId64"]", head->head_value, count_min, count_max);
+        // skip the unused items
+        for (gint64 ix = count_read; ix < head->head_value; ++ix) {
+            cbor_skip_next_item(tvb, offset);
+        }
+        bp_cbor_chunk_delete(head);
+        head = NULL;
+    }
+    return head;
+}
+
+static guint64 * cbor_require_uint64(const bp_cbor_chunk_t *chunk) {
+    switch (chunk->type_major) {
         case CBOR_TYPE_UINT: {
             guint64 *result = wmem_new(wmem_file_scope(), guint64);
-            *result = cbor_get_int(item);
+            *result = chunk->head_value;
             return result;
         }
         default:
@@ -382,161 +595,166 @@ static guint64 * cbor_require_uint64(const cbor_item_t *item) {
     }
 }
 
-static gint64 * cbor_require_int64(const cbor_item_t *item) {
-    if (!item) {
-        return NULL;
-    }
-    item = cbor_skip_tags(item);
-    switch (item->type) {
-        case CBOR_TYPE_UINT: {
-            gint64 *result = wmem_new(wmem_file_scope(), gint64);
-            *result = cbor_get_int(item);
-            return result;
-        }
+static gint64 * cbor_require_int64(const bp_cbor_chunk_t *chunk) {
+    switch (chunk->type_major) {
+        case CBOR_TYPE_UINT:
         case CBOR_TYPE_NEGINT: {
-            const guint64 negval = cbor_get_int(item);
             gint64 *result = wmem_new(wmem_file_scope(), gint64);
-            *result = -negval - 1;
+            *result = chunk->head_value;
             return result;
-
         }
         default:
             return NULL;
     }
 }
 
-static tvbuff_t * cbor_require_string(tvbuff_t *parent, const cbor_item_t *item) {
-    if (!item) {
-        return NULL;
-    }
-    item = cbor_skip_tags(item);
-
-    size_t len = 0;
-    guint8 *buf = NULL;
-
-    switch (item->type) {
+static tvbuff_t * cbor_require_string(tvbuff_t *parent, const bp_cbor_chunk_t *chunk) {
+    tvbuff_t *result = NULL;
+    switch (chunk->type_major) {
         case CBOR_TYPE_BYTESTRING:
-            len = cbor_bytestring_length(item);
-            buf = wmem_alloc(wmem_file_scope(), len);
-            memcpy(buf, cbor_bytestring_handle(item), len);
-            break;
         case CBOR_TYPE_STRING:
-            len = cbor_string_length(item);
-            buf = wmem_alloc(wmem_file_scope(), len);
-            memcpy(buf, cbor_string_handle(item), len);
+            result = tvb_new_subset_length(parent, chunk->start + chunk->head_length, chunk->head_value);
             break;
         default:
             return NULL;
     }
-
-    tvbuff_t *result = tvb_new_child_real_data(parent, buf, len, len);
     return result;
 }
 
-static proto_item * proto_tree_add_cbor_boolean(proto_tree *tree, int hfindex, packet_info *pinfo, tvbuff_t *tvb, const cbor_item_t *citem) {
+static proto_item * proto_tree_add_cbor_boolean(proto_tree *tree, int hfindex, packet_info *pinfo, tvbuff_t *tvb, const bp_cbor_chunk_t *chunk) {
     gboolean *value = NULL;
-    if (citem && (citem->type == CBOR_TYPE_FLOAT_CTRL)) {
+    if (chunk->type_major == CBOR_TYPE_FLOAT_CTRL) {
         value = wmem_new(wmem_file_scope(), gboolean);
-        *value = (cbor_ctrl_value(citem) == CBOR_CTRL_TRUE);
+        *value = (chunk->type_minor == CBOR_CTRL_TRUE);
     }
-    proto_item *item = proto_tree_add_boolean(tree, hfindex, tvb, 0, 0, value ? *value : FALSE);
-    if (!citem) {
-        expert_add_info(pinfo, item, &ei_item_missing);
-    }
+    proto_item *item = proto_tree_add_boolean(tree, hfindex, tvb, chunk->start, chunk->data_length, value ? *value : FALSE);
     if (!value) {
-        expert_add_info_format(pinfo, item, &ei_cbor_wrong_type, "Boolean value has type %d", citem->type);
+        expert_add_info_format(pinfo, item, &ei_cbor_wrong_type, "Boolean value has type %d, should be %d", chunk->type_major, CBOR_TYPE_FLOAT_CTRL);
     }
     wmem_free(wmem_file_scope(), value);
     return item;
 }
 
-static proto_item * proto_tree_add_cbor_uint64(proto_tree *tree, int hfindex, packet_info *pinfo, tvbuff_t *tvb, const guint64 *value) {
-    proto_item *item = proto_tree_add_uint64(tree, hfindex, tvb, 0, 0, value ? *value : 0);
+static proto_item * proto_tree_add_cbor_uint64(proto_tree *tree, int hfindex, packet_info *pinfo, tvbuff_t *tvb, const bp_cbor_chunk_t *chunk, const guint64 *value) {
+    proto_item *item = proto_tree_add_uint64(tree, hfindex, tvb, chunk->start, chunk->head_length, value ? *value : 0);
     if (!value) {
         expert_add_info(pinfo, item, &ei_item_missing);
     }
     return item;
 }
 
-static proto_item * proto_tree_add_cbor_int64(proto_tree *tree, int hfindex, packet_info *pinfo, tvbuff_t *tvb, const gint64 *value) {
-    proto_item *item = proto_tree_add_int64(tree, hfindex, tvb, 0, 0, value ? *value : 0);
+static proto_item * proto_tree_add_cbor_int64(proto_tree *tree, int hfindex, packet_info *pinfo, tvbuff_t *tvb, const bp_cbor_chunk_t *chunk, const gint64 *value) {
+    proto_item *item = proto_tree_add_int64(tree, hfindex, tvb, chunk->start, chunk->head_length, value ? *value : 0);
     if (!value) {
         expert_add_info(pinfo, item, &ei_item_missing);
     }
     return item;
 }
 
-static proto_item * proto_tree_add_cbor_bitmask64(proto_tree *tree, int hfindex, const gint ett, const int **fields, packet_info *pinfo, tvbuff_t *tvb, const guint64 *value) {
-    proto_item *item = proto_tree_add_bitmask_value(tree, tvb, 0, hfindex, ett, fields, value ? *value : 0);
-    if (!value) {
-        expert_add_info(pinfo, item, &ei_item_missing);
+static proto_item * proto_tree_add_cbor_bitmask(proto_tree *tree, int hfindex, const gint ett, const int **fields, packet_info *pinfo, tvbuff_t *tvb, const bp_cbor_chunk_t *chunk, const guint64 *value) {
+    header_field_info *field = proto_registrar_get_nth(hfindex);
+    size_t flagsize = 0;
+    switch (field->type) {
+        case FT_UINT8:
+            flagsize = 1;
+            break;
+        case FT_UINT16:
+            flagsize = 2;
+            break;
+        default:
+            return NULL;
     }
-    return item;
-}
 
-static proto_item * proto_tree_add_cbor_textstring(proto_tree *tree, int hfindex, packet_info *pinfo, tvbuff_t *tvb) {
-    gint length = 0;
-    char *value = NULL;
-    if (tvb) {
-        length = tvb_captured_length(tvb);
-        value = (char *)tvb_get_string_enc(wmem_packet_scope(), tvb, 0, length, ENC_UTF_8);
-    }
-    // This function needs a null-terminated string
-    proto_item *item = proto_tree_add_string(tree, hfindex, tvb, 0, length, value);
-    if (!tvb) {
-        expert_add_info(pinfo, item, &ei_item_missing);
-    }
-    wmem_free(wmem_packet_scope(), value);
-    return item;
-}
-
-static proto_item * proto_tree_add_cbor_bytestring(proto_tree *tree, int hfindex, packet_info *pinfo, tvbuff_t *tvb) {
-    gint length = 0;
-    guint8 *value = NULL;
-    if (tvb) {
-        length = tvb_captured_length(tvb);
-        value = tvb_memdup(wmem_packet_scope(), tvb, 0, length);
-    }
-    proto_item *item = proto_tree_add_bytes(tree, hfindex, tvb, 0, length, value);
-    if (!tvb) {
-        expert_add_info(pinfo, item, &ei_item_missing);
-    }
-    wmem_free(wmem_packet_scope(), value);
-    return item;
-}
-
-static void proto_tree_add_cbor_timestamp(proto_tree *tree, packet_info *pinfo, tvbuff_t *tvb, const cbor_item_t *citem, bp_creation_ts_t *ts) {
-    proto_item *item_ts = proto_tree_get_parent(tree);
-
-    if (!citem) {
-        expert_add_info(pinfo, item_ts, &ei_item_missing);
-    }
-    else if (citem->type != CBOR_TYPE_ARRAY) {
-        expert_add_info_format(pinfo, item_ts, &ei_cbor_wrong_type, "Timestamp has type %d", citem->type);
-    }
-    else if (cbor_array_size(citem) != 2) {
-        expert_add_info_format(pinfo, item_ts, &ei_array_wrong_size, "Timestamp has %" PRIu64 " items", cbor_array_size(citem));
-    }
-    else {
-        const gint64 *dtntime = cbor_require_int64(cbor_array_get_safe(citem, 0));
-        proto_tree_add_cbor_int64(tree, hf_create_ts_dtntime, pinfo, tvb, dtntime);
-
-        if (dtntime) {
-            const nstime_t utctime = dtn_to_utctime(*dtntime);
-            proto_item *item_utctime = proto_tree_add_time(tree, hf_create_ts_utctime, tvb, 0, 0, &utctime);
-            PROTO_ITEM_SET_GENERATED(item_utctime);
-        }
-
-        const guint64 *seqno = cbor_require_uint64(cbor_array_get_safe(citem, 1));
-        proto_tree_add_cbor_uint64(tree, hf_create_ts_seqno, pinfo, tvb, seqno);
-
-        if (ts) {
-            ts->dtntime = (dtntime ? *dtntime : 0);
-            ts->seqno = (seqno ? *seqno : 0);
+    // Fake TVB data for these functions
+    guint8 *flags = wmem_alloc0(wmem_packet_scope(), flagsize);
+    { // Inject big-endian value directly
+        guint64 buf = (value ? *value : 0);
+        for (gint ix = flagsize - 1; ix >= 0; --ix) {
+            flags[ix] = buf & 0xFF;
+            buf >>= 8;
         }
     }
+    tvbuff_t *tvb_flags = tvb_new_child_real_data(tvb, flags, flagsize, flagsize);
+
+    (void)chunk;
+    proto_item *item = proto_tree_add_item(tree, hfindex, tvb_flags, 0, flagsize, ENC_BIG_ENDIAN);
+    proto_tree *subtree = proto_item_add_subtree(item, ett);
+    proto_tree_add_bitmask_list_value(subtree, tvb_flags, 0, flagsize, fields, value ? *value : 0);
+
+    if (!value) {
+        expert_add_info(pinfo, item, &ei_item_missing);
+    }
+    return item;
 }
 
+static proto_item * proto_tree_add_cbor_string(proto_tree *tree, int hfindex, packet_info *pinfo, tvbuff_t *tvb, const bp_cbor_chunk_t *head) {
+    proto_item *item = NULL;
+    switch (head->type_major) {
+        case CBOR_TYPE_STRING: {
+            char *value = (char *)tvb_get_string_enc(wmem_packet_scope(), tvb, head->start + head->head_length, head->head_value, ENC_UTF_8);
+            // This function needs a null-terminated string
+            item = proto_tree_add_string(tree, hfindex, tvb, head->start, head->head_length +head->head_value, value);
+            wmem_free(wmem_packet_scope(), value);
+            break;
+        }
+        case CBOR_TYPE_BYTESTRING: {
+            guint8 *value = tvb_memdup(wmem_packet_scope(), tvb, head->start + head->head_length, head->head_value);
+            item = proto_tree_add_bytes(tree, hfindex, tvb, head->start, head->head_length + head->head_value, value);
+            wmem_free(wmem_packet_scope(), value);
+            break;
+        }
+        default:
+            item = proto_tree_add_item(tree, hfindex, tvb, head->start, head->head_length, ENC_NA);
+            expert_add_info(pinfo, item, &ei_cbor_wrong_type);
+            break;
+    }
+    return item;
+}
+
+static void proto_tree_add_cbor_timestamp(proto_tree *tree, int hfindex, packet_info *pinfo, tvbuff_t *tvb, gint *offset, bp_creation_ts_t *ts) {
+    proto_item *item_ts = proto_tree_add_item(tree, hfindex, tvb, *offset, 0, ENC_NA);
+    proto_tree *tree_ts = proto_item_add_subtree(item_ts, ett_create_ts);
+    const gint ts_start = *offset;
+
+    bp_cbor_chunk_t *chunk = cbor_require_array_size(tvb, pinfo, item_ts, offset, NULL, 0, 2, 2);
+    if (!chunk) {
+        proto_item_set_len(item_ts, *offset - ts_start);
+        return;
+    }
+    bp_cbor_chunk_delete(chunk);
+
+    chunk = bp_scan_cbor_chunk(tvb, *offset);
+    const gint64 *dtntime = cbor_require_int64(chunk);
+    proto_tree_add_cbor_int64(tree_ts, hf_create_ts_dtntime, pinfo, tvb, chunk, dtntime);
+    *offset += chunk->data_length;
+    if (dtntime) {
+        const nstime_t utctime = dtn_to_utctime(*dtntime);
+        proto_item *item_utctime = proto_tree_add_time(tree_ts, hf_create_ts_utctime, tvb, chunk->start, chunk->data_length, &utctime);
+        PROTO_ITEM_SET_GENERATED(item_utctime);
+    }
+    bp_cbor_chunk_delete(chunk);
+
+    chunk = bp_scan_cbor_chunk(tvb, *offset);
+    const guint64 *seqno = cbor_require_uint64(chunk);
+    proto_tree_add_cbor_uint64(tree_ts, hf_create_ts_seqno, pinfo, tvb, chunk, seqno);
+    *offset += chunk->data_length;
+    bp_cbor_chunk_delete(chunk);
+
+    if (ts) {
+        ts->dtntime = (dtntime ? *dtntime : 0);
+        ts->seqno = (seqno ? *seqno : 0);
+    }
+
+    proto_item_set_len(item_ts, *offset - ts_start);
+}
+
+/** Show read-in and actual CRC information.
+ *
+ * @param tvb The single-block data.
+ * @param crc_type Type of CRC to compute.
+ * @param crc_field The read-in field value.
+ * @param item_crc_field The field to put errors on.
+ */
 static void show_crc_info(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree_block,
                           const guint64 *crc_type, tvbuff_t *crc_field, proto_item *item_crc_field) {
     // Display the data field information
@@ -596,113 +814,206 @@ static void show_crc_info(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree_bl
     }
 }
 
-static void dissect_block_primary(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree_block,
-                                 const cbor_item_t *cbor_block, bp_block_primary_t *block,
-                                 bp_bundle_t *bundle _U_) {
+static gint dissect_block_primary(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree_block,
+                                  gint start, bp_block_primary_t *block,
+                                  bp_bundle_t *bundle _U_) {
     proto_item *item_block = proto_tree_get_parent(tree_block);
-    size_t field_ix = 0;
+    gint field_ix = 0;
+    gint offset = start;
 
-    const guint64 *version = cbor_require_uint64(cbor_array_get(cbor_block, field_ix++));
-    proto_item *item_version = proto_tree_add_cbor_uint64(tree_block, hf_primary_version, pinfo, tvb, version);
+    bp_cbor_chunk_t *chunk_head = cbor_require_array_size(tvb, pinfo, item_block, &offset, NULL, 0, 8, 10);
+    if (!chunk_head) {
+        return offset - start;
+    }
+    proto_item_append_text(item_block, ", Count: %" PRIu64, chunk_head->head_value);
+
+    bp_cbor_chunk_t *chunk = bp_scan_cbor_chunk(tvb, offset);
+    const guint64 *version = cbor_require_uint64(chunk);
+    proto_item *item_version = proto_tree_add_cbor_uint64(tree_block, hf_primary_version, pinfo, tvb, chunk, version);
+    offset += chunk->data_length;
+    field_ix++;
+    bp_cbor_chunk_delete(chunk);
     if (version && (*version != 7)) {
         expert_add_info(pinfo, item_version, &ei_invalid_bp_version);
     }
 
-    const guint64 *flags = cbor_require_uint64(cbor_array_get(cbor_block, field_ix++));
-    proto_tree_add_cbor_bitmask64(tree_block, hf_primary_bundle_flags, ett_bundle_flags, bundle_flags, pinfo, tvb, flags);
+    chunk = bp_scan_cbor_chunk(tvb, offset);
+    const guint64 *flags = cbor_require_uint64(chunk);
+    proto_tree_add_cbor_bitmask(tree_block, hf_primary_bundle_flags, ett_bundle_flags, bundle_flags, pinfo, tvb, chunk, flags);
+    offset += chunk->data_length;
+    field_ix++;
+    bp_cbor_chunk_delete(chunk);
     block->flags = (flags ? *flags : 0);
 
-    guint64 *crc_type = cbor_require_uint64(cbor_array_get(cbor_block, field_ix++));
-    proto_tree_add_cbor_uint64(tree_block, hf_primary_crc_type, pinfo, tvb, crc_type);
+    chunk = bp_scan_cbor_chunk(tvb, offset);
+    guint64 *crc_type = cbor_require_uint64(chunk);
+    proto_tree_add_cbor_uint64(tree_block, hf_primary_crc_type, pinfo, tvb, chunk, crc_type);
+    offset += chunk->data_length;
+    field_ix++;
+    bp_cbor_chunk_delete(chunk);
     block->crc_type = (crc_type ? *crc_type : BP_CRC_NONE);
     if (crc_type) {
         proto_item_append_text(item_block, ", CRC Type: %" PRIu64, *crc_type);
     }
 
-    tvbuff_t *tvb_dst_eid = cbor_require_string(tvb, cbor_array_get(cbor_block, field_ix++));
-    proto_tree_add_cbor_textstring(tree_block, hf_primary_dst_eid, pinfo, tvb_dst_eid);
+    chunk = bp_scan_cbor_chunk(tvb, offset);
+    tvbuff_t *tvb_dst_eid = cbor_require_string(tvb, chunk);
+    proto_tree_add_cbor_string(tree_block, hf_primary_dst_eid, pinfo, tvb, chunk);
+    offset += chunk->data_length;
+    field_ix++;
+    bp_cbor_chunk_delete(chunk);
     block->dst_eid = tvb_dst_eid;
 
-    tvbuff_t *tvb_src_eid = cbor_require_string(tvb, cbor_array_get(cbor_block, field_ix++));
-    proto_tree_add_cbor_textstring(tree_block, hf_primary_src_eid, pinfo, tvb_src_eid);
+    chunk = bp_scan_cbor_chunk(tvb, offset);
+    tvbuff_t *tvb_src_eid = cbor_require_string(tvb, chunk);
+    proto_tree_add_cbor_string(tree_block, hf_primary_src_eid, pinfo, tvb, chunk);
+    offset += chunk->data_length;
+    field_ix++;
+    bp_cbor_chunk_delete(chunk);
     block->src_eid = tvb_src_eid;
 
-    tvbuff_t *tvb_rep_eid = cbor_require_string(tvb, cbor_array_get(cbor_block, field_ix++));
-    proto_tree_add_cbor_textstring(tree_block, hf_primary_report_eid, pinfo, tvb_rep_eid);
+    chunk = bp_scan_cbor_chunk(tvb, offset);
+    tvbuff_t *tvb_rep_eid = cbor_require_string(tvb, chunk);
+    proto_tree_add_cbor_string(tree_block, hf_primary_report_eid, pinfo, tvb, chunk);
+    offset += chunk->data_length;
+    field_ix++;
+    bp_cbor_chunk_delete(chunk);
     block->rep_eid = tvb_rep_eid;
 
     // Complex type
-    proto_item *item_ts = proto_tree_add_item(tree_block, hf_primary_create_ts, tvb, 0, 0, ENC_NA);
-    proto_tree *tree_ts = proto_item_add_subtree(item_ts, ett_primary_create_ts);
-    cbor_item_t *cbor_create_ts = cbor_array_get_safe(cbor_block, field_ix++);
-    proto_tree_add_cbor_timestamp(tree_ts, pinfo, tvb, cbor_create_ts, &(block->ts));
+    proto_tree_add_cbor_timestamp(tree_block, hf_primary_create_ts, pinfo, tvb, &offset, &(block->ts));
+    field_ix++;
 
-    const guint64 *lifetime = cbor_require_uint64(cbor_array_get(cbor_block, field_ix++));
-    proto_tree_add_cbor_uint64(tree_block, hf_primary_lifetime, pinfo, tvb, lifetime);
+    chunk = bp_scan_cbor_chunk(tvb, offset);
+    const guint64 *lifetime = cbor_require_uint64(chunk);
+    proto_tree_add_cbor_uint64(tree_block, hf_primary_lifetime, pinfo, tvb, chunk, lifetime);
+    offset += chunk->data_length;
+    field_ix++;
+    bp_cbor_chunk_delete(chunk);
 
     // optional items
     if (flags && (*flags & BP_BUNDLE_IS_FRAGMENT)) {
-        const guint64 *frag_offset = cbor_require_uint64(cbor_array_get_safe(cbor_block, field_ix++));
-        proto_tree_add_cbor_uint64(tree_block, hf_primary_frag_offset, pinfo, tvb, frag_offset);
+        if (!cbor_require_array_size(tvb, pinfo, item_block, &offset, chunk_head, field_ix, field_ix + 1, field_ix + 2)) {
+            bp_cbor_chunk_delete(chunk_head);
+            return offset - start;
+        }
+
+        chunk = bp_scan_cbor_chunk(tvb, offset);
+        const guint64 *frag_offset = cbor_require_uint64(chunk);
+        proto_tree_add_cbor_uint64(tree_block, hf_primary_frag_offset, pinfo, tvb, chunk, frag_offset);
+        offset += chunk->data_length;
+        field_ix++;
+        bp_cbor_chunk_delete(chunk);
     }
     if (crc_type && (*crc_type != 0)) {
-        tvbuff_t *crc_field = cbor_require_string(tvb, cbor_array_get_safe(cbor_block, field_ix++));
-        proto_item *item_crc_field = proto_tree_add_cbor_bytestring(tree_block, hf_primary_crc_field, pinfo, crc_field);
+        if (!cbor_require_array_size(tvb, pinfo, item_block, &offset, chunk_head, field_ix, field_ix + 1, field_ix + 1)) {
+            bp_cbor_chunk_delete(chunk_head);
+            return offset - start;
+        }
+
+        chunk = bp_scan_cbor_chunk(tvb, offset);
+        tvbuff_t *crc_field = cbor_require_string(tvb, chunk);
+        proto_item *item_crc_field = proto_tree_add_cbor_string(tree_block, hf_primary_crc_field, pinfo, tvb, chunk);
+        offset += chunk->data_length;
+        field_ix++;
+        bp_cbor_chunk_delete(chunk);
         block->crc_field = crc_field;
 
-        show_crc_info(tvb, pinfo, tree_block, crc_type, crc_field, item_crc_field);
+        tvbuff_t *tvb_block = tvb_new_subset_length(tvb, start, offset - start);
+        show_crc_info(tvb_block, pinfo, tree_block, crc_type, crc_field, item_crc_field);
     }
+
+    bp_cbor_chunk_delete(chunk_head);
+    return offset - start;
 }
 
-static void dissect_block_canonical(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree_block,
-                                 const cbor_item_t *cbor_block, bp_block_canonical_t *block,
-                                 bp_bundle_t *bundle _U_) {
+static gint dissect_block_canonical(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree_block,
+                                    gint start, bp_block_canonical_t *block,
+                                    bp_bundle_t *bundle _U_) {
     proto_item *item_block = proto_tree_get_parent(tree_block);
-    size_t field_ix = 0;
+    gint field_ix = 0;
+    gint offset = start;
 
-    const guint64 *type_code = cbor_require_uint64(cbor_array_get(cbor_block, field_ix++));
-    proto_item *item_type = proto_tree_add_cbor_uint64(tree_block, hf_canonical_type_code, pinfo, tvb, type_code);
+    bp_cbor_chunk_t *chunk_head = cbor_require_array_size(tvb, pinfo, item_block, &offset, NULL, 0, 5, 6);
+    if (!chunk_head) {
+        return offset - start;
+    }
+    proto_item_append_text(item_block, ", Count: %" PRIu64, chunk_head->head_value);
+
+    bp_cbor_chunk_t *chunk = bp_scan_cbor_chunk(tvb, offset);
+    const guint64 *type_code = cbor_require_uint64(chunk);
+    proto_item *item_type = proto_tree_add_cbor_uint64(tree_block, hf_canonical_type_code, pinfo, tvb, chunk, type_code);
+    offset += chunk->data_length;
+    field_ix++;
+    bp_cbor_chunk_delete(chunk);
+
     block->type_code = type_code;
     proto_item_append_text(item_block, ", Block Type: %" PRIu64, *type_code);
     dissector_handle_t data_dissect = NULL;
     if (type_code) {
-        data_dissect = dissector_get_uint_handle(block_dissector, *type_code);
+        data_dissect = dissector_get_uint_handle(block_dissectors, *type_code);
     }
 
-    const guint64 *block_num = cbor_require_uint64(cbor_array_get(cbor_block, field_ix++));
-    proto_item *item_block_num = proto_tree_add_cbor_uint64(tree_block, hf_canonical_block_num, pinfo, tvb, block_num);
+    chunk = bp_scan_cbor_chunk(tvb, offset);
+    const guint64 *block_num = cbor_require_uint64(chunk);
+    proto_item *item_block_num = proto_tree_add_cbor_uint64(tree_block, hf_canonical_block_num, pinfo, tvb, chunk, block_num);
+    offset += chunk->data_length;
+    field_ix++;
+    bp_cbor_chunk_delete(chunk);
     block->block_number = block_num;
     if (block_num) {
         proto_item_append_text(item_block, ", Block Num: %" PRIu64, *block_num);
     }
 
-    const guint64 *flags = cbor_require_uint64(cbor_array_get(cbor_block, field_ix++));
-    proto_tree_add_cbor_bitmask64(tree_block, hf_canonical_block_flags, ett_block_flags, block_flags, pinfo, tvb, flags);
+    chunk = bp_scan_cbor_chunk(tvb, offset);
+    const guint64 *flags = cbor_require_uint64(chunk);
+    proto_tree_add_cbor_bitmask(tree_block, hf_canonical_block_flags, ett_block_flags, block_flags, pinfo, tvb, chunk, flags);
+    offset += chunk->data_length;
+    field_ix++;
+    bp_cbor_chunk_delete(chunk);
     block->flags = (flags ? *flags : 0);
 
-    guint64 *crc_type = cbor_require_uint64(cbor_array_get(cbor_block, field_ix++));
-    proto_tree_add_cbor_uint64(tree_block, hf_canonical_crc_type, pinfo, tvb, crc_type);
+    chunk = bp_scan_cbor_chunk(tvb, offset);
+    guint64 *crc_type = cbor_require_uint64(chunk);
+    proto_tree_add_cbor_uint64(tree_block, hf_canonical_crc_type, pinfo, tvb, chunk, crc_type);
+    offset += chunk->data_length;
+    field_ix++;
+    bp_cbor_chunk_delete(chunk);
     block->crc_type = (crc_type ? *crc_type : BP_CRC_NONE);
     if (crc_type) {
         proto_item_append_text(item_block, ", CRC Type: %" PRIu64, *crc_type);
     }
 
-    tvbuff_t *tvb_data = cbor_require_string(tvb, cbor_array_get(cbor_block, field_ix++));
+    chunk = bp_scan_cbor_chunk(tvb, offset);
+    tvbuff_t *tvb_data = cbor_require_string(tvb, chunk);
+    offset += chunk->data_length;
+    field_ix++;
+    bp_cbor_chunk_delete(chunk);
+    block->data = tvb_data;
     if (!tvb_data) {
         expert_add_info_format(pinfo, item_block, &ei_item_missing, "Data field is missing");
     }
     else {
-        proto_item *item_len = proto_tree_add_uint64(tree_block, hf_canonical_data_len, tvb, 0, 0, tvb_captured_length(tvb_data));
+        proto_item *item_len = proto_tree_add_uint64(tree_block, hf_canonical_data_len, tvb_data, 0, tvb_captured_length(tvb_data), tvb_captured_length(tvb_data));
         PROTO_ITEM_SET_GENERATED(item_len);
     }
-    block->data = tvb_data;
 
     if (crc_type && (*crc_type != 0)) {
-        tvbuff_t *crc_field = cbor_require_string(tvb, cbor_array_get_safe(cbor_block, field_ix++));
-        proto_item *item_crc_field = proto_tree_add_cbor_bytestring(tree_block, hf_canonical_crc_field, pinfo, crc_field);
+        if (!cbor_require_array_size(tvb, pinfo, item_block, &offset, chunk_head, field_ix, field_ix + 1, field_ix + 1)) {
+            bp_cbor_chunk_delete(chunk_head);
+            return offset - start;
+        }
+
+        chunk = bp_scan_cbor_chunk(tvb, offset);
+        tvbuff_t *crc_field = cbor_require_string(tvb, chunk);
+        proto_item *item_crc_field = proto_tree_add_cbor_string(tree_block, hf_canonical_crc_field, pinfo, tvb, chunk);
+        offset += chunk->data_length;
+        field_ix++;
+        bp_cbor_chunk_delete(chunk);
         block->crc_field = crc_field;
 
-        show_crc_info(tvb, pinfo, tree_block, crc_type, crc_field, item_crc_field);
+        tvbuff_t *tvb_block = tvb_new_subset_length(tvb, start, offset - start);
+        show_crc_info(tvb_block, pinfo, tree_block, crc_type, crc_field, item_crc_field);
     }
 
     if (tvb_data) {
@@ -743,6 +1054,8 @@ static void dissect_block_canonical(tvbuff_t *tvb, packet_info *pinfo, proto_tre
             expert_add_info(pinfo, item_block, &ei_block_payload_index);
         }
     }
+
+    return offset - start;
 }
 
 static int dissect_bp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_) {
@@ -758,16 +1071,20 @@ static int dissect_bp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void 
 
     // Read blocks directly from buffer with same addresses as #tvb
     const guint buflen = tvb_captured_length(tvb);
-    guint8 *buf = tvb_memdup(wmem_packet_scope(), tvb, 0, buflen);
 
     // Require indefinite-length array type
-    const guint8 bundle_head = tvb_get_guint8(tvb, offset);
-    proto_item *item_head = proto_tree_add_item(tree_bundle, hf_bundle_head, tvb, offset, 1, ENC_BIG_ENDIAN);
-    offset += 1;
-    if (bundle_head != 0x9F) {
-        expert_add_info_format(pinfo, item_head, &ei_cbor_invalid, "Array header expected 0x9F");
+    bp_cbor_chunk_t *chunk = bp_scan_cbor_chunk(tvb, offset);
+    proto_item *item_head = proto_tree_add_item(tree_bundle, hf_bundle_head, tvb, offset, chunk->data_length, ENC_NA);
+    offset += chunk->data_length;
+    if (chunk->type_major != CBOR_TYPE_ARRAY) {
+        expert_add_info_format(pinfo, item_head, &ei_cbor_wrong_type, "Bundle root has type %d, should be %d", chunk->type_major, CBOR_TYPE_ARRAY);
+        return buflen;
     }
-    // continue on assuming its an array
+    else if (chunk->type_minor != 31) {
+        expert_add_info_format(pinfo, item_head, &ei_array_wrong_size, "Expected indefinite length array");
+        // continue on even for definite-length array
+    }
+    bp_cbor_chunk_delete(chunk);
 
     guint64 block_ix = 0;
     while (TRUE) {
@@ -776,172 +1093,200 @@ static int dissect_bp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void 
             expert_add_info_format(pinfo, item_break, &ei_cbor_invalid, "Array break missing");
             break;
         }
-        const guint8 try_break = tvb_get_guint8(tvb, offset);
-        if (try_break == 0xFF) {
-            proto_tree_add_item(tree_bundle, hf_bundle_break, tvb, offset, 1, ENC_BIG_ENDIAN);
-            offset += 1;
+        chunk = bp_scan_cbor_chunk(tvb, offset);
+        if (cbor_is_indefinite_break(chunk)) {
+            proto_tree_add_item(tree_bundle, hf_bundle_break, tvb, offset, chunk->head_length, ENC_NA);
+            offset += chunk->data_length;
+            bp_cbor_chunk_delete(chunk);
             break;
         }
+        bp_cbor_chunk_delete(chunk);
 
-        // Load just this block
-        struct cbor_load_result load_result;
-        cbor_item_t *cbor_block = cbor_load(buf + offset, buflen - offset, &load_result);
-        const guint block_len = load_result.read;
-        tvbuff_t *block_tvb = tvb_new_subset_length(tvb, offset, block_len);
-        offset += block_len;
-
-        proto_item *item_block = proto_tree_add_item(tree_bundle, hf_block, block_tvb, 0, block_len, ENC_NA);
+        // Load just the array start
+        const gint block_start = offset;
+        proto_item *item_block = proto_tree_add_item(tree_bundle, hf_block, tvb, block_start, 0, ENC_NA);
         proto_tree *tree_block = proto_item_add_subtree(item_block, ett_block);
-        if (!cbor_block) {
-            expert_add_info_format(pinfo, item_block, &ei_cbor_invalid, "Block is invalid: error code %d at offset %" PRIu64, load_result.error.code, load_result.error.position);
-            break;
-        }
-        else if (cbor_block->type != CBOR_TYPE_ARRAY) {
-            expert_add_info_format(pinfo, item_block, &ei_cbor_wrong_type, "Block has type %d", cbor_block->type);
-            break;
-        }
-        const size_t block_size = cbor_array_size(cbor_block);
-        proto_item_append_text(item_block, ", Count: %" PRIu64, block_size);
 
         if (block_ix == 0) {
             // Primary block
             proto_item_prepend_text(item_block, "Primary ");
 
-            if (block_size < 8) {
-                expert_add_info_format(pinfo, item_block, &ei_array_wrong_size, "Block has %" PRIu64 " items", block_size);
-            }
-            else {
-                bp_block_primary_t *block = bp_block_primary_new();
-                dissect_block_primary(block_tvb, pinfo, tree_block, cbor_block, block, bundle);
-                bundle->primary = block;
-            }
+            bp_block_primary_t *block = bp_block_primary_new();
+            offset += dissect_block_primary(tvb, pinfo, tree_block, offset, block, bundle);
+            bundle->primary = block;
         }
         else {
             // Non-primary block
-            if (block_size < 5) {
-                expert_add_info_format(pinfo, item_block, &ei_array_wrong_size, "Block has %" PRIu64 " items", block_size);
-            }
-            else {
-                bp_block_canonical_t *block = bp_block_canonical_new(block_ix);
-                dissect_block_canonical(block_tvb, pinfo, tree_block, cbor_block, block, bundle);
-            }
+            bp_block_canonical_t *block = bp_block_canonical_new(block_ix);
+            offset += dissect_block_canonical(tvb, pinfo, tree_block, offset, block, bundle);
         }
 
-        cbor_decref(&cbor_block);
+        proto_item_set_len(item_block, offset - block_start);
         block_ix++;
     }
 
-    wmem_free(wmem_packet_scope(), buf);
+    col_append_str_uint(pinfo->cinfo, COL_INFO, " Blocks", block_ix, NULL);
+
     bp_bundle_delete(bundle);
-    return offset;
+    proto_item_set_len(item_bundle, offset);
+    return buflen;
 }
 
 static void reinit_bp(void) {
 }
 
-static void proto_tree_add_status_assertion(proto_tree *tree, int hfbool, int hfdtntime, int hfutctime, packet_info *pinfo, tvbuff_t *tvb, const cbor_item_t *value) {
-    cbor_item_t *stat_bool = cbor_array_get_safe(value, 0);
-    proto_tree_add_cbor_boolean(tree, hfbool, pinfo, tvb, stat_bool);
-    cbor_decref(&stat_bool);
+static void proto_tree_add_status_assertion(proto_tree *tree, int hfassert, packet_info *pinfo, tvbuff_t *tvb, gint *offset) {
+    const gint assert_start = *offset;
+    proto_item *item_assert = proto_tree_add_item(tree, hfassert, tvb, assert_start, 0, ENC_NA);
+    proto_tree *tree_assert = proto_item_add_subtree(item_assert, ett_status_assert);
 
-    cbor_item_t *stat_dtntime = cbor_array_get_safe(value, 1);
-    if (stat_dtntime) {
-        gint64 *dtntime = cbor_require_int64(stat_dtntime);
-        proto_tree_add_cbor_int64(tree, hfdtntime, pinfo, tvb, dtntime);
-        cbor_decref(&stat_dtntime);
+    bp_cbor_chunk_t *head = cbor_require_array_size(tvb, pinfo, item_assert, offset, NULL, 0, 1, 2);
+    if (!head) {
+        proto_item_set_len(item_assert, *offset - assert_start);
+        return;
+    }
 
+    bp_cbor_chunk_t *chunk = bp_scan_cbor_chunk(tvb, *offset);
+    proto_tree_add_cbor_boolean(tree_assert, hf_status_assert_val, pinfo, tvb, chunk);
+    *offset += chunk->data_length;
+    bp_cbor_chunk_delete(chunk);
+
+    if (head->head_value > 1) {
+        chunk = bp_scan_cbor_chunk(tvb, *offset);
+        gint64 *dtntime = cbor_require_int64(chunk);
+        proto_tree_add_cbor_int64(tree_assert, hf_status_assert_dtntime, pinfo, tvb, chunk, dtntime);
+        *offset += chunk->data_length;
         if (dtntime) {
             const nstime_t utctime = dtn_to_utctime(*dtntime);
-            proto_item *item_utctime = proto_tree_add_time(tree, hfutctime, tvb, 0, 0, &utctime);
+            proto_item *item_utctime = proto_tree_add_time(tree_assert, hf_status_assert_utctime, tvb, chunk->start, chunk->data_length, &utctime);
             PROTO_ITEM_SET_GENERATED(item_utctime);
         }
+        bp_cbor_chunk_delete(chunk);
     }
+
+    bp_cbor_chunk_delete(head);
+    proto_item_set_len(item_assert, *offset - assert_start);
 }
 
 static int dissect_payload_admin(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, bp_dissector_data_t *context) {
-    // Read blocks directly from buffer with same addresses as #tvb
-    const guint buflen = tvb_captured_length(tvb);
-    guint8 *buf = tvb_memdup(wmem_packet_scope(), tvb, 0, buflen);
-
-    struct cbor_load_result load_result;
-    cbor_item_t *cbor_root = cbor_load(buf, buflen, &load_result);
-
-    proto_item *item_rec = proto_tree_add_item(tree, hf_admin_record, tvb, 0, load_result.read, ENC_NA);
+    proto_item *item_rec = proto_tree_add_item(tree, hf_admin_record, tvb, 0, 0, ENC_NA);
     proto_tree *tree_rec = proto_item_add_subtree(item_rec, ett_admin);
-    if (!cbor_root) {
-        expert_add_info_format(pinfo, item_rec, &ei_cbor_invalid, "Administrative record is invalid: error code %d at offset %" PRIu64, load_result.error.code, load_result.error.position);
-        return 0;
-    }
-    if (cbor_root->type != CBOR_TYPE_ARRAY) {
-        expert_add_info_format(pinfo, item_rec, &ei_cbor_wrong_type, "Administrative record has type %d", cbor_root->type);
-        return 0;
-    }
+    gint offset = 0;
 
-    const guint64 *type_code = cbor_require_uint64(cbor_array_get_safe(cbor_root, 0));
-    proto_item *item_type = proto_tree_add_cbor_uint64(tree_rec, hf_admin_record_type, pinfo, tvb, type_code);
+    bp_cbor_chunk_t *chunk = cbor_require_array_size(tvb, pinfo, item_rec, &offset, NULL, 0, 2, 2);
+    if (!chunk) {
+        proto_item_set_len(item_rec, offset);
+        return offset;
+    }
+    bp_cbor_chunk_delete(chunk);
 
+    chunk = bp_scan_cbor_chunk(tvb, offset);
+    const guint64 *type_code = cbor_require_uint64(chunk);
+    proto_item *item_type = proto_tree_add_cbor_uint64(tree_rec, hf_admin_record_type, pinfo, tvb, chunk, type_code);
+    offset += chunk->data_length;
+    bp_cbor_chunk_delete(chunk);
+
+    dissector_handle_t admin_dissect;
     if (type_code) {
-        cbor_item_t *type_data = cbor_array_get_safe(cbor_root, 1);
-        if (*type_code != 1) {
-            expert_add_info(pinfo, item_type, &ei_admin_type_unknown);
+        admin_dissect = dissector_get_uint_handle(admin_dissectors, *type_code);
+    }
+    if (!admin_dissect) {
+        offset += call_data_dissector(tvb, pinfo, tree_rec);
+    }
+    else {
+        tvbuff_t *tvb_record = tvb_new_subset_remaining(tvb, offset);
+        const gint sublen = call_dissector_with_data(admin_dissect, tvb_record, pinfo, tree_rec, context);
+        if ((sublen < 0) || ((guint)sublen < tvb_captured_length(tvb_record))) {
+            expert_add_info(pinfo, item_type, &ei_block_partial_decode);
         }
-        else {
-            if (!type_data) {
-                expert_add_info_format(pinfo, item_rec, &ei_cbor_invalid, "Status info. is missing");
-                return 0;
-            }
-            if (type_data->type != CBOR_TYPE_ARRAY) {
-                expert_add_info_format(pinfo, item_rec, &ei_cbor_wrong_type, "Status info. has type %d", type_data->type);
-                return 0;
-            }
-            size_t field_ix = 0;
-
-            cbor_item_t *status_info = cbor_array_get_safe(type_data, field_ix++);
-            proto_item *item_info = proto_tree_add_item(tree_rec, hf_status_rep_status_info, tvb, 0, load_result.read, ENC_NA);
-            proto_tree *tree_info = proto_item_add_subtree(item_info, ett_status_info);
-            {
-                cbor_item_t *rep_received = cbor_array_get_safe(status_info, 0);
-                proto_tree_add_status_assertion(tree_info, hf_status_rep_received_val, hf_status_rep_received_dtntime, hf_status_rep_received_utctime, pinfo, tvb, rep_received);
-                cbor_item_t *rep_forwarded = cbor_array_get_safe(status_info, 1);
-                proto_tree_add_status_assertion(tree_info, hf_status_rep_forwarded_val, hf_status_rep_forwarded_dtntime, hf_status_rep_forwarded_utctime, pinfo, tvb, rep_forwarded);
-                cbor_item_t *rep_delivered = cbor_array_get_safe(status_info, 2);
-                proto_tree_add_status_assertion(tree_info, hf_status_rep_delivered_val, hf_status_rep_delivered_dtntime, hf_status_rep_delivered_utctime, pinfo, tvb, rep_delivered);
-                cbor_item_t *rep_deleted = cbor_array_get_safe(status_info, 3);
-                proto_tree_add_status_assertion(tree_info, hf_status_rep_deleted_val, hf_status_rep_deleted_dtntime, hf_status_rep_deleted_utctime, pinfo, tvb, rep_deleted);
-            }
-
-            guint64 *reason_code = cbor_require_uint64(cbor_array_get_safe(type_data, field_ix++));
-            proto_tree_add_cbor_uint64(tree_rec, hf_status_rep_reason_code, pinfo, tvb, reason_code);
-
-            tvbuff_t *src_node_id = cbor_require_string(tvb, cbor_array_get(type_data, field_ix++));
-            proto_tree_add_cbor_textstring(tree_rec, hf_status_rep_source_id, pinfo, src_node_id);
-
-            // Complex type
-            proto_item *item_ts = proto_tree_add_item(tree_rec, hf_status_rep_subj_ts, tvb, 0, 0, ENC_NA);
-            proto_tree *tree_ts = proto_item_add_subtree(item_ts, ett_status_subj_ts);
-            cbor_item_t *subj_create_ts = cbor_array_get_safe(type_data, field_ix++);
-            proto_tree_add_cbor_timestamp(tree_ts, pinfo, tvb, subj_create_ts, NULL);
-
-            guint64 *subj_frag_offset = cbor_require_uint64(cbor_array_get_safe(type_data, field_ix++));
-            if (subj_frag_offset) {
-                proto_tree_add_cbor_uint64(tree_rec, hf_status_rep_subj_frag_offset, pinfo, tvb, subj_frag_offset);
-            }
-
-            guint64 *subj_payload_length = cbor_require_uint64(cbor_array_get_safe(type_data, field_ix++));
-            if (subj_payload_length) {
-                proto_tree_add_cbor_uint64(tree_rec, hf_status_rep_subj_payload_len, pinfo, tvb, subj_payload_length);
-            }
-        }
+        offset += sublen;
     }
 
-    cbor_decref(&cbor_root);
-    wmem_free(wmem_packet_scope(), buf);
-    return load_result.read;
-
-    (void)item_type;
-    (void)context;
-    (void)pinfo;
+    proto_item_set_len(item_rec, offset);
+    return offset;
 }
+
+static int dissect_status_report(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data) {
+    bp_dissector_data_t *context = (bp_dissector_data_t *)data;
+    if (!context) {
+        return -1;
+    }
+    const gint status_start = 0;
+    gint offset = 0;
+
+    // Status Information array head
+    proto_item *item_status = proto_tree_add_item(tree, hf_status_rep, tvb, status_start, 0, ENC_NA);
+    proto_tree *tree_status = proto_item_add_subtree(item_status, ett_status_rep);
+    gint status_field_ix = 0;
+
+    bp_cbor_chunk_t *chunk_status = cbor_require_array_size(tvb, pinfo, item_status, &offset, NULL, 0, 4, 6);
+    if (!chunk_status) {
+        proto_item_set_len(item_status, offset - status_start);
+        return offset;
+    }
+
+    bp_cbor_chunk_t *chunk;
+    {
+        const gint info_start = offset;
+        proto_item *item_info = proto_tree_add_item(tree_status, hf_status_rep_status_info, tvb, info_start, 0, ENC_NA);
+        proto_tree *tree_info = proto_item_add_subtree(item_info, ett_status_info);
+        chunk = cbor_require_array_size(tvb, pinfo, item_info, &offset, NULL, 0, 4, 4);
+        if (!chunk) {
+            proto_item_set_len(item_status, offset - status_start);
+            proto_item_set_len(item_info, offset - info_start);
+            return offset;
+        }
+        proto_tree_add_status_assertion(tree_info, hf_status_rep_received, pinfo, tvb, &offset);
+        proto_tree_add_status_assertion(tree_info, hf_status_rep_forwarded, pinfo, tvb, &offset);
+        proto_tree_add_status_assertion(tree_info, hf_status_rep_delivered, pinfo, tvb, &offset);
+        proto_tree_add_status_assertion(tree_info, hf_status_rep_deleted, pinfo, tvb, &offset);
+
+        bp_cbor_chunk_delete(chunk);
+        status_field_ix++;
+
+        proto_item_set_len(item_info, offset - info_start);
+    }
+
+    chunk = bp_scan_cbor_chunk(tvb, offset);
+    guint64 *reason_code = cbor_require_uint64(chunk);
+    proto_tree_add_cbor_uint64(tree_status, hf_status_rep_reason_code, pinfo, tvb, chunk, reason_code);
+    offset += chunk->data_length;
+    bp_cbor_chunk_delete(chunk);
+    status_field_ix++;
+
+    chunk = bp_scan_cbor_chunk(tvb, offset);
+    proto_tree_add_cbor_string(tree_status, hf_status_rep_source_id, pinfo, tvb, chunk);
+    offset += chunk->data_length;
+    bp_cbor_chunk_delete(chunk);
+    status_field_ix++;
+
+    // Complex type
+    proto_tree_add_cbor_timestamp(tree_status, hf_status_rep_subj_ts, pinfo, tvb, &offset, NULL);
+    status_field_ix++;
+
+    if (chunk_status->head_value > status_field_ix) {
+        chunk = bp_scan_cbor_chunk(tvb, offset);
+        guint64 *subj_frag_offset = cbor_require_uint64(chunk);
+        proto_tree_add_cbor_uint64(tree_status, hf_status_rep_subj_frag_offset, pinfo, tvb, chunk, subj_frag_offset);
+        offset += chunk->data_length;
+        bp_cbor_chunk_delete(chunk);
+        status_field_ix++;
+    }
+
+    if (chunk_status->head_value > status_field_ix) {
+        chunk = bp_scan_cbor_chunk(tvb, offset);
+        guint64 *subj_payload_length = cbor_require_uint64(chunk);
+        proto_tree_add_cbor_uint64(tree_status, hf_status_rep_subj_payload_len, pinfo, tvb, chunk, subj_payload_length);
+        offset += chunk->data_length;
+        bp_cbor_chunk_delete(chunk);
+        status_field_ix++;
+    }
+
+    proto_item_set_len(item_status, offset - status_start);
+    bp_cbor_chunk_delete(chunk_status);
+    return offset;
+}
+
 
 /** Dissector for Bundle Payload block.
  */
@@ -971,86 +1316,90 @@ static int dissect_block_payload(tvbuff_t *tvb, packet_info *pinfo, proto_tree *
     }
 
     // Visible in new source
-    add_new_data_source(pinfo, tvb, "Bundle Payload");
+    tvbuff_t *tvb_payload = tvb_new_subset_remaining(tvb, 0);
+    add_new_data_source(pinfo, tvb_payload, "Bundle Payload");
     proto_item_prepend_text(proto_tree_get_parent(tree), "Payload ");
+    col_append_str_uint(pinfo->cinfo, COL_INFO, "Payload-Size", tvb_captured_length(tvb_payload), NULL);
 
-    // Payload is known to be administrative
+    // Payload is known to be administrative, independent of EID
     if (context->block->flags & BP_BUNDLE_PAYLOAD_ADMIN) {
-        return dissect_payload_admin(tvb, pinfo, tree_top, context);
+        col_append_fstr(pinfo->cinfo, COL_PROTOCOL, " Admin.");
+        return dissect_payload_admin(tvb_payload, pinfo, tree_top, context);
     }
 
     tvbuff_t *const eidbuf = context->bundle->primary->dst_eid;
     dissector_handle_t payload_dissect = NULL;
     if (eidbuf) {
         gchar *eidstr = (gchar *)tvb_get_string_enc(wmem_packet_scope(), eidbuf, 0, tvb_captured_length(eidbuf), ENC_UTF_8);
-        payload_dissect = dissector_get_string_handle(payload_dissector, eidstr);
+        payload_dissect = dissector_get_string_handle(payload_dissectors, eidstr);
         wmem_free(wmem_packet_scope(), eidstr);
     }
     if (!payload_dissect) {
-        return call_data_dissector(tvb, pinfo, tree_top);
+        return call_data_dissector(tvb_payload, pinfo, tree_top);
     }
     else {
-        return call_dissector_with_data(payload_dissect, tvb, pinfo, tree_top, &data);
+        return call_dissector_with_data(payload_dissect, tvb_payload, pinfo, tree_top, &data);
     }
 }
 
 /** Dissector for Previous Node block.
  */
 static int dissect_block_prev_node(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_) {
-    const guint buflen = tvb_captured_length(tvb);
-    //proto_item *item_block = proto_tree_get_parent(tree);
+    proto_item *item_data = proto_tree_add_item(tree, hf_canonical_data, tvb, 0, tvb_captured_length(tvb), ENC_NA);
+    proto_tree *tree_data = proto_item_add_subtree(item_data, ett_canonical_data);
+    gint offset = 0;
 
-    /* Load the whole bundle at-once and extract parts below. */
-    void *buf = tvb_memdup(wmem_packet_scope(), tvb, 0, buflen);
-    struct cbor_load_result load_result;
-    cbor_item_t *cbor_root = cbor_load(buf, buflen, &load_result);
+    bp_cbor_chunk_t *chunk = bp_scan_cbor_chunk(tvb, offset);
+    //tvbuff_t *tvb_eid = cbor_require_string(tvb, chunk);
+    proto_tree_add_cbor_string(tree_data, hf_previous_node_eid, pinfo, tvb, chunk);
+    offset += chunk->data_length;
+    bp_cbor_chunk_delete(chunk);
 
-    tvbuff_t *tvb_eid = cbor_require_string(tvb, cbor_root);
-    proto_tree_add_cbor_textstring(tree, hf_previous_node_eid, pinfo, tvb_eid);
-
-    cbor_decref(&cbor_root);
-    wmem_free(wmem_packet_scope(), buf);
-    return load_result.read;
+    return offset;
 }
 
-/** Dissector for Previous Node block.
+/** Dissector for Bundle Age block.
  */
 static int dissect_block_bundle_age(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_) {
-    const guint buflen = tvb_captured_length(tvb);
-    //proto_item *item_block = proto_tree_get_parent(tree);
+    proto_item *item_data = proto_tree_add_item(tree, hf_canonical_data, tvb, 0, tvb_captured_length(tvb), ENC_NA);
+    proto_tree *tree_data = proto_item_add_subtree(item_data, ett_canonical_data);
+    gint offset = 0;
 
-    /* Load the whole bundle at-once and extract parts below. */
-    void *buf = tvb_memdup(wmem_packet_scope(), tvb, 0, buflen);
-    struct cbor_load_result load_result;
-    cbor_item_t *cbor_root = cbor_load(buf, buflen, &load_result);
+    bp_cbor_chunk_t *chunk = bp_scan_cbor_chunk(tvb, offset);
+    const guint64 *age = cbor_require_uint64(chunk);
+    proto_tree_add_cbor_uint64(tree_data, hf_bundle_age_time, pinfo, tvb, chunk, age);
+    offset += chunk->data_length;
+    bp_cbor_chunk_delete(chunk);
 
-    const guint64 *age = cbor_require_uint64(cbor_root);
-    proto_tree_add_cbor_uint64(tree, hf_bundle_age_time, pinfo, tvb, age);
-
-    cbor_decref(&cbor_root);
-    wmem_free(wmem_packet_scope(), buf);
-    return load_result.read;
+    return offset;
 }
 
 /** Dissector for Hop Count block.
  */
 static int dissect_block_hop_count(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_) {
-    const guint buflen = tvb_captured_length(tvb);
+    proto_item *item_data = proto_tree_add_item(tree, hf_canonical_data, tvb, 0, tvb_captured_length(tvb), ENC_NA);
+    proto_tree *tree_data = proto_item_add_subtree(item_data, ett_canonical_data);
+    gint offset = 0;
 
-    /* Load the whole bundle at-once and extract parts below. */
-    void *buf = tvb_memdup(wmem_packet_scope(), tvb, 0, buflen);
-    struct cbor_load_result load_result;
-    cbor_item_t *cbor_root = cbor_load(buf, buflen, &load_result);
+    bp_cbor_chunk_t *chunk = cbor_require_array_size(tvb, pinfo, item_data, &offset, NULL, 0, 2, 2);
+    if (!chunk) {
+        return offset;
+    }
+    bp_cbor_chunk_delete(chunk);
 
-    const guint64 *limit = cbor_require_uint64(cbor_array_get_safe(cbor_root, 0));
-    proto_tree_add_cbor_uint64(tree, hf_hop_count_limit, pinfo, tvb, limit);
+    chunk = bp_scan_cbor_chunk(tvb, offset);
+    const guint64 *limit = cbor_require_uint64(chunk);
+    proto_tree_add_cbor_uint64(tree_data, hf_hop_count_limit, pinfo, tvb, chunk, limit);
+    offset += chunk->data_length;
+    bp_cbor_chunk_delete(chunk);
 
-    const guint64 *current = cbor_require_uint64(cbor_array_get_safe(cbor_root, 1));
-    proto_tree_add_cbor_uint64(tree, hf_hop_count_current, pinfo, tvb, current);
+    chunk = bp_scan_cbor_chunk(tvb, offset);
+    const guint64 *current = cbor_require_uint64(chunk);
+    proto_tree_add_cbor_uint64(tree_data, hf_hop_count_current, pinfo, tvb, chunk, current);
+    offset += chunk->data_length;
+    bp_cbor_chunk_delete(chunk);
 
-    cbor_decref(&cbor_root);
-    wmem_free(wmem_packet_scope(), buf);
-    return load_result.read;
+    return offset;
 }
 
 static void proto_register_bp(void) {
@@ -1064,10 +1413,11 @@ static void proto_register_bp(void) {
     proto_register_subtree_array(ett, array_length(ett));
     expert_module_t *expert = expert_register_protocol(proto_bp);
     expert_register_field_array(expert, expertitems, array_length(expertitems));
-    handle_bp = register_dissector("bpv7", dissect_bp, proto_bp);
 
-    block_dissector = register_dissector_table("bpv7.block_type", "BPv7 Block Extension", proto_bp, FT_UINT32, BASE_HEX);
-    payload_dissector = register_dissector_table("bpv7.payload", "BPv7 Payload", proto_bp, FT_STRING, BASE_NONE);
+    register_dissector("bpv7", dissect_bp, proto_bp);
+    block_dissectors = register_dissector_table("bpv7.block_type", "BPv7 Block", proto_bp, FT_UINT32, BASE_HEX);
+    payload_dissectors = register_dissector_table("bpv7.payload_eid", "BPv7 Payload (by EID)", proto_bp, FT_STRING, BASE_NONE);
+    admin_dissectors = register_dissector_table("bpv7.admin_record_type", "BPv7 Administrative Record", proto_bp, FT_UINT32, BASE_HEX);
 
     module_t *module_bp = prefs_register_protocol(proto_bp, reinit_bp);
     prefs_register_bool_preference(
@@ -1098,6 +1448,10 @@ static void proto_reg_handoff_bp(void) {
     {
         dissector_handle_t hdl = create_dissector_handle(dissect_block_hop_count, proto_bp);
         dissector_add_uint("bpv7.block_type", BP_BLOCKTYPE_HOP_COUNT, hdl);
+    }
+    {
+        dissector_handle_t hdl = create_dissector_handle(dissect_status_report, proto_bp);
+        dissector_add_uint("bpv7.admin_record_type", 1, hdl);
     }
 
     reinit_bp();

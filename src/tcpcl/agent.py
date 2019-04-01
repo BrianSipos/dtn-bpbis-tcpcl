@@ -13,21 +13,22 @@ from io import BytesIO
 from gi.repository import GLib as glib
 import dbus.bus
 import dbus.service
-from dbus.mainloop.glib import DBusGMainLoop
 from tcpcl import formats, contact, messages, extend
 
 
 class Config(object):
     ''' Agent configuration.
 
+    .. py:attribute:: bus_conn
+        The D-Bus connection object to register handlers on.
+    .. py:attribute:: stop_on_close
+        If True, the agent will stop when all of its contacts are closed.
     .. py:attribute:: eid
         The EID of this node.
-    .. py:attribute:: bus_conn
-        An optional D-Bus connection object to register handlers on.
     '''
 
     def __init__(self):
-        self.bus_conn = None
+        self.bus_conn = dbus.bus.BusConnection(dbus.bus.BUS_SESSION)
         self.stop_on_close = False
         self.ssl_ctx = None
         self.tls_require = None
@@ -392,8 +393,10 @@ class Messenger(Connection):
         self._sessinit_this = None
         #: Set after SESS_INIT negotiation
         self._in_sess = False
+        self._in_sess_func = None
         #: Set after SESS_TERM sent
         self._in_term = False
+        self._in_term_func = None
 
         self._tls_attempt = False
         # Assume socket is ready
@@ -425,6 +428,20 @@ class Messenger(Connection):
         :return: True if there are no data being processed RX or TX side.
         '''
         return len(self.__rx_buf) == 0 and len(self.__tx_buf) == 0
+
+    def set_on_session_start(self, func):
+        ''' Set a callback to be run when this session is started.
+
+        :param func: The callback, which takes no arguments.
+        '''
+        self._in_sess_func = func
+
+    def set_on_session_terminate(self, func):
+        ''' Set a callback to be run when this session is terminated.
+
+        :param func: The callback, which takes no arguments.
+        '''
+        self._in_term_func = func
 
     def recv_buffer_used(self):
         ''' Get the number of octets waiting in the receive buffer.
@@ -598,6 +615,8 @@ class Messenger(Connection):
                     self._sessinit_peer = pkt.payload
                     self.merge_session_params()
                     self._in_sess = True
+                    if self._in_sess_func:
+                        self._in_sess_func()
 
                 elif msgcls == messages.SessionTerm:
                     # Send a reply (if not the initiator)
@@ -612,13 +631,18 @@ class Messenger(Connection):
 
                 # Delegated handlers
                 elif msgcls == messages.TransferSegment:
-                    self.recv_xfer_data(transfer_id=pkt.payload.transfer_id,
-                                        data=pkt.payload.getfieldval('data'),
-                                        flags=pkt.getfieldval('flags'),
-                                        ext_items=pkt.ext_items)
+                    self.recv_xfer_data(
+                        transfer_id=pkt.payload.transfer_id,
+                        flags=pkt.getfieldval('flags'),
+                        data=pkt.payload.getfieldval('data'),
+                        ext_items=pkt.ext_items
+                    )
                 elif msgcls == messages.TransferAck:
                     self.recv_xfer_ack(
-                        pkt.payload.transfer_id, pkt.payload.length)
+                        transfer_id=pkt.payload.transfer_id,
+                        flags=pkt.getfieldval('flags'),
+                        length=pkt.payload.length
+                    )
                 elif msgcls == messages.TransferRefuse:
                     self.recv_xfer_refuse(pkt.payload.transfer_id, pkt.flags)
 
@@ -778,6 +802,9 @@ class Messenger(Connection):
             raise RuntimeError('Already in terminating state')
 
         self._in_term = True
+        if self._in_term_func:
+            self._in_term_func()
+        
         flags = 0
         if is_reply:
             flags |= messages.SessionTerm.Flag.REPLY
@@ -813,11 +840,13 @@ class Messenger(Connection):
         if not self._in_sess:
             raise RejectError(messages.RejectMsg.Reason.UNEXPECTED)
 
-    def recv_xfer_data(self, transfer_id, data, flags, ext_items):
+    def recv_xfer_data(self, transfer_id, flags, data, ext_items):
         ''' Handle reception of XFER_DATA message.
 
         :param transfer_id: The bundle ID number.
         :type transfer_id: int
+        :param flags: The transfer flags.
+        :type flags: int
         :param data: The segment data.
         :type data: str
         :param ext_items: Extension items which may be in the start segment.
@@ -827,15 +856,17 @@ class Messenger(Connection):
         if not self._in_sess:
             raise RejectError(messages.RejectMsg.Reason.UNEXPECTED)
 
-    def recv_xfer_ack(self, transfer_id, length):
+    def recv_xfer_ack(self, transfer_id, flags, length):
         ''' Handle reception of XFER_ACK message.
 
         :param transfer_id: The bundle ID number.
         :type transfer_id: int
+        :param flags: The transfer flags.
+        :type flags: int
         :param length: The acknowledged length.
         :type length: int
         '''
-        self.__logger.debug('XFER_ACK %d %s', transfer_id, length)
+        self.__logger.debug('XFER_ACK %d %s %s', transfer_id, flags, length)
         if not self._in_sess:
             raise RejectError(messages.RejectMsg.Reason.UNEXPECTED)
 
@@ -851,7 +882,7 @@ class Messenger(Connection):
         if not self._in_sess:
             raise RejectError(messages.RejectMsg.Reason.UNEXPECTED)
 
-    def send_xfer_data(self, transfer_id, data, flg, ext=[]):
+    def send_xfer_data(self, transfer_id, data, flg, ext=None):
         ''' Send a XFER_DATA message.
 
         :param transfer_id: The bundle ID number.
@@ -861,7 +892,7 @@ class Messenger(Connection):
         :param flg: Data flags for :py:class:`TransferSegment`
         :type flg: int
         :param ext: Extension items for the starting segment only.
-        :type ext: list
+        :type ext: list or None
         '''
         if not self._in_sess:
             raise RuntimeError(
@@ -869,6 +900,8 @@ class Messenger(Connection):
         if ext and not flg & messages.TransferSegment.Flag.START:
             raise RuntimeError(
                 'Cannot send extension items outside of START message')
+        if ext is None:
+            ext = []
 
         self.send_message(messages.MessageHead() /
                           messages.TransferSegment(transfer_id=transfer_id,
@@ -914,11 +947,16 @@ class Messenger(Connection):
 
 class BundleItem(object):
     ''' State for RX and TX full bundles.
-    '''
 
+    .. py:attribute:: transfer_id The unique transfer ID number.
+    .. py:attribute:: total_length The length from the file (sender) or
+        known from the Transfer Length extension (receiver)
+    .. py:attribute:: ack_length The total acknowledged length.
+    '''
     def __init__(self):
         self.transfer_id = None
         self.total_length = None
+        self.ack_length = 0
         self.file = None
 
 
@@ -995,12 +1033,16 @@ class ContactHandler(Messenger, dbus.service.Object):
         # No further processing
         while self._tx_bundles:
             item = self._tx_bundles.pop(0)
+            self.__logger.warning('Terminating and ignoring transfer %d', item.transfer_id)
             self.send_bundle_finished(
-                str(item.transfer_id), item.total_length, 'session terminating')
+                str(item.transfer_id),
+                item.total_length or 0,
+                'session terminating'
+            )
         self._check_sess_term()
 
-    def recv_xfer_data(self, transfer_id, data, flags, ext_items):
-        Messenger.recv_xfer_data(self, transfer_id, data, flags, ext_items)
+    def recv_xfer_data(self, transfer_id, flags, data, ext_items):
+        Messenger.recv_xfer_data(self, transfer_id, flags, data, ext_items)
 
         if flags & messages.TransferSegment.Flag.START:
             self._rx_setup(transfer_id, None)
@@ -1032,8 +1074,8 @@ class ContactHandler(Messenger, dbus.service.Object):
                 self.recv_bundle_intermediate(
                     str(self._rx_tmp.transfer_id), recv_length)
 
-    def recv_xfer_ack(self, transfer_id, length):
-        Messenger.recv_xfer_ack(self, transfer_id, length)
+    def recv_xfer_ack(self, transfer_id, flags, length):
+        Messenger.recv_xfer_ack(self, transfer_id, flags, length)
 
         if self._config.modulate_target_ack_time is not None:
             delta_b = length - self._segment_last_ack_len
@@ -1046,13 +1088,14 @@ class ContactHandler(Messenger, dbus.service.Object):
             self._modulate_tx_seg_size(delta_b, delta_t)
 
         item = self._tx_map[transfer_id]
-        if length == item.file.tell():
+        item.ack_length = length
+        if flags & messages.TransferSegment.Flag.END:
             if not self._do_send_ack_final:
                 raise RejectError(messages.RejectMsg.Reason.UNEXPECTED)
 
             self.send_bundle_finished(str(item.transfer_id), length, 'success')
             self._tx_map.pop(transfer_id)
-
+            self._tx_teardown()
             self._check_sess_term()
         else:
             if not self._do_send_ack_inter:
@@ -1081,6 +1124,7 @@ class ContactHandler(Messenger, dbus.service.Object):
             Messenger.is_sess_idle(self)
             and self._rx_tmp is None
             and self._tx_tmp is None
+            and not self._tx_bundles
         )
 
     @dbus.service.method(DBUS_IFACE, in_signature='y', out_signature='')
@@ -1097,6 +1141,18 @@ class ContactHandler(Messenger, dbus.service.Object):
             self.remove_from_connection()
 
         Messenger.close(self)
+
+    def send_bundle_fileobj(self, file):
+        ''' Send bundle from a file-like object.
+
+        :param file: The file to send.
+        :type file: file-like
+        :return: The new transfer ID.
+        :rtype: int
+        '''
+        item = BundleItem()
+        item.file = file
+        return self._add_queue_item(item)
 
     @dbus.service.method(DBUS_IFACE, in_signature='ay', out_signature='s')
     def send_bundle_data(self, data):
@@ -1190,6 +1246,7 @@ class ContactHandler(Messenger, dbus.service.Object):
         ''' Clear the TX bundle state. '''
         self._tx_tmp = None
         self._tx_length = None
+        self._process_queue_trigger();
 
     def _process_queue_trigger(self):
         if self._process_queue_pend is None:
@@ -1197,6 +1254,9 @@ class ContactHandler(Messenger, dbus.service.Object):
 
     def _process_queue(self):
         ''' Perform the next TX segment if possible.
+
+        :return: True to continue processing at a later time.
+        :rtype: bool
         '''
         self._process_queue_pend = None
         self.__logger.debug('Processing queue of %d items',
@@ -1204,9 +1264,12 @@ class ContactHandler(Messenger, dbus.service.Object):
 
         # work from the head of the list
         if self._tx_tmp is None:
+            if not self._in_sess:
+                # waiting for session
+                return True
             if not self._tx_bundles:
                 # nothing to do
-                return
+                return False
 
             self._tx_tmp = self._tx_bundles.pop(0)
 
@@ -1216,7 +1279,13 @@ class ContactHandler(Messenger, dbus.service.Object):
             self._tx_length = 0
 
             self.send_bundle_started(
-                str(self._tx_tmp.transfer_id), self._tx_tmp.total_length)
+                str(self._tx_tmp.transfer_id),
+                self._tx_tmp.total_length
+            )
+
+        if self._tx_length == self._tx_tmp.total_length:
+            # Nothing more to send, just waiting on ACK
+            return False
 
         # send next segment
         flg = 0
@@ -1241,19 +1310,24 @@ class ContactHandler(Messenger, dbus.service.Object):
                 self.send_bundle_finished(
                     str(self._tx_tmp.transfer_id), self._tx_tmp.file.tell(), 'unacknowledged')
                 self._tx_map.pop(self._tx_tmp.transfer_id)
+            # done sending segments but no teardown until final XFER_ACK
 
-            # done sending segments regardless
-            self._tx_teardown()
-
+        return False
 
 class Agent(dbus.service.Object):
-    ''' Overall agent behavior. '''
+    ''' Overall agent behavior.
+
+    :param config: The agent configuration object.
+    :type config: :py:cls:`Config`
+    :param bus_kwargs: Arguments to :py:cls:`dbus.service.Object` constructor.
+        If not provided the default dbus configuration is used.
+    :type bus_kwargs: dict or None
+    '''
 
     DBUS_IFACE = 'org.ietf.dtn.tcpcl.Agent'
 
-    def __init__(self, config, bus_kwargs):
+    def __init__(self, config, bus_kwargs=None):
         self.__logger = logging.getLogger(self.__class__.__name__)
-        dbus.service.Object.__init__(self, **bus_kwargs)
         self._config = config
         self._on_stop = None
         #: Set when shutdown() is called and waiting on sessions
@@ -1262,6 +1336,14 @@ class Agent(dbus.service.Object):
         self._bindsocks = {}
         self._obj_id = 0
         self._handlers = []
+        self._path_to_handler = {}
+
+        if bus_kwargs is None:
+            bus_kwargs = dict(
+                conn=config.bus_conn,
+                object_path='/org/ietf/dtn/tcpcl/Agent'
+            )
+        dbus.service.Object.__init__(self, **bus_kwargs)
 
     def __del__(self):
         self.stop()
@@ -1282,6 +1364,7 @@ class Agent(dbus.service.Object):
         )
 
         self._handlers.append(hdl)
+        self._path_to_handler[path] = hdl
         hdl.set_on_close(lambda: self._unbind_handler(hdl))
 
         self.connection_opened(path)
@@ -1290,9 +1373,10 @@ class Agent(dbus.service.Object):
     def _unbind_handler(self, hdl):
         path = hdl.object_path
         self.connection_closed(path)
+        self._path_to_handler.pop(path)
         self._handlers.remove(hdl)
 
-        if len(self._handlers) == 0 and self._config.stop_on_close:
+        if not self._handlers and self._config.stop_on_close:
             self.stop()
 
     def set_on_stop(self, func):
@@ -1394,10 +1478,13 @@ class Agent(dbus.service.Object):
 
         return True
 
-    @dbus.service.method(DBUS_IFACE, in_signature='si')
+    @dbus.service.method(DBUS_IFACE, in_signature='si', out_signature='o')
     def connect(self, address, port):
         ''' Initiate an outgoing connection and defer handling state to
         `glib` event loop.
+
+        :return: The new contact object path.
+        :rtype: str
         '''
         self.__logger.info('Connecting')
         sock = socket.socket(socket.AF_INET)
@@ -1407,6 +1494,25 @@ class Agent(dbus.service.Object):
             config=self._config, sock=sock, toaddr=(address, port))
         hdl.start()
 
+        return hdl.object_path
+
+    def handler_for_path(self, path):
+        ''' Look up a contact by its object path.
+        '''
+        return self._path_to_handler[path]
+
+    def exec_loop(self):
+        ''' Run this agent in an event loop.
+        The on_stop callback is replaced to quit the event loop.
+        '''
+        eloop = glib.MainLoop()
+        self.set_on_stop(lambda: eloop.quit())
+        try:
+            eloop.run()
+        except KeyboardInterrupt:
+            if not self.shutdown():
+                # wait for graceful shutdown
+                eloop.run()
 
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -1418,6 +1524,8 @@ def str2bool(v):
 
 
 def main(*argv):
+    from dbus.mainloop.glib import DBusGMainLoop
+
     parser = argparse.ArgumentParser(argv[0])
     parser.add_argument('--log-level', dest='log_level', default='info',
                         metavar='LEVEL',
@@ -1473,7 +1581,6 @@ def main(*argv):
     config = Config()
 
     config.stop_on_close = args.stop_on_close
-    config.bus_conn = dbus.bus.BusConnection(dbus.bus.BUS_SESSION)
     if args.bus_service:
         bus_serv = dbus.service.BusName(
             bus=config.bus_conn, name=args.bus_service, do_not_queue=True)
@@ -1501,21 +1608,13 @@ def main(*argv):
     else:
         config.idle_time = 2 * config.keepalive_time
 
-    agent = Agent(config, bus_kwargs=dict(conn=config.bus_conn,
-                                          object_path='/org/ietf/dtn/tcpcl/Agent'))
+    agent = Agent(config)
     if args.action == 'listen':
         agent.listen(args.address, args.port)
     elif args.action == 'connect':
         agent.connect(args.address, args.port)
 
-    eloop = glib.MainLoop()
-    agent.set_on_stop(lambda: eloop.quit())
-    try:
-        eloop.run()
-    except KeyboardInterrupt:
-        if not agent.shutdown():
-            # wait for graceful shutdown
-            eloop.run()
+    agent.exec_loop()
 
 if __name__ == '__main__':
     sys.exit(main(*sys.argv))

@@ -5,7 +5,9 @@
 #include <ws_symbol_export.h>
 #include <epan/tvbuff.h>
 #include <epan/proto.h>
+#include <epan/expert.h>
 #include <glib.h>
+#include <cbor.h>
 
 /** Bundle CRC types.
  * Section 4.1.1.
@@ -72,6 +74,64 @@ typedef enum {
     /// Hop Count
     BP_BLOCKTYPE_HOP_COUNT = 9,
 } BlockTypeCode;
+
+/// The basic header structure of CBOR encoding
+typedef struct {
+    /// The start offset of this header
+    gint start;
+    /// The length of just this header
+    gint length;
+    /// The expert info object (if error)
+    expert_field *error;
+
+    /// Major type of this item (cbor_type)
+    guint8 type_major;
+    /// Minor type of this item
+    guint8 type_minor;
+    /// Either the encoded value or zero (with one-bit truncation possible)
+    gint64 rawvalue;
+} bp_cbor_head_t;
+
+bp_cbor_head_t * bp_scan_cbor_head(tvbuff_t *tvb, gint start);
+
+/** Function to match the GDestroyNotify signature.
+ */
+void bp_cbor_head_delete(gpointer ptr);
+
+/// The basic header structure of CBOR encoding
+typedef struct {
+    /// The start offset of this chunk
+    gint start;
+    /// The length of just this chunk
+    gint head_length;
+    /// The length of this chunk and its immediate definite data (i.e. strings)
+    gint data_length;
+    /// Additional blocks in order (type expert_field*)
+    GSequence *errors;
+    /// Additional blocks in order (type gint64)
+    GSequence *tags;
+
+    /// Major type of this block
+    cbor_type type_major;
+    /// Minor type of this item
+    guint8 type_minor;
+    /// The header-encoded value
+    gint64 head_value;
+} bp_cbor_chunk_t;
+
+/** Scan for a tagged chunk of headers.
+ *
+ * @param tvb The TVB to read from.
+ * @param start The offset with in @c tvb.
+ * @return The chunk of data found, including any errors.
+ */
+bp_cbor_chunk_t * bp_scan_cbor_chunk(tvbuff_t *tvb, gint start);
+
+void bp_cbor_chunk_mark_errors(packet_info *pinfo, proto_item *item, const bp_cbor_chunk_t *chunk);
+
+/** Function to match the GDestroyNotify signature.
+ */
+void bp_cbor_chunk_delete(gpointer ptr);
 
 /// Creation Timestamp used to correlate bundles
 typedef struct {
