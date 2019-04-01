@@ -35,7 +35,7 @@ class TlvHead(packet.Packet):
         fields.FlagsField('flags', default=0, size=8,
                           names=[item.name for item in Flag]),
         formats.UInt16Field('type', default=None),
-        formats.UInt32PayloadLenField('length', default=None),
+        formats.UInt16PayloadLenField('length', default=None),
     ]
 
     def post_dissection(self, pkt):

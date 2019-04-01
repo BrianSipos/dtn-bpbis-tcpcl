@@ -1175,23 +1175,25 @@ SESS_TERM Exchange
         </t>
         <figure anchor="fig-msg-SESS_INIT-fields" title="SESS_INIT Format">
           <artwork align="center" xml:space="preserve">
-+-------------------------------+
-|        Message Header         |
-+-------------------------------+
-|    Keepalive Interval (U16)   |
-+-------------------------------+
-|       Segment MRU (U64)       |
-+-------------------------------+
-|      Transfer MRU (U64)       |
-+-------------------------------+
-|        EID Length (U16)       |
-+-------------------------------+
-|      EID Data (variable)      |
-+-------------------------------+
-| Session Extension Length (U32)|
-+-------------------------------+
-| Session Extension Items (var.)|
-+-------------------------------+
++-----------------------------+
+|       Message Header        |
++-----------------------------+
+|   Keepalive Interval (U16)  |
++-----------------------------+
+|       Segment MRU (U64)     |
++-----------------------------+
+|      Transfer MRU (U64)     |
++-----------------------------+
+|        EID Length (U16)     |
++-----------------------------+
+|      EID Data (variable)    |
++-----------------------------+
+|      Session Extension      |
+|      Items Length (U32)     |
++-----------------------------+
+|      Session Extension      |
+|         Items (var.)        |
++-----------------------------+
 </artwork>
         </figure>
         <t>
@@ -1334,7 +1336,7 @@ SESS_TERM Exchange
               (see <xref target="sec-iana-header-extension-type" />).
             </t>
             <t hangText="Item Length:">
-              A 32-bit unsigned integer field containing the number of Item Value octets
+              A 16-bit unsigned integer field containing the number of Item Value octets
               to follow.
             </t>
             <t hangText="Item Value:">
@@ -1355,9 +1357,7 @@ SESS_TERM Exchange
 +---------------+---------------+---------------+---------------+
 |  Item Flags   |           Item Type           | Item Length...|
 +---------------+---------------+---------------+---------------+
-|    length contd.                              | Item Value... |
-+---------------+---------------+---------------+---------------+
-|    value contd.                                               |
+| length contd. | Item Value...                                 |
 +---------------+---------------+---------------+---------------+
 </artwork>
         </figure>
@@ -1562,7 +1562,7 @@ SESS_TERM Exchange
 |      Transfer ID (U64)       |
 +------------------------------+
 |     Transfer Extension       |
-|         Length (U32)         |
+|      Items Length (U32)      |
 |   (only for START segment)   |
 +------------------------------+
 |     Transfer Extension       |
@@ -1841,7 +1841,7 @@ SESS_TERM Exchange
                   <xref target="sec-iana-transfer-extension-type" />).
                 </t>
                 <t hangText="Item Length:">
-                  A 32-bit unsigned integer field containing the number of Item Value octets
+                  A 16-bit unsigned integer field containing the number of Item Value octets
                   to follow.
                 </t>
                 <t hangText="Item Value:">
@@ -1863,9 +1863,7 @@ SESS_TERM Exchange
 +---------------+---------------+---------------+---------------+
 |  Item Flags   |           Item Type           | Item Length...|
 +---------------+---------------+---------------+---------------+
-|    length contd.                              | Item Value... |
-+---------------+---------------+---------------+---------------+
-|    value contd.                                               |
+| length contd. | Item Value...                                 |
 +---------------+---------------+---------------+---------------+
 </artwork>
             </figure>

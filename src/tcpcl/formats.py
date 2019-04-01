@@ -53,19 +53,11 @@ class UInt64FieldLenField(fields.FieldLenField):
         fields.FieldLenField.__init__(self, *args, **kwargs)
 
 
-class UInt32PayloadLenField(fields.LenField):
-    ''' Unsigned 32-bit value. '''
+class UInt16PayloadLenField(fields.LenField):
+    ''' Unsigned 16-bit value. '''
 
     def __init__(self, *args, **kwargs):
-        kwargs['fmt'] = '!I'
-        fields.LenField.__init__(self, *args, **kwargs)
-
-
-class UInt64PayloadLenField(fields.LenField):
-    ''' Unsigned 32-bit value. '''
-
-    def __init__(self, *args, **kwargs):
-        kwargs['fmt'] = '!Q'
+        kwargs['fmt'] = '!H'
         fields.LenField.__init__(self, *args, **kwargs)
 
 

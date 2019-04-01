@@ -26,8 +26,8 @@ static dissector_handle_t handle_tcpcl;
 static dissector_handle_t handle_ssl;
 
 /// Extension sub-dissectors
-static dissector_table_t sess_ext_dissector;
-static dissector_table_t xfer_ext_dissector;
+static dissector_table_t sess_ext_dissectors;
+static dissector_table_t xfer_ext_dissectors;
 
 /// Transfer reassembly
 static reassembly_table tcpcl_reassembly_table;
@@ -134,7 +134,7 @@ static gint ett_xferload_fragments = -1;
 static int hf_xferext_transferlen_total_len = -1;
 /// Field definitions
 static hf_register_info fields[] = {
-    {&hf_tcpcl, {"TCP Convergence Layer Version 4", "tcpclv4", FT_PROTOCOL, BASE_NONE, NULL, 0x0, NULL, HFILL}},
+    {&hf_tcpcl, {"TCP Convergence Layer Version 4", "tcpclv4", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL}},
 
     {&hf_chdr_tree, {"TCPCLv4 Contact Header", "tcpclv4.chdr", FT_PROTOCOL, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_chdr_magic, {"Protocol Magic", "tcpclv4.chdr.magic", FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL}},
@@ -356,8 +356,8 @@ static ei_register_info expertitems[] = {
     {&ei_xfer_seg_duplicate_end, { "tcpclv4.xfer_seg_duplicate_end", PI_SEQUENCE, PI_ERROR, "Non-last XFER_SEGMENT has END flag", EXPFILL}},
     {&ei_xfer_seg_no_relation, { "tcpclv4.xfer_seg_no_relation", PI_SEQUENCE, PI_NOTE, "XFER_SEGMENT has no related XFER_ACK", EXPFILL}},
     {&ei_xfer_seg_large_xferid, { "tcpclv4.xfer_seg_large_xferid", PI_REASSEMBLE, PI_NOTE, "XFER_SEGMENT has a transfer ID larger than Wireshark can handle", EXPFILL}},
-    {&ei_xfer_seg_over_total_len, { "tcpclv4.xfer_seg_over_total_len", PI_SEQUENCE, PI_ERROR, "XFER_SEGMENT has accumulated length beyond the Transfer Total Length extension", EXPFILL}},
-    {&ei_xfer_seg_mismatch_total_len, { "tcpclv4.xfer_seg_over_total_len", PI_SEQUENCE, PI_ERROR, "Transfer has total length different than the Transfer Total Length extension", EXPFILL}},
+    {&ei_xfer_seg_over_total_len, { "tcpclv4.xfer_seg_over_total_len", PI_SEQUENCE, PI_ERROR, "XFER_SEGMENT has accumulated length beyond the Transfer Length extension", EXPFILL}},
+    {&ei_xfer_seg_mismatch_total_len, { "tcpclv4.xfer_seg_over_total_len", PI_SEQUENCE, PI_ERROR, "Transfer has total length different than the Transfer Length extension", EXPFILL}},
     {&ei_xfer_ack_mismatch_flags, { "tcpclv4.xfer_ack_mismatch_flags", PI_SEQUENCE, PI_ERROR, "XFER_ACK does not have flags matching XFER_SEGMENT", EXPFILL}},
     {&ei_xfer_ack_no_relation, { "tcpclv4.xfer_ack_no_relation", PI_SEQUENCE, PI_NOTE, "XFER_ACK has no related XFER_SEGMENT", EXPFILL}},
     {&ei_xfer_refuse_no_transfer, { "tcpclv4.xfer_refuse_no_transfer", PI_SEQUENCE, PI_NOTE, "XFER_REFUSE has no related XFER_SEGMENT(s)", EXPFILL}},
@@ -545,7 +545,7 @@ typedef struct {
     /// This container owns the object allocations.
     GSequence *ack_list;
 
-    /// Optional Transfer Total Length extension
+    /// Optional Transfer Length extension
     guint64 *total_length;
 } tcpcl_transfer_t;
 
@@ -933,20 +933,16 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                     proto_item *item_type = proto_tree_add_uint(tree_ext, hf_sessext_type, tvb, offset + extlist_offset + extitem_offset, 2, extitem_type);
                     extitem_offset += 2;
 
-                    guint32 extitem_len = tvb_get_guint32(tvb, offset + extlist_offset + extitem_offset, ENC_BIG_ENDIAN);
-                    proto_tree_add_uint(tree_ext, hf_sessext_len, tvb, offset + extlist_offset + extitem_offset, 4, extitem_len);
-                    extitem_offset += 4;
+                    guint32 extitem_len = tvb_get_guint16(tvb, offset + extlist_offset + extitem_offset, ENC_BIG_ENDIAN);
+                    proto_tree_add_uint(tree_ext, hf_sessext_len, tvb, offset + extlist_offset + extitem_offset, 2, extitem_len);
+                    extitem_offset += 2;
 
                     tvbuff_t *extitem_tvb = tvb_new_subset_length(tvb, offset + extlist_offset + extitem_offset, extitem_len);
-                    int sublen = dissector_try_uint(sess_ext_dissector, extitem_type, extitem_tvb, pinfo, tree_ext);
+                    int sublen = dissector_try_uint(sess_ext_dissectors, extitem_type, extitem_tvb, pinfo, tree_ext);
                     if (sublen == 0) {
                         expert_add_info(pinfo, item_type, &ei_invalid_sessext_type);
-
-                        // Still add the raw data
-                        const void *extitem_data = tvb_memdup(wmem_packet_scope(), tvb, offset + extlist_offset + extitem_offset, extitem_len);
-                        proto_tree_add_bytes(tree_ext, hf_sessext_data, tvb, offset + extlist_offset + extitem_offset, extitem_len, extitem_data);
                     }
-                    proto_item_append_text(item_ext, " (0x%x)", extitem_type);
+                    proto_item_append_text(item_ext, ", Type=0x%x", extitem_type);
                     extitem_offset += extitem_len;
 
                     proto_item_set_len(item_ext, extitem_offset);
@@ -1044,22 +1040,18 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                         proto_item *item_type = proto_tree_add_uint(tree_ext, hf_xferext_type, tvb, offset + extlist_offset + extitem_offset, 2, extitem_type);
                         extitem_offset += 2;
 
-                        guint32 extitem_len = tvb_get_guint32(tvb, offset + extlist_offset + extitem_offset, ENC_BIG_ENDIAN);
-                        proto_tree_add_uint(tree_ext, hf_xferext_len, tvb, offset + extlist_offset + extitem_offset, 4, extitem_len);
-                        extitem_offset += 4;
+                        guint32 extitem_len = tvb_get_guint16(tvb, offset + extlist_offset + extitem_offset, ENC_BIG_ENDIAN);
+                        proto_tree_add_uint(tree_ext, hf_xferext_len, tvb, offset + extlist_offset + extitem_offset, 2, extitem_len);
+                        extitem_offset += 2;
 
                         tvbuff_t *extitem_tvb = tvb_new_subset_length(tvb, offset + extlist_offset + extitem_offset, extitem_len);
                         frame_loc_t *extitem_loc = frame_loc_new(pinfo, extitem_tvb, 0);
                         tcpcl_peer_associate_transfer(tx_peer, extitem_loc, xfer_id);
-                        int sublen = dissector_try_uint(xfer_ext_dissector, extitem_type, extitem_tvb, pinfo, tree_ext);
+                        int sublen = dissector_try_uint(xfer_ext_dissectors, extitem_type, extitem_tvb, pinfo, tree_ext);
                         if (sublen == 0) {
                             expert_add_info(pinfo, item_type, &ei_invalid_xferext_type);
-
-                            // Still add the raw data
-                            const void *extitem_data = tvb_memdup(wmem_packet_scope(), tvb, offset + extlist_offset + extitem_offset, extitem_len);
-                            proto_tree_add_bytes(tree_ext, hf_xferext_data, tvb, offset + extlist_offset + extitem_offset, extitem_len, extitem_data);
                         }
-                        proto_item_append_text(item_ext, " (0x%x)", extitem_type);
+                        proto_item_append_text(item_ext, ", Type=0x%x", extitem_type);
                         extitem_offset += extitem_len;
 
                         proto_item_set_len(item_ext, extitem_offset);
@@ -1526,10 +1518,10 @@ static void proto_register_tcpcl(void) {
     proto_register_subtree_array(ett, array_length(ett));
     expert_module_t *expert = expert_register_protocol(proto_tcpcl);
     expert_register_field_array(expert, expertitems, array_length(expertitems));
-    handle_tcpcl = register_dissector("tcpclv4", dissect_tcpcl, proto_tcpcl);
 
-    sess_ext_dissector = register_dissector_table("tcpclv4.sess_ext", "TCPCLv4 Session Extension", proto_tcpcl, FT_UINT16, BASE_HEX);
-    xfer_ext_dissector = register_dissector_table("tcpclv4.xfer_ext", "TCPCLv4 Transfer Extension", proto_tcpcl, FT_UINT16, BASE_HEX);
+    handle_tcpcl = register_dissector("tcpclv4", dissect_tcpcl, proto_tcpcl);
+    sess_ext_dissectors = register_dissector_table("tcpclv4.sess_ext", "TCPCLv4 Session Extension", proto_tcpcl, FT_UINT16, BASE_HEX);
+    xfer_ext_dissectors = register_dissector_table("tcpclv4.xfer_ext", "TCPCLv4 Transfer Extension", proto_tcpcl, FT_UINT16, BASE_HEX);
 
     module_t *module_tcpcl = prefs_register_protocol(proto_tcpcl, reinit_tcpcl);
     /*
