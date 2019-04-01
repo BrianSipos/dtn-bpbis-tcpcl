@@ -12,16 +12,21 @@ Once the agent is started, regardless of which or if a startup action was given,
 
 ## Starting the Agent
 
+All of these commands require either a local installation of the python packages, or using an environment such as
+```
+PYTHONPATH=demo-agent/src
+```
+
 An insecure session on the `localhost` address can be established with commands:
 ```
-PYTHONPATH=src python3 -m tcpcl.agent --bus-service=tcpcl.Server --eid=server --tls-disable listen --address=localhost
-PYTHONPATH=src python3 -m tcpcl.agent --bus-service=tcpcl.Client --eid=client --tls-disable connect localhost
+python3 -m tcpcl.agent --bus-service=tcpcl.Server --eid=server --tls-disable listen --address=localhost
+python3 -m tcpcl.agent --bus-service=tcpcl.Client --eid=client --tls-disable connect localhost
 ```
 
 To use Fedora/CentOS7 system-default localhost PKI use:
 ```
-PYTHONPATH=src python3 -m tcpcl.agent --bus-service=tcpcl.Server --eid=server --tls-key=/etc/pki/tls/private/localhost.key --tls-cert=/etc/pki/tls/certs/localhost.crt listen --address=localhost
-PYTHONPATH=src python3 -m tcpcl.agent --bus-service=tcpcl.Client --eid=client --tls-key=/etc/pki/tls/private/localhost.key --tls-cert=/etc/pki/tls/certs/localhost.crt connect localhost
+python3 -m tcpcl.agent --bus-service=tcpcl.Server --eid=server --tls-key=/etc/pki/tls/private/localhost.key --tls-cert=/etc/pki/tls/certs/localhost.crt listen --address=localhost
+python3 -m tcpcl.agent --bus-service=tcpcl.Client --eid=client --tls-key=/etc/pki/tls/private/localhost.key --tls-cert=/etc/pki/tls/certs/localhost.crt connect localhost
 ```
 
 ## Commanding the Agent
@@ -75,3 +80,11 @@ to get the received Transfer ID, and
 dbus-send --print-reply --dest=tcpcl.Server /org/ietf/dtn/tcpcl/Contact0 org.ietf.dtn.tcpcl.Contact.recv_bundle_pop_file string:1 string:/tmp/dest
 ```
 to actually save the received bundle.
+
+## Network Sequencing Tests
+
+There is a full end-to-end agent test which can be run by the command:
+```
+python3 -m tcpcl.test.bundlegen <gentype> <gencount>
+```
+where `gentype` of "fullvalid" generates valid BPv7 test bundles, and `gencount` is the total number of bundles to generate and transfer.
