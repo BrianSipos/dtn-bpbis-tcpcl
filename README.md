@@ -88,3 +88,21 @@ There is a full end-to-end agent test which can be run by the command:
 python3 -m tcpcl.test.bundlegen <gentype> <gencount>
 ```
 where `gentype` of "fullvalid" generates valid BPv7 test bundles, and `gencount` is the total number of bundles to generate and transfer.
+
+# Wireshark Protocols and Dissectors
+
+The wireshark modules require development environment for wireshark itself, cmake, and some build tool.
+The reference commands below use the Ninja build tool, but that is not required.
+
+Building the wireshark modules can be done with a command sequence similar to:
+```
+MODULE_VERS=$(pkg-config --variable=VERSION_RELEASE wireshark)
+mkdir -p wireshark-plugin/build
+cd wireshark-plugin/build/
+cmake .. -DCMAKE_BUILD_TYPE=Debug -DINSTALL_MODULE_PATH=${HOME}/.local/lib/wireshark/plugins/${MODULE_VERS}/epan/ -G Ninja
+ninja install
+```
+
+At this point the two modules "libtcpclv4" and "libbpv7" will be installed in the wireshark plugin path and will be loaded at next wireshark application startup.
+
+The protocol names registered are "tcpclv4" and "bpv7", each of which has some set of parameters and field names.
