@@ -81,6 +81,18 @@ def randdtntime():
     return random.randint(-1e10, 1e10)
 
 
+def randeid():
+    scheme = random.choice([1, 2])
+    if scheme == 1:
+        if random.uniform(0, 0) < 0.2:
+            ssp = 0
+        else:
+            ssp = randtext()
+    elif scheme == 2:
+        ssp = [random.randint(0, 2**15), random.randint(0, 2**15)]
+    return [scheme, ssp]
+
+
 def randtimestamp():
     return [randdtntime(), random.randint(0, 1e3)]
 
@@ -92,17 +104,18 @@ def randstatus():
         result.append(randdtntime())
     return result
 
+
 def randcboritem(maxdepth=10):
     direct_types = [None, bool, int, float, bytes, str]
     contain_types = [list, dict]
-    
+
     if maxdepth == 0:
         possible_types = direct_types
     else:
         possible_types = direct_types + contain_types
-    
+
     itemtype = random.choice(possible_types)
-    
+
     if itemtype is None:
         return None
     elif itemtype is bool:
@@ -140,13 +153,13 @@ class Generator(object):
             admin_type = 1
             admin_data = [  # Status Report
                 [  # Status info
-                    randstatus(), # Reporting node received bundle
-                    randstatus(), # Reporting node forwarded the bundle
+                    randstatus(),  # Reporting node received bundle
+                    randstatus(),  # Reporting node forwarded the bundle
                     randstatus(),  # Reporting node delivered the bundle
-                    randstatus(), # Reporting node deleted the bundle
+                    randstatus(),  # Reporting node deleted the bundle
                 ],
                 random.randint(0, 9),  # Reason code
-                randtext(),  # Source Node EID
+                randeid(),  # Source Node EID
                 randtimestamp(),  # Creation timestamp
             ]
             return binaryCborTag([
@@ -155,7 +168,7 @@ class Generator(object):
             ])
         elif block_type == 7:
             # Previous Node
-            return binaryCborTag(randtext())
+            return binaryCborTag(randeid())
         elif block_type == 8:
             # Bundle Age
             return binaryCborTag(random.randint(0, 1e10))
@@ -214,9 +227,9 @@ class Generator(object):
                 7,  # BP version
                 random.getrandbits(16),  # bundle flags
                 random.randint(1, 2),  # CRC type
-                randtext(),
-                randtext(),
-                randtext(),
+                randeid(),
+                randeid(),
+                randeid(),
                 randtimestamp(),  # creation timestamp
                 random.randint(0, 1e5),  # lifetime
             ],
@@ -294,7 +307,7 @@ def main():
     parser.add_argument('--log-level', dest='log_level', default='info',
                         metavar='LEVEL',
                         help='Console logging lowest level displayed.')
-    parser.add_argument('genmode', 
+    parser.add_argument('genmode',
                         choices=('fullvalid', 'randcbor', 'randbytes'),
                         help='Type of "bundle" to generate.')
     parser.add_argument('gencount', type=int,

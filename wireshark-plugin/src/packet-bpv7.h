@@ -141,7 +141,6 @@ typedef struct {
     guint64 seqno;
 } bp_creation_ts_t;
 
-
 /** Construct a new timestamp.
  */
 bp_creation_ts_t * bp_creation_ts_new();
@@ -154,15 +153,31 @@ void bp_creation_ts_delete(gpointer ptr);
  */
 gint bp_creation_ts_compare(gconstpointer a, gconstpointer b, gpointer user_data);
 
+/// EID encoding
+typedef struct {
+    /// Scheme ID number
+    gint64 scheme;
+    /// Derived URI text
+    const char *uri;
+} bp_eid_t;
+
+/** Construct a new timestamp.
+ */
+bp_eid_t * bp_eid_new();
+
+/** Function to match the GDestroyNotify signature.
+ */
+void bp_eid_delete(gpointer ptr);
+
 typedef struct {
     /// Bundle flags (assumed zero)
     guint64 flags;
     /// Destination EID
-    tvbuff_t *dst_eid;
+    bp_eid_t *dst_eid;
     /// Source EID
-    tvbuff_t *src_eid;
+    bp_eid_t *src_eid;
     /// Report-to EID
-    tvbuff_t *rep_eid;
+    bp_eid_t *rep_eid;
     /// Creation Timestamp
     bp_creation_ts_t ts;
     /// CRC type code (assumed zero)
