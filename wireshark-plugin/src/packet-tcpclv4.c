@@ -1367,11 +1367,7 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
         }
     }
 
-    const gchar *coltext = col_get_text(pinfo->cinfo, COL_INFO);
-    if (coltext && strnlen(coltext, 1) > 0) {
-        col_append_str(pinfo->cinfo, COL_INFO, ", ");
-    }
-    col_append_fstr(pinfo->cinfo, COL_INFO, "%s", msgtype_name);
+    col_append_sep_str(pinfo->cinfo, COL_INFO, NULL, msgtype_name);
 
     try_negotiate(tcpcl_convo, pinfo, cur_loc);
     // Show negotiation results
@@ -1456,9 +1452,13 @@ static int dissect_tcpcl(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
         tcpcl_convo->passive->port = pinfo->destport;
     }
 
-    col_set_str(pinfo->cinfo, COL_PROTOCOL, "TCPCLv4");
-    /* Clear out stuff in the info column */
-    col_clear(pinfo->cinfo, COL_INFO);
+    {
+        const gchar *proto_name = col_get_text(pinfo->cinfo, COL_PROTOCOL);
+        if (proto_name && (strncmp(proto_name, "TCPCLv4", 8) != 0)) {
+            col_set_str(pinfo->cinfo, COL_PROTOCOL, "TCPCLv4");
+            col_clear(pinfo->cinfo, COL_INFO);
+        }
+    }
 
     proto_item *item_tcpcl = proto_tree_add_item(tree, hf_tcpcl, tvb, 0, 0, ENC_NA);
     proto_tree *tree_tcpcl = proto_item_add_subtree(item_tcpcl, ett_tcpcl);

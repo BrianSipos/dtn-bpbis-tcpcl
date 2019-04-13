@@ -18,6 +18,20 @@ static dissector_table_t block_dissectors;
 static dissector_table_t payload_dissectors;
 static dissector_table_t admin_dissectors;
 
+static const val64_string status_report_reason_vals[]={
+    {0, "No additional information"},
+    {1, "Lifetime expired"},
+    {2, "Forwarded over unidirectional link"},
+    {3, "Transmission canceled"},
+    {4, "Depleted storage"},
+    {5, "Destination endpoint ID unintelligible"},
+    {6, "No known route to destination from here"},
+    {7, "No timely contact with next node on route"},
+    {8, "Block unintelligible"},
+    {9, "Hop limit exceeded"},
+    {0, NULL},
+};
+
 static int hf_bundle = -1;
 static int hf_bundle_head = -1;
 static int hf_bundle_break = -1;
@@ -57,6 +71,7 @@ static int hf_primary_report_eid = -1;
 static int hf_primary_create_ts = -1;
 static int hf_primary_lifetime = -1;
 static int hf_primary_frag_offset = -1;
+static int hf_primary_total_length = -1;
 static int hf_primary_crc_field = -1;
 
 static int hf_canonical_type_code = -1;
@@ -133,6 +148,7 @@ static hf_register_info fields[] = {
     {&hf_primary_create_ts, {"Creation Timestamp", "bpv7.primary.create_ts", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_primary_lifetime, {"Lifetime (us)", "bpv7.primary.lifetime", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
     {&hf_primary_frag_offset, {"Fragment Offset", "bpv7.primary.frag_offset", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+    {&hf_primary_total_length, {"Total Application Data Unit Length", "bpv7.primary.total_len", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
     {&hf_primary_crc_field, {"CRC Field", "bpv7.primary.crc_field", FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL}},
 
     {&hf_canonical_type_code, {"Type Code", "bpv7.canonical.type_code", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
@@ -166,7 +182,7 @@ static hf_register_info fields[] = {
     {&hf_status_rep_forwarded, {"Reporting node forwarded bundle", "bpv7.status_rep.forwarded", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_status_rep_delivered, {"Reporting node delivered bundle", "bpv7.status_rep.delivered", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_status_rep_deleted, {"Reporting node deleted bundle", "bpv7.status_rep.deleted", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL}},
-    {&hf_status_rep_reason_code, {"Reason Code", "bpv7.status_rep.reason_code", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+    {&hf_status_rep_reason_code, {"Reason Code", "bpv7.status_rep.reason_code", FT_UINT64, BASE_DEC, VALS64(status_report_reason_vals), 0x0, NULL, HFILL}},
     {&hf_status_rep_source_eid, {"Source Node EID", "bpv7.status_rep.source_node_eid", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_status_rep_subj_ts, {"Subject Creation Timestamp", "bpv7.status_rep.subj_ts", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_status_rep_subj_frag_offset, {"Subject Fragment Offset", "bpv7.status_rep.subj_frag_offset", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
@@ -609,7 +625,7 @@ static bp_cbor_chunk_t * cbor_require_array(tvbuff_t *tvb, packet_info *pinfo, p
  */
 static gboolean cbor_require_array_size(tvbuff_t *tvb _U_, packet_info *pinfo, proto_item *item, const bp_cbor_chunk_t *head, gint64 count_min, gint64 count_max) {
     if ((head->head_value < count_min) || (head->head_value > count_max)) {
-        expert_add_info_format(pinfo, item, &ei_array_wrong_size, "Array has %" PRId64 " items, should be between [%"PRId64", %"PRId64"]", head->head_value, count_min, count_max);
+        expert_add_info_format(pinfo, item, &ei_array_wrong_size, "Array has %" PRId64 " items, should be within [%"PRId64", %"PRId64"]", head->head_value, count_min, count_max);
         return FALSE;
     }
     return TRUE;
@@ -1015,11 +1031,11 @@ static gint dissect_block_primary(tvbuff_t *tvb, packet_info *pinfo, proto_tree 
     gint field_ix = 0;
     gint offset = start;
 
-    bp_cbor_chunk_t *chunk_head = cbor_require_array_with_size(tvb, pinfo, item_block, &offset, 8, 10);
+    bp_cbor_chunk_t *chunk_head = cbor_require_array_with_size(tvb, pinfo, item_block, &offset, 8, 11);
     if (!chunk_head) {
         return offset - start;
     }
-    proto_item_append_text(item_block, ", Count: %" PRIu64, chunk_head->head_value);
+    proto_item_append_text(item_block, ", Items: %" PRIu64, chunk_head->head_value);
 
     bp_cbor_chunk_t *chunk = bp_scan_cbor_chunk(tvb, offset);
     const guint64 *version = cbor_require_uint64(chunk);
@@ -1072,7 +1088,7 @@ static gint dissect_block_primary(tvbuff_t *tvb, packet_info *pinfo, proto_tree 
 
     // optional items
     if (flags && (*flags & BP_BUNDLE_IS_FRAGMENT)) {
-        if (!cbor_require_array_size(tvb, pinfo, item_block, chunk_head, field_ix + 1, field_ix + 2)) {
+        if (!cbor_require_array_size(tvb, pinfo, item_block, chunk_head, field_ix + 1, field_ix + 3)) {
             // Skip whole array
             offset = start;
             cbor_skip_next_item(tvb, &offset);
@@ -1084,6 +1100,13 @@ static gint dissect_block_primary(tvbuff_t *tvb, packet_info *pinfo, proto_tree 
         chunk = bp_scan_cbor_chunk(tvb, offset);
         const guint64 *frag_offset = cbor_require_uint64(chunk);
         proto_tree_add_cbor_uint64(tree_block, hf_primary_frag_offset, pinfo, tvb, chunk, frag_offset);
+        offset += chunk->data_length;
+        field_ix++;
+        bp_cbor_chunk_delete(chunk);
+
+        chunk = bp_scan_cbor_chunk(tvb, offset);
+        const guint64 *total_len = cbor_require_uint64(chunk);
+        proto_tree_add_cbor_uint64(tree_block, hf_primary_total_length, pinfo, tvb, chunk, total_len);
         offset += chunk->data_length;
         field_ix++;
         bp_cbor_chunk_delete(chunk);
@@ -1125,7 +1148,7 @@ static gint dissect_block_canonical(tvbuff_t *tvb, packet_info *pinfo, proto_tre
     if (!chunk_head) {
         return offset - start;
     }
-    proto_item_append_text(item_block, ", Count: %" PRIu64, chunk_head->head_value);
+    proto_item_append_text(item_block, ", Items: %" PRIu64, chunk_head->head_value);
 
     bp_cbor_chunk_t *chunk = bp_scan_cbor_chunk(tvb, offset);
     const guint64 *type_code = cbor_require_uint64(chunk);
@@ -1251,9 +1274,12 @@ static gint dissect_block_canonical(tvbuff_t *tvb, packet_info *pinfo, proto_tre
 
 static int dissect_bp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_) {
     gint offset = 0;
-
-    col_set_str(pinfo->cinfo, COL_PROTOCOL, "BPv7");
-    col_clear(pinfo->cinfo, COL_INFO);
+    {
+        const gchar *proto_name = col_get_text(pinfo->cinfo, COL_PROTOCOL);
+        if (proto_name && (strncmp(proto_name, "BPv7", 5) != 0)) {
+            col_set_str(pinfo->cinfo, COL_PROTOCOL, "BPv7");
+        }
+    }
 
     proto_item *item_bundle = proto_tree_add_item(tree, hf_bundle, tvb, 0, 0, ENC_NA);
     proto_tree *tree_bundle = proto_item_add_subtree(item_bundle, ett_bundle);
@@ -1316,7 +1342,7 @@ static int dissect_bp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void 
         block_ix++;
     }
 
-    col_append_str_uint(pinfo->cinfo, COL_INFO, " Blocks", block_ix, NULL);
+    proto_item_append_text(item_bundle, ", Blocks: %"PRIu64, block_ix);
 
     bp_bundle_delete(bundle);
     proto_item_set_len(item_bundle, offset);
@@ -1377,7 +1403,7 @@ static int dissect_payload_admin(tvbuff_t *tvb, packet_info *pinfo, proto_tree *
     offset += chunk->data_length;
     bp_cbor_chunk_delete(chunk);
 
-    dissector_handle_t admin_dissect;
+    dissector_handle_t admin_dissect = NULL;
     if (type_code) {
         admin_dissect = dissector_get_uint_handle(admin_dissectors, *type_code);
     }
@@ -1471,6 +1497,11 @@ static int dissect_status_report(tvbuff_t *tvb, packet_info *pinfo, proto_tree *
         status_field_ix++;
     }
 
+    proto_item *item_admin = proto_tree_get_parent(tree);
+    if (reason_code) {
+        proto_item_append_text(item_admin, ", Reason: %" PRIu64, *reason_code);
+    }
+
     proto_item_set_len(item_status, offset - status_start);
     bp_cbor_chunk_delete(chunk_status);
     return offset;
@@ -1487,6 +1518,7 @@ static int dissect_block_payload(tvbuff_t *tvb, packet_info *pinfo, proto_tree *
 
     // Parent bundle tree
     proto_tree *tree_bundle = proto_tree_get_parent_tree(tree);
+    proto_tree *item_bundle = proto_tree_get_parent(tree_bundle);
     // Back up to top-level
     proto_item *tree_top = proto_tree_get_parent_tree(tree_bundle);
 
@@ -1508,11 +1540,19 @@ static int dissect_block_payload(tvbuff_t *tvb, packet_info *pinfo, proto_tree *
     tvbuff_t *tvb_payload = tvb_new_subset_remaining(tvb, 0);
     add_new_data_source(pinfo, tvb_payload, "Bundle Payload");
     proto_item_prepend_text(proto_tree_get_parent(tree), "Payload ");
-    col_append_str_uint(pinfo->cinfo, COL_INFO, "Payload-Size", tvb_captured_length(tvb_payload), NULL);
+    col_append_sep_str(pinfo->cinfo, COL_INFO, NULL, "Bundle");
+
+    if (context->bundle->primary->flags & BP_BUNDLE_IS_FRAGMENT) {
+        proto_item_append_text(item_bundle, ", Fragment");
+    }
+    if (context->bundle->primary->flags & BP_BUNDLE_PAYLOAD_ADMIN) {
+        proto_item_append_text(item_bundle, ", Admin.");
+    }
+    proto_item_append_text(item_bundle, ", Payload-Size: %d", tvb_captured_length(tvb_payload));
 
     // Payload is known to be administrative, independent of EID
-    if (context->block->flags & BP_BUNDLE_PAYLOAD_ADMIN) {
-        col_append_fstr(pinfo->cinfo, COL_PROTOCOL, " Admin.");
+    if (context->bundle->primary->flags & BP_BUNDLE_PAYLOAD_ADMIN) {
+        col_append_str(pinfo->cinfo, COL_INFO, " [Admin]");
         return dissect_payload_admin(tvb_payload, pinfo, tree_top, context);
     }
 
