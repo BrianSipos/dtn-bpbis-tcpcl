@@ -251,7 +251,7 @@ class Generator(object):
             block.crc_field_ix = len(block.fields) - 1
         blocks.append(block)
 
-        unused_blocknum = set(range(1, 30))
+        unused_blocknum = set(range(2, 30))
         # Non-payload blocks
         for _ in range(random.randint(0, 4)):
             block_type = random.choice(self.KNOWN_BLOCK_TYPES)
@@ -260,7 +260,7 @@ class Generator(object):
         # Last block is payload
         if True:
             block_type = 1
-            block = self.create_block_random(block_type, bundle_flags, {0})
+            block = self.create_block_random(block_type, bundle_flags, {1})
             blocks.append(block)
 
         buf = io.BytesIO()

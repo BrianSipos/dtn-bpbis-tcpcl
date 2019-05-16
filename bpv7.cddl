@@ -102,7 +102,7 @@ extension-block = $extension-block-structure .within canonical-block-structure
 ; Generic shared structure of all non-primary blocks
 extension-block-use<CodeValue, BlockData> = [
   block-type-code: CodeValue,
-  block-number: (uint .ne 0),
+  block-number: (uint .gt 1),
   block-control-flags,
   crc-type,
   BlockData,
@@ -113,7 +113,7 @@ extension-block-use<CodeValue, BlockData> = [
 payload-block = payload-block-structure .within canonical-block-structure
 payload-block-structure = [
   block-type-code: 1,
-  block-number: 0,
+  block-number: 1,
   block-control-flags,
   crc-type,
   $payload-block-data,
