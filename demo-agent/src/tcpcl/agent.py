@@ -87,6 +87,13 @@ class Connection(object):
         '''
         return self.__s_tls is not None
 
+    def get_secure_socket(self):
+        ''' Get the secure socket object if available.
+
+        :return: The socket object or None.
+        '''
+        return self.__s_tls
+
     def __unlisten_notls(self):
         if self.__avail_rx_notls_id is not None:
             glib.source_remove(self.__avail_rx_notls_id)
@@ -179,11 +186,7 @@ class Connection(object):
                                         do_handshake_on_connect=False)
 
         self.__logger.info('Negotiating TLS...')
-        try:
-            s_tls.do_handshake()
-        except ssl.SSLError as err:
-            self.__logger.debug('TLS failed: %s', err)
-            raise
+        s_tls.do_handshake()
 
         self.__s_tls = s_tls
         self.__logger.info('TLS secured with %s', self.__s_tls.cipher())
@@ -295,7 +298,7 @@ class Connection(object):
                 tx_size = sock.send(data)
                 self.__logger.debug('Sent %d octets', tx_size)
             except socket.error as err:
-                self.__logger.debug('Failed to send chunk: %s', err)
+                self.__logger.error('Failed to send chunk: %s', err)
                 tx_size = None
             if tx_size:
                 self.__tx_buf = self.__tx_buf[tx_size:]
@@ -341,14 +344,28 @@ class Connection(object):
 
 
 class RejectError(Exception):
-    ''' Allow recv_ handlers to reject the message.
+    ''' Allow recv_* handlers to reject the message.
 
     :param reason: The rejection reason.
+    Should be one of the :py:cls:`messages.RejectMsg.Reason` values.
     :type reason: int
     '''
 
     def __init__(self, reason=None):
-        Exception.__init__(self, 'rejected')
+        Exception.__init__(self, 'rejected message')
+        self.reason = reason
+
+
+class TerminateError(Exception):
+    ''' Allow recv_* handlers to terminate a session.
+
+    :param reason: The termination reason.
+    Should be one of the :py:cls:`messages.SessionTerm.Reason` values.
+    :type reason: int
+    '''
+
+    def __init__(self, reason=None):
+        Exception.__init__(self, 'terminated session')
         self.reason = reason
 
 
@@ -587,6 +604,7 @@ class Messenger(Connection):
                 try:
                     self.secure(self._config.ssl_ctx)
                 except ssl.SSLError as err:
+                    self.__logger.error('TLS failed: %s', err)
                     self.close()
                     return
 
@@ -613,8 +631,8 @@ class Messenger(Connection):
                         self._sessinit_this = self.send_sess_init().payload
 
                     self._sessinit_peer = pkt.payload
-                    self.merge_session_params()
                     self._in_sess = True
+                    self.merge_session_params()
                     if self._in_sess_func:
                         self._in_sess_func()
 
@@ -652,6 +670,8 @@ class Messenger(Connection):
 
             except RejectError as err:
                 self.send_reject(err.reason, pkt)
+            except TerminateError as err:
+                self.send_sess_term(err.reason, False)
 
     def send_contact_header(self):
         ''' Send the initial Contact Header non-message.
@@ -687,7 +707,7 @@ class Messenger(Connection):
         options = dict(
             keepalive=self._config.keepalive_time,
             segment_mru=self._config.segment_size_mru,
-            eid_data=self._config.eid,
+            nodeid_data=self._config.eid,
             ext_items=[],
         )
         pkt = messages.MessageHead() / messages.SessionInit(**options)
@@ -696,8 +716,50 @@ class Messenger(Connection):
 
     def merge_session_params(self):
         ''' Combine local and peer SESS_INIT parameters.
+
+        :raise TerminateError: If there is some failure to negotiate.
         '''
         self.__logger.debug('Session negotiation')
+
+        if self.get_secure_socket():
+            # Verify TLS name bindings
+            cert = self.get_secure_socket().getpeercert()
+
+            # DNS/IP matching with standard function to handle wildcards
+            if self._as_passive:
+                (hostname, aliaslist, _) = socket.gethostbyaddr(self._peer_name)
+                peer_names = [self._peer_name, hostname] + list(aliaslist)
+            else:
+                peer_names = [self._peer_name]
+            self.__logger.info('Authenticating TLS host "%s" with cert: %s', peer_names, cert)
+            if cert and peer_names:
+                any_match = None
+                for peer_name in peer_names:
+                    try:
+                        ssl.match_hostname(cert, peer_name)
+                        any_match = peer_name
+                        break
+                    except ssl.CertificateError:
+                        pass
+
+                if not any_match:
+                    self.__logger.error('Host "%s" not matched by certificate', peer_names)
+                    raise TerminateError(messages.SessionTerm.Reason.CONTACT_FAILURE)
+                else:
+                    self.__logger.debug('Certificate matched host name "%s"', any_match)
+
+            # Exact Node ID URI matching
+            if cert and 'subjectAltName' in cert and self._sessinit_peer.nodeid_data:
+                uri_names = []
+                for (name_type, name_data) in cert['subjectAltName']:
+                    if name_type == 'URI':
+                        uri_names.append(name_data)
+                self.__logger.debug('Peer has certified URIs: %s', uri_names)
+
+                if self._sessinit_peer.nodeid_data not in uri_names:
+                    self.__logger.error('Node ID "%s" not in subjectAltName: %s',
+                                        self._sessinit_peer.nodeid_data, uri_names)
+                    raise TerminateError(messages.SessionTerm.Reason.CONTACT_FAILURE)
 
         self._keepalive_time = min(self._sessinit_this.keepalive,
                                    self._sessinit_peer.keepalive)
@@ -736,9 +798,9 @@ class Messenger(Connection):
         # PD control
         next_seg_size = int(
             self._send_segment_size
-            - 2e-1 * error_size
-            + 6e-2 * error_delta
-            - 1e-4 * error_accum
+            -2e-1 * error_size
+            +6e-2 * error_delta
+            -1e-4 * error_accum
         )
 
         # Clamp control to the limits
@@ -808,7 +870,7 @@ class Messenger(Connection):
         self._in_term = True
         if self._in_term_func:
             self._in_term_func()
-        
+
         flags = 0
         if is_reply:
             flags |= messages.SessionTerm.Flag.REPLY
@@ -957,6 +1019,7 @@ class BundleItem(object):
         known from the Transfer Length extension (receiver)
     .. py:attribute:: ack_length The total acknowledged length.
     '''
+
     def __init__(self):
         self.transfer_id = None
         self.total_length = None
@@ -1137,7 +1200,12 @@ class ContactHandler(Messenger, dbus.service.Object):
 
     @dbus.service.method(DBUS_IFACE, in_signature='y', out_signature='')
     def terminate(self, reason_code=None):
-        ''' Perform the termination procedure. '''
+        ''' Perform the termination procedure.
+
+        :param reason_code: The termination reason.
+        Should be one of the :py:cls:`messages.SessionTerm.Reason` values.
+        :type reason_code: int or None
+        '''
         if reason_code is None:
             reason_code = messages.SessionTerm.Reason.UNKNOWN
         self.send_sess_term(reason_code, False)
@@ -1330,6 +1398,7 @@ class ContactHandler(Messenger, dbus.service.Object):
 
         return False
 
+
 class Agent(dbus.service.Object):
     ''' Overall agent behavior.
 
@@ -1465,6 +1534,8 @@ class Agent(dbus.service.Object):
 
     @dbus.service.method(DBUS_IFACE, in_signature='si')
     def listen_stop(self, address, port):
+        ''' Stop listening for connections on an existing port binding.
+        '''
         bindspec = (address, port)
         if bindspec not in self._bindsocks:
             raise dbus.DBusException('Not listening')
@@ -1477,7 +1548,7 @@ class Agent(dbus.service.Object):
             self.__logger.warning('Bind socket shutdown error: %s', err)
         sock.close()
 
-    def _accept(self, bindsock, *args, **kwargs):
+    def _accept(self, bindsock, *_args, **_kwargs):
         ''' Callback to handle incoming connections.
 
         :return: True to continue listening.
@@ -1529,6 +1600,7 @@ class Agent(dbus.service.Object):
             if not self.shutdown():
                 # wait for graceful shutdown
                 eloop.run()
+
 
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -1603,15 +1675,16 @@ def main(*argv):
         logging.info('Registered as "%s"', bus_serv.get_name())
 
     if args.tls_enable:
-        config.ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
+        config.ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS)
         if args.tls_ciphers:
             config.ssl_ctx.set_ciphers(args.tls_ciphers)
         if args.tls_ca:
-            config.ssl_ctx.load_verify_locations(args.tls_ca)
+            config.ssl_ctx.load_verify_locations(cafile=args.tls_ca)
         if args.tls_cert:
-            config.ssl_ctx.load_cert_chain(args.tls_cert, args.tls_key)
+            config.ssl_ctx.load_cert_chain(certfile=args.tls_cert, keyfile=args.tls_key)
         if args.tls_dhparam:
             config.ssl_ctx.load_dh_params(args.tls_dhparam)
+        config.ssl_ctx.verify_mode = ssl.CERT_OPTIONAL
 
     config.eid = args.eid
     config.tls_require = args.tls_require
@@ -1631,6 +1704,7 @@ def main(*argv):
         agent.connect(args.address, args.port)
 
     agent.exec_loop()
+
 
 if __name__ == '__main__':
     sys.exit(main(*sys.argv))

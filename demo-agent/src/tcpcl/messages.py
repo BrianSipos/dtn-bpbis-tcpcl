@@ -26,9 +26,11 @@ class MessageHead(packet.Packet):
 class TlvHead(packet.Packet):
     ''' Generic TLV header with data as payload. '''
 
-    #: Flags must be in LSbit-first order
     @enum.unique
     class Flag(enum.IntEnum):
+        ''' Message flags.
+        Flags must be in LSbit-first order.
+        '''
         CRITICAL = 0x01
 
     fields_desc = [
@@ -59,10 +61,10 @@ class SessionInit(formats.NoPayloadPacket):
         formats.UInt64Field('segment_mru', default=SIZE_MAX),
         formats.UInt64Field('transfer_mru', default=SIZE_MAX),
 
-        formats.UInt16FieldLenField('eid_length', default=None,
-                                    length_of='eid_data'),
-        formats.StrLenFieldUtf8('eid_data', default=u'',
-                                length_from=lambda pkt: pkt.eid_length),
+        formats.UInt16FieldLenField('nodeid_length', default=None,
+                                    length_of='nodeid_data'),
+        formats.StrLenFieldUtf8('nodeid_data', default=u'',
+                                length_from=lambda pkt: pkt.nodeid_length),
 
         formats.UInt32FieldLenField('ext_size', default=None,
                                     length_of='ext_items'),
@@ -73,10 +75,10 @@ class SessionInit(formats.NoPayloadPacket):
 
     def post_dissection(self, pkt):
         ''' Verify consistency of packet. '''
-        (field, val) = self.getfield_and_val('eid_data')
+        (field, val) = self.getfield_and_val('nodeid_data')
         if val is not None:
             encoded = field.addfield(self, b'', val)
-            formats.verify_sized_item(self.eid_length, encoded)
+            formats.verify_sized_item(self.nodeid_length, encoded)
 
         (field, val) = self.getfield_and_val('ext_items')
         if val is not None:
@@ -89,13 +91,16 @@ class SessionInit(formats.NoPayloadPacket):
 class SessionTerm(formats.NoPayloadPacket):
     ''' An flag-dependent SESS_TERM message. '''
 
-    #: Flags must be in LSbit-first order
     @enum.unique
     class Flag(enum.IntEnum):
+        ''' Message flags.
+        Flags must be in LSbit-first order.
+        '''
         REPLY = 0x01
 
     @enum.unique
     class Reason(enum.IntEnum):
+        ''' Reason code points. '''
         UNKNOWN = 0
         IDLE_TIMEOUT = 1
         VERSION_MISMATCH = 2
@@ -120,6 +125,7 @@ class RejectMsg(formats.NoPayloadPacket):
 
     @enum.unique
     class Reason(enum.IntEnum):
+        ''' Reason code points. '''
         UNKNOWN = 1
         UNSUPPORTED = 2
         UNEXPECTED = 3
@@ -140,6 +146,7 @@ class TransferRefuse(formats.NoPayloadPacket):
 
     @enum.unique
     class Reason(enum.IntEnum):
+        ''' Reason code points. '''
         UNKNOWN = 0x0
         COMPLETED = 0x1
         RESOURCES = 0x2
@@ -155,9 +162,11 @@ class TransferRefuse(formats.NoPayloadPacket):
 class TransferSegment(formats.NoPayloadPacket):
     ''' A XFER_SEGMENT with bundle data as field. '''
 
-    #: Flags must be in LSbit-first order
     @enum.unique
     class Flag(enum.IntEnum):
+        ''' Message flags.
+        Flags must be in LSbit-first order.
+        '''
         END = 0x1
         START = 0x2
 

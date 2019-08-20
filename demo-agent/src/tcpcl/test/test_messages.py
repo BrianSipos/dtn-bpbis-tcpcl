@@ -1,7 +1,10 @@
 import binascii
 import unittest
 from scapy.packet import Raw
-from ..messages import *
+from ..messages import (MessageHead, 
+                        SessionInit, SessionExtendHeader, SessionTerm,
+                        TransferSegment, TransferExtendHeader, TransferAck,
+                        TransferRefuse, Keepalive, RejectMsg)
 from .. import extend
 
 class TestSessionInit(unittest.TestCase):
@@ -16,7 +19,7 @@ class TestSessionInit(unittest.TestCase):
     def testSerializeNoExt(self):
         pkt = MessageHead()/SessionInit(
             keepalive=300,
-            eid_data=b'hello',
+            nodeid_data=b'hello',
             segment_mru=1024,
             transfer_mru=10240,
         )
@@ -37,13 +40,13 @@ class TestSessionInit(unittest.TestCase):
         self.assertEqual(pkt.payload.keepalive, 300)
         self.assertEqual(pkt.payload.segment_mru, 1024)
         self.assertEqual(pkt.payload.transfer_mru, 10240)
-        self.assertEqual(pkt.payload.eid_data, b'hello')
+        self.assertEqual(pkt.payload.nodeid_data, 'hello')
         self.assertEqual(len(pkt.payload.ext_items), 0)
 
     def testSerializeEmptyExt(self):
         pkt = MessageHead()/SessionInit(
             keepalive=300,
-            eid_data=b'hello',
+            nodeid_data='hello',
             segment_mru=1024,
             transfer_mru=10240,
             ext_items=[
@@ -54,27 +57,28 @@ class TestSessionInit(unittest.TestCase):
             binascii.hexlify(bytes(pkt)), 
             b'07' + b'012c' + b'0000000000000400' + b'0000000000002800' + b'0005' + binascii.hexlify(b'hello')
             # extensions:
-            + b'0000000c'
-            + b'01' + b'fffe' + b'00000005' + binascii.hexlify(b'exthi')
+            + b'0000000a'
+            + b'01' + b'fffe' + b'0005' + binascii.hexlify(b'exthi')
         )
 
     def testDeserializeEmptyExt(self):
         pkt = MessageHead(binascii.unhexlify(
             b'07' + b'012c' + b'0000000000000400' + b'0000000000002800' + b'0005' + binascii.hexlify(b'hello')
             # extensions:
-            + b'0000000c'
-            + b'01' + b'fffe' + b'00000005' + binascii.hexlify(b'exthi')
+            + b'0000000a'
+            + b'01' + b'fffe' + b'0005' + binascii.hexlify(b'exthi')
         ))
         self.assertEqual(pkt.msg_id, 7)
         self.assertIsInstance(pkt.payload, SessionInit)
         self.assertEqual(pkt.payload.keepalive, 300)
         self.assertEqual(pkt.payload.segment_mru, 1024)
         self.assertEqual(pkt.payload.transfer_mru, 10240)
-        self.assertEqual(pkt.payload.eid_data, b'hello')
+        self.assertEqual(pkt.payload.nodeid_data, 'hello')
         self.assertEqual(len(pkt.payload.ext_items), 1)
         # Items:
         item = pkt.payload.ext_items[0]
-        self.assertEqual(item.flags, TransferExtendHeader.Flag.CRITICAL)
+        self.assertIsInstance(item, SessionExtendHeader)
+        self.assertEqual(item.flags, SessionExtendHeader.Flag.CRITICAL)
         self.assertEqual(item.type, 0xfffe)
         self.assertEqual(item.length, 5)
         self.assertIsInstance(item.payload, Raw)
@@ -105,14 +109,14 @@ class TestSessionTerm(unittest.TestCase):
         self.assertEqual(pkt.payload.reason, 3)
 
     def testSerializeAck(self):
-        pkt = MessageHead()/SessionTerm(flags='ACK', reason=4)
+        pkt = MessageHead()/SessionTerm(flags=SessionTerm.Flag.REPLY, reason=4)
         self.assertSequenceEqual(binascii.hexlify(bytes(pkt)), b'050104')
 
     def testDeserializeAck(self):
         pkt = MessageHead(binascii.unhexlify(b'05' + b'0104'))
         self.assertEqual(pkt.msg_id, 5)
         self.assertIsInstance(pkt.payload, SessionTerm)
-        self.assertEqual(pkt.payload.flags, SessionTerm.Flag.ACK)
+        self.assertEqual(pkt.payload.flags, SessionTerm.Flag.REPLY)
         self.assertEqual(pkt.payload.reason, 4)
 
 class TestKeepalive(unittest.TestCase):
@@ -192,8 +196,8 @@ class TestTransferSegment(unittest.TestCase):
             binascii.hexlify(bytes(pkt)),
             b'01' + b'02' + b'00000000000004d2' 
             # extensions:
-            + b'0000000f'
-            + b'01' + b'0001' + b'00000008' + b'0000000000000320'
+            + b'0000000d'
+            + b'01' + b'0001' + b'0008' + b'0000000000000320'
             # data
             + b'0000000000000005' + binascii.hexlify(b'hello')
         )
@@ -201,8 +205,8 @@ class TestTransferSegment(unittest.TestCase):
     def testDeserializeStartLengthExt(self):
         pkt = MessageHead(binascii.unhexlify(
             b'01' + b'02' + b'00000000000004d2' 
-            + b'0000000f'
-            + b'01' + b'0001' + b'00000008' + b'0000000000000320'
+            + b'0000000d'
+            + b'01' + b'0001' + b'0008' + b'0000000000000320'
             + b'0000000000000005' + binascii.hexlify(b'hello')
         ))
         self.assertEqual(pkt.msg_id, 1)
@@ -212,10 +216,11 @@ class TestTransferSegment(unittest.TestCase):
         self.assertEqual(pkt.payload.length, 5)
         self.assertEqual(pkt.payload.getfieldval('data'), b'hello')
 
-        self.assertEqual(pkt.payload.ext_size, 15)
+        self.assertEqual(pkt.payload.ext_size, 13)
         self.assertEqual(len(pkt.payload.ext_items), 1)
         # Items:
         item = pkt.payload.ext_items[0]
+        self.assertIsInstance(item, TransferExtendHeader)
         self.assertEqual(item.flags, TransferExtendHeader.Flag.CRITICAL)
         self.assertEqual(item.type, 1)
         self.assertEqual(item.length, 8)

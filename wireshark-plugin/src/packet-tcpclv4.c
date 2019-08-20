@@ -74,8 +74,8 @@ static int hf_mhdr_type = -1;
 static int hf_sess_init_keepalive = -1;
 static int hf_sess_init_seg_mru = -1;
 static int hf_sess_init_xfer_mru = -1;
-static int hf_sess_init_eid_len = -1;
-static int hf_sess_init_eid_data = -1;
+static int hf_sess_init_nodeid_len = -1;
+static int hf_sess_init_nodeid_data = -1;
 static int hf_sess_init_extlist_len = -1;
 static int hf_sess_init_related = -1;
 static int hf_negotiate_keepalive = -1;
@@ -168,8 +168,8 @@ static hf_register_info fields[] = {
     {&hf_sess_init_keepalive, {"Keepalive Interval (s)", "tcpclv4.sess_init.keepalive", FT_UINT16, BASE_DEC, NULL, 0x0, NULL, HFILL}},
     {&hf_sess_init_seg_mru, {"Segment MRU (octets)", "tcpclv4.sess_init.seg_mru", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
     {&hf_sess_init_xfer_mru, {"Transfer MRU (octets)", "tcpclv4.sess_init.xfer_mru", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
-    {&hf_sess_init_eid_len, {"EID Length (octets)", "tcpclv4.sess_init.eid_len", FT_UINT16, BASE_DEC, NULL, 0x0, NULL, HFILL}},
-    {&hf_sess_init_eid_data, {"EID Data (UTF8)", "tcpclv4.sess_init.eid_data", FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL}},
+    {&hf_sess_init_nodeid_len, {"Node ID Length (octets)", "tcpclv4.sess_init.nodeid_len", FT_UINT16, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+    {&hf_sess_init_nodeid_data, {"Node ID Data (UTF8)", "tcpclv4.sess_init.nodeid_data", FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL}},
     {&hf_sess_init_extlist_len, {"Extension Items Length (octets)", "tcpclv4.sess_init.extlist_len", FT_UINT32, BASE_DEC, NULL, 0x0, NULL, HFILL}},
     {&hf_sess_init_related, {"Related SESS_INIT", "tcpclv4.sess_init.related", FT_FRAMENUM, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     // Session negotiation results
@@ -744,9 +744,9 @@ static guint get_message_len(packet_info *pinfo, tvbuff_t *tvb, int ext_offset, 
                 if (buflen < offset + 2) {
                     return 0;
                 }
-                guint16 eid_len = tvb_get_guint16(tvb, offset, ENC_BIG_ENDIAN);
+                guint16 nodeid_len = tvb_get_guint16(tvb, offset, ENC_BIG_ENDIAN);
                 offset += 2;
-                offset += eid_len;
+                offset += nodeid_len;
                 if (buflen < offset + 4) {
                     return 0;
                 }
@@ -900,16 +900,16 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                 proto_tree_add_uint64(tree_msg, hf_sess_init_xfer_mru, tvb, offset, 8, xfer_mru);
                 offset += 8;
 
-                guint16 eid_len = tvb_get_guint16(tvb, offset, ENC_BIG_ENDIAN);
-                proto_tree_add_uint(tree_msg, hf_sess_init_eid_len, tvb, offset, 2, eid_len);
+                guint16 nodeid_len = tvb_get_guint16(tvb, offset, ENC_BIG_ENDIAN);
+                proto_tree_add_uint(tree_msg, hf_sess_init_nodeid_len, tvb, offset, 2, nodeid_len);
                 offset += 2;
 
                 {
-                    guint8 *eid_data = tvb_get_string_enc(wmem_packet_scope(), tvb, offset, eid_len, ENC_UTF_8);
-                    proto_tree_add_string(tree_msg, hf_sess_init_eid_data, tvb, offset, eid_len, (const char *)eid_data);
-                    wmem_free(wmem_packet_scope(), eid_data);
+                    guint8 *nodeid_data = tvb_get_string_enc(wmem_packet_scope(), tvb, offset, nodeid_len, ENC_UTF_8);
+                    proto_tree_add_string(tree_msg, hf_sess_init_nodeid_data, tvb, offset, nodeid_len, (const char *)nodeid_data);
+                    wmem_free(wmem_packet_scope(), nodeid_data);
                 }
-                offset += eid_len;
+                offset += nodeid_len;
 
                 guint32 extlist_len = tvb_get_guint32(tvb, offset, ENC_BIG_ENDIAN);
                 proto_tree_add_uint(tree_msg, hf_sess_init_extlist_len, tvb, offset, 4, extlist_len);

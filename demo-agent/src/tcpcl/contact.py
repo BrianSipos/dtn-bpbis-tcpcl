@@ -30,14 +30,14 @@ class ContactV3(formats.NoPayloadPacket):
                           names=[item.name for item in Flag]),
         formats.UInt16Field('keepalive', default=0),
         
-        formats.SdnvFieldLenField('eid_length', default=None, length_of='eid_data'),
-        fields.StrLenField('eid_data', default='',
-                           length_from=lambda pkt: pkt.eid_length),
+        formats.SdnvFieldLenField('nodeid_length', default=None, length_of='nodeid_data'),
+        fields.StrLenField('nodeid_data', default='',
+                           length_from=lambda pkt: pkt.nodeid_length),
     ]
     
     def post_dissection(self, pkt):
         ''' Verify consistency of packet. '''
-        formats.verify_sized_item(self.eid_length, self.eid_data)
+        formats.verify_sized_item(self.nodeid_length, self.nodeid_data)
         packet.Packet.post_dissection(self, pkt)
 
 packet.bind_layers(Head, ContactV3, version=3)

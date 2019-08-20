@@ -2,7 +2,7 @@
 <!DOCTYPE rfc SYSTEM "rfc2629.dtd" [
 ]>
 <?rfc toc="yes"?>
-<rfc ipr="trust200902" category="std" docName="draft-ietf-dtn-tcpclv4-12" obsoletes="7242">
+<rfc ipr="trust200902" category="std" docName="draft-ietf-dtn-tcpclv4-13" obsoletes="7242">
   <front>
     <title abbrev="DTN TCPCLv4">
       Delay-Tolerant Networking TCP Convergence Layer Protocol Version 4
@@ -67,7 +67,7 @@
         <email>simon@per.reau.lt</email>
       </address>
     </author>
-    <date year="2019" month="March" day="31" />
+    <date year="2019" month="August" day="20" />
     <area>Transport</area>
     <workgroup>Delay Tolerant Networking</workgroup>
 
@@ -144,134 +144,51 @@
       +-------------------------+
 </artwork>
       </figure>
-      <t>
-        This document describes the format of the protocol data units passed
-        between entities participating in TCPCL communications. This
-        document does not address:
-      </t>
-      <t>
-        <list style="symbols">
-          <t>
-            The format of protocol data units of the Bundle Protocol, as those
-            are defined elsewhere in
-            <xref target="RFC5050" />
-            and
-            <xref target="I-D.ietf-dtn-bpbis" />.
-            This includes the concept of bundle fragmentation or bundle encapsulation.
-            The TCPCL transfers bundles as opaque data blocks.
-          </t>
-          <t>
-            Mechanisms for locating or identifying other bundle entities within
-            an internet.
-          </t>
-        </list>
-      </t>
-      <section anchor="sec-cl-services" title="Convergence Layer Services">
+      <section title="Scope">
         <t>
-          This version of the TCPCL provides the following services to support
-          the overlaying Bundle Protocol agent.
-          In all cases, this is not an API defintion but a logical description
-          of how the CL may interact with the BP agent.
-          Each of these interactions may be associated with any number of 
-          additional metadata items as necessary to support the operation
-          of the CL or BP agent.
-          <list style="hanging">
-            <t hangText="Attempt Session">
-              The TCPCL allows a BP agent to pre-emptively attempt to establish
-              a TCPCL session with a peer entity.
-              Each session attempt can send a different set of session negotiation
-              parameters as directed by the BP agent.
+          This document describes the format of the protocol data units passed
+          between entities participating in TCPCL communications.
+          This document does not address:
+          <list style="symbols">
+            <t>
+              The format of protocol data units of the Bundle Protocol, as those
+              are defined elsewhere in
+              <xref target="I-D.ietf-dtn-bpbis" />.
+              This includes the concept of bundle fragmentation or bundle encapsulation.
+              The TCPCL transfers bundles as opaque data blocks.
             </t>
-            <t hangText="Terminate Session">
-              The TCPCL allows a BP agent to pre-emptively terminate an established
-              TCPCL session with a peer entity.
-              The terminate request is on a per-session basis.
+            <t>
+              Mechanisms for locating or identifying other bundle entities
+              (peers) within a network or across an internet.
+              The mapping of Node ID to potential CL protocol and network address
+              is left to implementation and configuration of the BP Agent
+              and its various potential routing strategies.
             </t>
-            <t hangText="Session State Changed">
-              The TCPCL supports indication when the session state changes.
-              The top-level session states indicated are:
-              <list>
-                <t hangText="Contact Negotating:">A TCP connection has been made (as either active or passive entity) and contact negotiation has begun.</t>
-                <t hangText="Session Negotiating:">Contact negotation has been completed (including possible TLS use) and session negotiation has begun.</t>
-                <t hangText="Established:">The session has been fully established and is ready for its first transfer.</t>
-                <t hangText="Closing:">The entity received a SESS_TERM message and is in the closing state.</t>
-                <t hangText="Terminated:">The session has finished normal termination sequencing..</t>
-                <t hangText="Failed:">The session ended without normal termination sequencing.</t>
-              </list>
+            <t>
+              Logic for routing bundles along a path toward a bundle's endpoint.
+              This CL protocol is involved only in transporting bundles
+              between adjacent nodes in a routing sequence.
             </t>
-            <t hangText="Session Idle Changed">
-              The TCPCL supports indication when the live/idle sub-state changes.
-              This occurs only when the top-level session state is Established.
-              Because TCPCL transmits serially over a TCP connection, it suffers
-              from "head of queue blocking" this indication provides
-              information about when a session is available for
-              immediate transfer start.
-            </t>
-            <t hangText="Begin Transmission">
-              The principal purpose of the TCPCL is to allow a BP agent to
-              transmit bundle data over an established TCPCL session.
-              Transmission request is on a per-session basis, the CL does not
-              necessarily perform any per-session or inter-session queueing.
-              Any queueing of transmissions is the obligation of the BP agent.
-            </t>
-            <t hangText="Transmission Success">
-              The TCPCL supports positive indication when a bundle has been fully
-              transferred to a peer entity.
-            </t>
-            <t hangText="Transmission Intermediate Progress">
-              The TCPCL supports positive indication of intermediate progress
-              of transferr to a peer entity.
-              This intermediate progress is at the granularity of each
-              transferred segment.
-            </t>
-            <t hangText="Transmission Failure">
-              The TCPCL supports positive indication of certain reasons for
-              bundle transmission failure, notably when the peer entity rejects
-              the bundle or when a TCPCL session ends before transferr success.
-              The TCPCL itself does not have a notion of transfer timeout.
-            </t>
-            <t hangText="Reception Initialized">
-              The TCPCL supports indication to the reciver just before any
-              transmssion data is sent.
-              This corresponds to reception of the XFER_SEGMENT message with
-              the START flag set.
-            </t>
-            <t hangText="Interrupt Reception">
-              The TCPCL allows a BP agent to interrupt an individual transfer
-              before it has fully completed (successfully or not).
-              Interruption can occur any time after the reception is initialized.
-            </t>
-            <t hangText="Reception Success">
-              The TCPCL supports positive indication when a bundle has been fully
-              transferred from a peer entity.
-            </t>
-            <t hangText="Reception Intermediate Progress">
-              The TCPCL supports positive indication of intermediate progress
-              of transfer from the peer entity.
-              This intermediate progress is at the granularity of each
-              transferred segment.
-              Intermediate reception indication allows a BP agent the chance
-              to inspect bundle header contents before the entire bundle is
-              available, and thus supports the
-              &quot;Reception Interruption&quot; capability.
-            </t>
-            <t hangText="Reception Failure">
-              The TCPCL supports positive indication of certain reasons for
-              reception failure, notably when the local entity rejects an attempted
-              transfer for some local policy reason or when a TCPCL session
-              ends before transfer success.
-              The TCPCL itself does not have a notion of transfer timeout.
+            <t>
+              Policies or mechanisms for assigning X.509 certificates, 
+              provisioning or deploying certificates and private keys, 
+              or configuring security parameters on an individual BP node or
+              across a network.
             </t>
           </list>
+          Any TCPCL implementation requires a BP agent to perform those above 
+          listed functions in order to perform end-to-end bundle delivery.
         </t>
       </section>
     </section>
     <section title="Requirements Language">
       <t>
-        The key words &quot;MUST&quot;, &quot;MUST NOT&quot;, &quot;REQUIRED&quot;, &quot;SHALL&quot;, &quot;SHALL NOT&quot;,
-        &quot;SHOULD&quot;, &quot;SHOULD NOT&quot;, &quot;RECOMMENDED&quot;, &quot;MAY&quot;, and &quot;OPTIONAL&quot; in this
-        document are to be interpreted as described in
-        <xref target="RFC2119" />.
+      The key words &quot;MUST&quot;, &quot;MUST NOT&quot;, &quot;REQUIRED&quot;, 
+      &quot;SHALL&quot;, &quot;SHALLNOT&quot;, &quot;SHOULD&quot;, 
+      &quot;SHOULD NOT&quot;, &quot;RECOMMENDED&quot;, &quot;NOT RECOMMENDED&quot;,
+      &quot;MAY&quot;, and &quot;OPTIONAL&quot; in this document are to be interpreted as
+      described in BCP 14 <xref target="RFC2119" /> <xref target="RFC8174" />
+      when, and only when, they appear in all capitals, as shown here.
       </t>
       <section anchor="sec-term-defs" title="Definitions Specific to the TCPCL Protocol">
         <t>
@@ -429,6 +346,113 @@
         requirements.
         The general operation of the protocol is as follows.
       </t>
+      <section anchor="sec-cl-services" title="Convergence Layer Services">
+        <t>
+          This version of the TCPCL provides the following services to support
+          the overlaying Bundle Protocol agent.
+          In all cases, this is not an API defintion but a logical description
+          of how the CL can interact with the BP agent.
+          Each of these interactions can be associated with any number of 
+          additional metadata items as necessary to support the operation
+          of the CL or BP agent.
+          <list style="hanging">
+            <t hangText="Attempt Session:">
+              The TCPCL allows a BP agent to pre-emptively attempt to establish
+              a TCPCL session with a peer entity.
+              Each session attempt can send a different set of session negotiation
+              parameters as directed by the BP agent.
+            </t>
+            <t hangText="Terminate Session:">
+              The TCPCL allows a BP agent to pre-emptively terminate an established
+              TCPCL session with a peer entity.
+              The terminate request is on a per-session basis.
+            </t>
+            <t hangText="Session State Changed:">
+              The TCPCL supports indication when the session state changes.
+              The top-level session states indicated are:
+              <list>
+                <t hangText="Connecting:">A TCP connection is being established. This state only applies to the active entity.</t>
+                <t hangText="Contact Negotating:">A TCP connection has been made (as either active or passive entity) and contact negotiation has begun.</t>
+                <t hangText="Session Negotiating:">Contact negotation has been completed (including possible TLS use) and session negotiation has begun.</t>
+                <t hangText="Established:">The session has been fully established and is ready for its first transfer.</t>
+                <t hangText="Ending:">The entity received a SESS_TERM message and is in the ending state.</t>
+                <t hangText="Terminated:">The session has finished normal termination sequencing.</t>
+                <t hangText="Failed:">The session ended without normal termination sequencing.</t>
+              </list>
+            </t>
+            <t hangText="Session Idle Changed:">
+              The TCPCL supports indication when the live/idle sub-state of
+              the session changes.
+              This occurs only when the top-level session state is 
+              &quot;Established&quot;.
+              The session transitions from Idle to Live at the at the start
+              of a transfer in either transfer stream;
+              the session transitions from Live to Idle at the end of a 
+              transfer when the other transfer stream does not have an ongoing
+              transfer.
+              Because TCPCL transmits serially over a TCP connection, it suffers
+              from "head of queue blocking" this indication provides
+              information about when a session is available for
+              immediate transfer start.
+            </t>
+            <t hangText="Begin Transmission:">
+              The principal purpose of the TCPCL is to allow a BP agent to
+              transmit bundle data over an established TCPCL session.
+              Transmission request is on a per-session basis, the CL does not
+              necessarily perform any per-session or inter-session queueing.
+              Any queueing of transmissions is the obligation of the BP agent.
+            </t>
+            <t hangText="Transmission Success:">
+              The TCPCL supports positive indication when a bundle has been fully
+              transferred to a peer entity.
+            </t>
+            <t hangText="Transmission Intermediate Progress:">
+              The TCPCL supports positive indication of intermediate progress
+              of transferr to a peer entity.
+              This intermediate progress is at the granularity of each
+              transferred segment.
+            </t>
+            <t hangText="Transmission Failure:">
+              The TCPCL supports positive indication of certain reasons for
+              bundle transmission failure, notably when the peer entity rejects
+              the bundle or when a TCPCL session ends before transferr success.
+              The TCPCL itself does not have a notion of transfer timeout.
+            </t>
+            <t hangText="Reception Initialized:">
+              The TCPCL supports indication to the reciver just before any
+              transmssion data is sent.
+              This corresponds to reception of the XFER_SEGMENT message with
+              the START flag set.
+            </t>
+            <t hangText="Interrupt Reception:">
+              The TCPCL allows a BP agent to interrupt an individual transfer
+              before it has fully completed (successfully or not).
+              Interruption can occur any time after the reception is initialized.
+            </t>
+            <t hangText="Reception Success:">
+              The TCPCL supports positive indication when a bundle has been fully
+              transferred from a peer entity.
+            </t>
+            <t hangText="Reception Intermediate Progress:">
+              The TCPCL supports positive indication of intermediate progress
+              of transfer from the peer entity.
+              This intermediate progress is at the granularity of each
+              transferred segment.
+              Intermediate reception indication allows a BP agent the chance
+              to inspect bundle header contents before the entire bundle is
+              available, and thus supports the
+              &quot;Reception Interruption&quot; capability.
+            </t>
+            <t hangText="Reception Failure:">
+              The TCPCL supports positive indication of certain reasons for
+              reception failure, notably when the local entity rejects an attempted
+              transfer for some local policy reason or when a TCPCL session
+              ends before transfer success.
+              The TCPCL itself does not have a notion of transfer timeout.
+            </t>
+          </list>
+        </t>
+      </section>
       <section anchor="sec-protocol-session" title="TCPCL Session Overview">
         <t>
           First, one node establishes a TCPCL session to the other by
@@ -439,11 +463,9 @@
           to establish a shared TCPCL version and possibly initiate TLS security.
           Once contact negotiation is complete, TCPCL messaging is available and
           the session negotiation is used to set parameters of the TCPCL session.
-          One of these parameters is a singleton
-          endpoint identifier for each node (not the singleton Endpoint
-          Identifier (EID) of any application running on the node) to denote
-          the bundle-layer identity of each DTN node. This is used to assist
-          in routing and forwarding messages (e.g. to prevent loops).
+          One of these parameters is a Node ID of each TCPCL Entity.
+          This is used to assist in routing and forwarding messages by the 
+          BP Agent and is part of the authentication capability provided by TLS.
         </t>
         <t>
           Once negotiated, the parameters of a TCPCL session cannot change
@@ -464,6 +486,9 @@
           Bundle interleaving can be
           accomplished by fragmentation at the BP layer or by establishing multiple
           TCPCL sessions between the same peers.
+          There is no fundamental limit on the number of TCPCL sessions which
+          a single node can establish beyond the limit imposed by the number
+          of available (ephemeral) TCP ports of the passive peer.
         </t>
         <t>
           A feature of this protocol is for the receiving node to send
@@ -493,7 +518,7 @@
           message-less time intervals.
         </t>
         <t>
-          A SESS_TERM message is used to start the closing of a TCPCL session
+          A SESS_TERM message is used to start the ending of a TCPCL session
           (see
           <xref target="sec-SESS_TERM" />).
           During shutdown sequencing, in-progress transfers can be completed but no
@@ -505,8 +530,7 @@
           TCPCL session while there are no transfers queued or in-progress.
         </t>
         <t>
-          Once a session is established established, 
-          TCPCL is a symmetric protocol between the peers.
+          Once a session is established, TCPCL is a symmetric protocol between the peers.
           Both sides can start sending data segments in a session, and one
           side's bundle transfer does not have to complete before the other
           side can start sending data segments on its own. Hence, the protocol
@@ -545,7 +569,7 @@
       |                                    |
       +------------------------------------+
       |
-SESS_TERM Exchange
+[SESSTERM] Exchange
       |
       V
 +-------------+
@@ -554,7 +578,7 @@ SESS_TERM Exchange
 |   Ending    |      Done          | Terminating |
 +-------------+                    +-------------+
                                            |
-     +------------Close Message------------+
+     +----------TCP Close Message----------+
      |                                     
      V
  +-------+
@@ -566,111 +590,128 @@ SESS_TERM Exchange
           <list>
             <t>Session "Live" means transmitting or reeiving over a transfer stream.</t>
             <t>Session "Idle" means no transmission/reception over a transfer stream.</t>
-            <t>Session "Closing" means no new transfers will be allowed.</t>
+            <t>Session "Ending" means no new transfers will be allowed.</t>
           </list>
         </t>
         <t>
+        Contact negotation involves exchanging a Contact Header (CH) in both
+        directions and deriving a negotiated state from the two headers.
         The contact negotiation sequencing is performed either as the
         active or passive peer, and is illustrated in <xref target="fig-contact-init-active"/>
         and <xref target="fig-contact-init-passive"/> respectively which both share the data
-        validation and analyze final states of <xref target="fig-contact-init-process"/>.
+        validation and analyze final states of the "[PCH]" activity of
+        <xref target="fig-contact-init-process"/> and the "[TCPCLOSE]" activity
+        which indicates TCP connection close.
+        Successful negotiation results in one of the Session Initiation "[SI]" 
+        activities being performed.
         </t>
         <figure anchor="fig-contact-init-active" title="Contact Initiation as Active peer">
           <artwork xml:space="preserve">
-+-------+              
-| START |-----TCP-----+
-+-------+  Connecting |
-                      V
-                +-----------+       +---------+
-                | Connected |--OK--&gt;| Send CH |--OK--&gt;[PCH]
-                +-----------+       +---------+
-                      |                  | 
-                    Error              Error
-                      |                  |
-                      V                  |
-                  [TCPTERM]&lt;-------------+
++-------+
+| START |
++-------+
+    |
+TCP Connecting
+    V
++-----------+
+|    TCP    |            +---------+
+| Connected |--Send CH--&gt;| Waiting |--Timeout--&gt;[TCPCLOSE]
++-----------+            +---------+
+                              |
+                          Recevied CH
+                              V
+                            [PCH]
 </artwork></figure>
         <figure anchor="fig-contact-init-passive" title="Contact Initiation as Passive peer">
           <artwork xml:space="preserve">
-+-------+
-| START |-----TCP-----&gt;[PCH]
-+-------+   Connected
++-----------+             +---------+
+|   TCP     |--Wait for--&gt;| Waiting |--Timeout--&gt;[TCPCLOSE]
+| Connected |     CH      +---------+
++-----------+                  |
+                          Received CH
+                               V
+                       +-----------------+
+                       | Preparing reply |--Send CH--&gt;[PSI]
+                       +-----------------+
 </artwork></figure>
-        <figure anchor="fig-contact-init-process" title="Processing of Contact Header (PCH)">
+        <figure anchor="fig-contact-init-process" title="Processing of Contact Header [PCH]">
           <artwork xml:space="preserve">
-                  +--------&gt;[TCPTERM]&lt;----------+
-                  |                           |
-               Timeout                      Error
-               or Error                       |
-                  |                           |
-+-------+     +---------+    Contact     +----------+
-| START |---->| Waiting |---- Header --->| Validate |
-+-------+     +---------+    Received    +----------+
-                                              |
-                  +---------------------------+
-                  |                   
-                  V                   
-             +---------+              
-   +--Error--| Analyze |---No TLS---->[SI]
-   |         |         |               ^
-   |         +---------+               |
-   |              |                    |
-   V             TLS                   |
-[TCPTERM]     Negotiated               |
-   ^              |                    |
-   |              V                    |
-   |         +-----------+             |
-   |         | Establish |---Success---+
-   +--Error--|    TLS    |              
-             +-----------+              
++-----------+
+|  Peer CH  |
+| available |
++-----------+
+      |
+ Validate and
+  Negotiate
+      V
+ +------------+
+ | Negotiated |----Failure---->[TCPCLOSE]
+ +------------+                      ^
+    |       |                        |
+  No TLS    +----Negotiate---+       |
+    V               TLS      |    Failure
+  +-----------+              V       |
+  |   TCPCL   |            +---------------+
+  | Messaging |&lt;--Success--| TLS Finished |
+  | Available |            +---------------+
+  +-----------+
 </artwork></figure>
         <t>
+        Session negotation involves exchanging a session initialization 
+        (SESS_INIT) message in both directions and deriving a negotiated 
+        state from the two messages.
         The session negotiation sequencing is performed either as the
         active or passive peer, and is illustrated in <xref target="fig-sess-init-active"/>
         and <xref target="fig-sess-init-passive"/> respectively which both share the data
         validation and analyze final states of <xref target="fig-sess-init-process"/>.
+        The validation here includes certificate validation and authentication
+        when TLS is used for the session.
         </t>
-        <figure anchor="fig-sess-init-active" title="Session Initiation as Active peer">
+        <figure anchor="fig-sess-init-active" title="Session Initiation [SI] as Active peer">
           <artwork xml:space="preserve">
-+-------+    TCPCL
-| START |--Messaging--+
-+-------+  Available  |
-                      V
-             +----------------+
-             | Send SESS_INIT |--OK--&gt;[PSI]
-             +----------------+
-                      |        
-                    Error      
-                      |        
-                      V        
-                  [SESSTERM]
++-----------+
+|   TCPCL   |                   +---------+
+| Messaging |--Send SESS_INIT--&gt;| Waiting |--Timeout--&gt;[SESSTERM]
+| Available |                   +---------+
++-----------+                       |
+                            Recevied SESS_INIT
+                                    |
+                                    V
+                                  [PSI]
 </artwork></figure>
-        <figure anchor="fig-sess-init-passive" title="Session Initiation as Passive peer">
+        <figure anchor="fig-sess-init-passive" title="Session Initiation [SI] as Passive peer">
           <artwork xml:space="preserve">
-+-------+     TCPCL
-| START |---Messaging--&gt;[PSI]
-+-------+   Available
++-----------+
+|   TCPCL   |                  +---------+
+| Messaging |----Wait for ----&gt;| Waiting |--Timeout--&gt;[SESSTERM]
+| Available |    SESS_INIT     +---------+
++-----------+                       |
+                            Recevied SESS_INIT
+                                    |
+                            +-----------------+
+                            | Preparing reply |--Send SESS_INIT--&gt;[PSI]
+                            +-----------------+
 </artwork></figure>
-        <figure anchor="fig-sess-init-process" title="Processing of Session Initiation (PSI)">
+        <figure anchor="fig-sess-init-process" title="Processing of Session Initiation [PSI]">
           <artwork xml:space="preserve">
-                  +-------&gt;[SESSTERM]&lt;--------+
-                  |                           |
-               Timeout                      Error
-               or Error                       |
-                  |                           |
-+-------+     +---------+                +----------+
-| START |---->| Waiting |---SESS_INIT--->| Validate |
-+-------+     +---------+   Received     +----------+
-                                              |
-                  +---------------------------+
-                  |                   
-                  V                   
-             +---------+     +--------------+
-   +--Error--| Analyze |---->| Established  |
-   |         |         |     | Session Idle |
-   |         +---------+     +--------------+
-   V          
-[SESSTERM]    
++----------------+
+| Peer SESS_INIT |
+|   available    |
++----------------+
+        |
+   Validate and
+    Negotiate
+        V
+   +------------+
+   | Negotiated |---Failure--->[SESSTERM]
+   +------------+
+        |
+     Success
+        V
+  +--------------+
+  | Established  |
+  | Session Idle |
+  +--------------+
 </artwork></figure>
         <t>
         Transfers can occur after a session is established and it's not
@@ -699,7 +740,10 @@ SESS_TERM Exchange
         <t>
         Notes on transfer sending:
         <list>
-          <t>Pipelining of transfers can occur when the sending entity begins a new transfer while in the "Waiting for Ack" state.</t>
+          <t>
+            Pipelining of transfers can occur when the sending entity begins 
+            a new transfer while in the "Waiting for Ack" state.
+          </t>
         </list>
         </t>
         <figure anchor="fig-transfer-rx-states" title="Transfer receiver states">
@@ -707,7 +751,7 @@ SESS_TERM Exchange
                                          +-Receive XFER_SEGMENT-+
 +--------+                               |    Send XFER_ACK     |
 | Stream |                         +-------------+              |
-|  IDLE  |--Receive XFER_SEGMENT--&gt;| In Progress |&lt;-------------+
+|  Idle  |--Receive XFER_SEGMENT--&gt;| In Progress |&lt;-------------+
 +--------+                         +-------------+
                                          |
      +--------Sent Final XFER_ACK--------+
@@ -715,8 +759,34 @@ SESS_TERM Exchange
      V
 +--------+
 | Stream |
-|  IDLE  |
+|  Idle  |
 +--------+
+</artwork></figure>
+        <t>
+          Session termination involves one entity initiating the termination
+          of the session and the other entity acknowledging the termination.
+          For either entity, it is the sending of the SESS_TERM message which
+          transitions the session to the ending substate.
+          While a session is being terminated only in-progress transfers can
+          be completed and no new transfers can be started.
+        </t>
+        <figure anchor="fig-sessterm-init" title="Session Termination [SESSTERM] from the Initiator">
+          <artwork xml:space="preserve">
++-----------+                   +---------+
+|  Session  |--Send SESS_TERM-->| Session |
+| Live/Idle |                   | Ending  |
++-----------+                   +---------+
+</artwork></figure>
+        <figure anchor="fig-sessterm-respond" title="Session Termination [SESSTERM] from the Responder">
+          <artwork xml:space="preserve">
++-----------+                   +---------+
+|  Session  |--Send SESS_TERM-->| Session |
+| Live/Idle |                   | Ending  |
++-----------+&lt;------+           +---------+
+      |             |
+ Receive SESS_TERM  |
+      |             |
+      +-------------+
 </artwork></figure>
       </section>
       <section anchor="sec-transfer-segmentation" title="Transfer Segmentation Policies">
@@ -734,7 +804,7 @@ SESS_TERM Exchange
           chunking/packetization performed by TLS, TCP, and any intermediate
           network-layer nodes.
           <list style="hanging">
-            <t hangText="Minimum Overhead">
+            <t hangText="Minimum Overhead:">
               For a simple network expected to exchange relatively small bundles,
               the Segment MRU can be set to be identical to the Transfer MRU which
               indicates that all transfers can be sent with a single data
@@ -748,7 +818,7 @@ SESS_TERM Exchange
               able to transmit any XFER_ACK or XFER_REFUSE for any associated
               received transfers.
             </t>
-            <t hangText="Predictable Message Sizing">
+            <t hangText="Predictable Message Sizing:">
               In situations where the maximum message size is desired to be 
               well-controlled, the
               Segment MRU can be set to the largest acceptable size (the 
@@ -759,7 +829,7 @@ SESS_TERM Exchange
               the TCP stream for too long, which would prevent outgoing 
               XFER_ACK and XFER_REFUSE associated with received transfers.
             </t>
-            <t hangText="Dynamic Segmentation">
+            <t hangText="Dynamic Segmentation:">
               Even after negotiation of a Segment MRU for each receiving node,
               the actual transfer segmentation only needs to guarantee than
               any individual segment is no larger than that MRU.
@@ -769,9 +839,10 @@ SESS_TERM Exchange
             </t>
           </list>
           Many other policies can be established in a TCPCL network between
-          these two extremes.
-          Different policies can be applied to each direction to/from any 
-          particular node.
+          the two extremes of minimum overhead (large MRU, single-segment) and 
+          predictable message sizing (small MRU, highly segmented).
+          Different policies can be applied to each transfer stream to and 
+          from from any particular node.
           Additionally, future header and transfer extension types can apply
           further nuance to transfer policies and policy negotiation.
         </t>
@@ -875,14 +946,22 @@ SESS_TERM Exchange
           connection. If it does so, it MUST NOT overwhelm its target with
           repeated connection attempts. Therefore, the entity MUST retry the
           connection setup no earlier than some delay time from the last attempt,
-          and it SHOULD use a (binary) exponential backoff
+          and it SHOULD use a (binary) exponential back-off
           mechanism to increase this delay in case of repeated failures.
+          The upper limit on a re-attempt back-off is implementation defined
+          but SHOULD be no longer than one minute before signaling to the
+          BP agent that a connection cannot be made.
         </t>
         <t>
           Once a TCP connection is established, each entity MUST immediately
           transmit a contact header over the TCP connection. The format of the
           contact header is described in
           <xref target="sec-contact-header" />.
+          Because the TCPCL protocol version in use is part of the initial 
+          contact header, nodes using TCPCL version 4 can coexist on a network
+          with nodes using earlier TCPCL versions (with some negotiation needed
+          for interoperation as described in 
+          <xref target="sec-contact-negotiate" />).
         </t>
       </section>
       <section anchor="sec-contact-header" title="Contact Header">
@@ -929,12 +1008,14 @@ SESS_TERM Exchange
             </t>
             <t hangText="Version:">
               A one-octet field value containing the value 4 (current
-              version of the protocol).
+              version of the TCPCL).
             </t>
             <t hangText="Flags:">
               A one-octet field of single-bit flags, interpreted according to the
               descriptions in
               <xref target="tab-contact-header-flags" />.
+              All reserved header flag bits SHALL be not set by the sender.
+              All reserved header flag bits SHALL be ignored by the receiver.
             </t>
           </list>
         </t>
@@ -963,7 +1044,7 @@ SESS_TERM Exchange
           protocol than the one described in this document. To prevent a flood
           of repeated connections from a misconfigured application, an entity MAY
           elect to hold an invalid connection open and idle for some time
-          before closing it.
+          before ending it.
         </t>
         <t>
           The first negotiation is on the TCPCL protocol version to use.
@@ -988,7 +1069,7 @@ SESS_TERM Exchange
         </t>
         <t>
           If the passive node receives a contact header containing a version that is
-          greater than the current version of the protocol that the node
+          greater than the current version of the TCPCL that the node
           implements, then the node SHALL shutdown the session with a reason code
           of "Version mismatch".
           If the passive node receives a contact header with a
@@ -1010,32 +1091,47 @@ SESS_TERM Exchange
           If this is desired, the entire TCPCL session MUST be terminated and a new
           non-TLS-negotiated session established.
         </t>
-        <t>
-          The use of TLS is negotated using the Contact Header as described
-          in
-          <xref target="sec-contact-negotiate" />.
-          After negotiating an Enable TLS parameter of true, and before any other
-          TCPCL messages are sent within the session, the session entities SHALL
-          begin a TLS handshake in accordance with
-          <xref target="RFC5246" />.
-          The parameters within each TLS negotiation are implementation dependent but
-          any TCPCL node SHALL follow all recommended practices of 
-          <xref target="BCP195" />, or any updates or successors that 
-          become part of <xref target="BCP195" />.
-          By convention, this protocol uses the node which initiated the
-          underlying TCP connection as the &quot;client&quot; role
-          of the TLS handshake request.
-        </t>
-        <t>
-          The TLS handshake, if it occurs, is considered to be part of the contact
-          negotiation before the TCPCL session itself is established.
-          Specifics about sensitive data exposure are discussed in
-          <xref target="sec-security" />.
-        </t>
-        <section title="TLS Handshake Result">
+        <section anchor="sec-tls-handshake" title="TLS Handshake">
+          <t>
+            The use of TLS is negotated using the Contact Header as described
+            in <xref target="sec-contact-negotiate" />.
+            After negotiating an Enable TLS parameter of true, and before any other
+            TCPCL messages are sent within the session, the session entities SHALL
+            begin a TLS handshake in accordance with
+            TLS 1.2 <xref target="RFC5246" /> or any successors that are 
+            compatible with TLS 1.2.
+            By convention, this protocol uses the node which initiated the
+            underlying TCP connection as the &quot;client&quot; role
+            of the TLS handshake request.
+          </t>
+          <t>
+            The TLS handshake, if it occurs, is considered to be part of the contact
+            negotiation before the TCPCL session itself is established.
+            Specifics about sensitive data exposure are discussed in
+            <xref target="sec-security" />.
+          </t>
+          <t>
+            The parameters within each TLS negotiation are implementation dependent but
+            any TCPCL node SHALL follow all recommended practices of 
+            BCP 195 <xref target="RFC7525" />, or any updates or successors that 
+            become part of BCP 195.
+            The TLS handshake SHOULD include a Server Name Indication from
+            the active peer.
+            The TLS handshake SHALL request a client-side certificate to allow
+            authentication of the active peer.
+            The passive peer SHOULD supply a certificate within the 
+            TLS handshake to allow authentication of its side of the session.
+            The active peer SHOULD supply a certificate within the 
+            TLS handshake to allow authentication of its side of the session.
+            All certificates supplied during TLS handshake SHALL conform with
+            the profile of <xref target="RFC5280" />.
+            When a certificate is supplied during TLS handshake, the full
+            certification chain SHOULD be included unless security policy
+            indicates that is unnecessary.
+          </t>
           <t>
             If a TLS handshake cannot negotiate a TLS session, both entities of the TCPCL
-            session SHALL terminate the TCP connection.
+            session SHALL close the TCP connection.
             At this point the TCPCL session has not yet been established so there
             is no TCPCL session to terminate.
             This also avoids any potential security issues assoicated with
@@ -1047,16 +1143,74 @@ SESS_TERM Exchange
             This session negotation and all subsequent messaging are secured.
           </t>
         </section>
+        <section anchor="sec-tls-authentication" title="TLS Authentication">
+          <t>
+            Using X.509 certificates exchanged during the TLS handshake, each
+            of the entities can attempt to authenticate its peer at the
+            network layer (host name and address) and at the application layer
+            (BP Node ID).
+            The Node ID exchanged in the Session Initialization is likely to
+            be used by the BP agent for making transfer and routing decisions,
+            so attempting host name validation is 
+            optional while attempting Node ID validation is required.
+            The logic for attempting validation is separate from the
+            logic for handling the result of validation, which is based on
+            local security policy.
+          </t>
+          <t>
+            Any certificate received during TLS handshake SHALL be validated
+            up to one or more trusted certificate authority (CA) certificates.
+            If certificate validation fails or if security policy disallows
+            a certificate for any reason, the entity SHOULD terminate the session
+            (with a reason code of "Contact Failure").
+          </t>
+          <t>
+            Immediately after the TLS handshake, each side of the TCP connection
+            SHOULD perform host name validation of its peer in accordance with
+            <xref target="RFC6125" /> unless it is not needed by security policy.
+            The active peer SHALL attempt to authenticate the host name 
+            (of the passive peer) used to initiate the TCP connection.
+            The active peer MAY attempt to authenticate the IP address 
+            of the other side of the TCP connection.
+            The passive peer SHALL attempt to authenticate the IP address of 
+            the other side of the TCP connection.
+            The passive peer MAY use the IP address to resolve one or more 
+            host names of the active peer and attempt to authenticate those.
+            If host name validation fails (including failure
+            because the certificate does not contain any DNS-ID), 
+            the entity SHOULD terminate the session
+            (with a reason code of "Contact Failure") unless security policy
+            allows an unauthticated host.
+          </t>
+          <t>
+            Immediately before Session Parameter Negotiation, each side of
+            the session SHALL perform Node ID validation of its peer as
+            described below.
+            Node ID validation SHALL succeed if the associated certificate
+            contains a subjectAltName entry of type uniformResourceIdentifier 
+            whose value matches the Node ID of the TCPCL entity.
+            URI matching of Node IDs SHALL use the URI comparison logic of
+            <xref target="RFC3986" /> and scheme-based normalization of
+            those schemes specified in <xref target="I-D.ietf-dtn-bpbis" />.
+            This is similar to the URI-ID of <xref target="RFC6125" /> but does
+            not require any structure to the scheme-specific-part of the URI.
+            If Node ID validation fails (including failure because
+            the certificate does not contain any subjectAltName URI),
+            the entity SHOULD terminate the session
+            (with a reason code of "Contact Failure") unless security policy
+            allows an unauthticated node.
+          </t>
+        </section>
         <section title="Example TLS Initiation">
           <t>
-            A summary of a typical CAN_TLS usage is shown in the sequence in
+            A summary of a typical TLS use is shown in the sequence in
             <xref target="fig-tls-example" />
             below.
           </t>
           <figure anchor="fig-tls-example" title="A simple visual example of TCPCL TLS Establishment between two entities">
             <artwork xml:space="preserve">
              Entity A                             Entity B
-             ========                             ========
+            active peer                         passive peer
     
     +-------------------------+         
     |  Open TCP Connnection   | -&gt;   
@@ -1075,17 +1229,25 @@ SESS_TERM Exchange
     |       (as client)       |         |       (as server)       |
     +-------------------------+         +-------------------------+
     
-        ... secured TCPCL messaging, starting with SESS_INIT ...
+                      Host name validation occurs.
+                   Secured TCPCL messaging can begin.
     
     +-------------------------+         +-------------------------+
-    |       SESS_TERM          | -&gt;   &lt;- |         SESS_TERM        |
+    |        SESS_INIT        | -&gt;   &lt;- |        SESS_INIT        |
+    +-------------------------+         +-------------------------+
+    
+                       Node ID validation occurs.
+               Session is established, transfers can begin.
+    
+    +-------------------------+         +-------------------------+
+    |        SESS_TERM        | -&gt;   &lt;- |        SESS_TERM        |
     +-------------------------+         +-------------------------+
 </artwork>
           </figure>
         </section>
       </section>
       
-      <section anchor="sec-msg-codes" title="Message Type Codes">
+      <section anchor="sec-msg-header" title="Message Header">
         <t>
           After the initial exchange of a contact header, all messages
           transmitted over the session are identified by a one-octet header
@@ -1223,19 +1385,21 @@ SESS_TERM Exchange
               The two entities of a single session MAY have different Transfer MRUs, and
               no relation between the two is required.
             </t>
-            <t hangText="EID Length and EID Data:">
+            <t hangText="Node ID Length and Node ID Data:">
               Together these fields represent a variable-length text string.
-              The EID Length is a 16-bit unsigned integer indicating the number of
-              octets of EID Data to follow.
-              A zero EID Length SHALL be used to indicate the lack of EID rather than a
-              truly empty EID.
-              This case allows an entity to avoid exposing EID information on an
+              The Node ID Length is a 16-bit unsigned integer indicating the number of
+              octets of Node ID Data to follow.
+              A zero-length Node ID SHALL be used to indicate the lack of 
+              Node ID rather than a truly empty Node ID.
+              This case allows an entity to avoid exposing Node ID information on an
               untrusted network.
-              A non-zero-length EID Data SHALL contain the UTF-8 encoded EID of some
-              singleton endpoint in which the sending entity is a member, in the canonical
-              format of &lt;scheme name&gt;:&lt;scheme-specific part&gt;.
-              This EID encoding is consistent with
+              A non-zero-length Node ID Data SHALL contain the UTF-8 encoded 
+              Node ID of the Entity which sent the SESS_INIT message.
+              Every Node ID SHALL be a URI consistent with the requirements
+              of <xref target="RFC3986" /> and the URI schemes of
               <xref target="I-D.ietf-dtn-bpbis" />.
+              The Node ID itself can be authenticated as described in 
+              <xref target="sec-tls-authentication" />.
             </t>
             <t hangText="Session Extension Length and Session Extension Items:">
               Together these fields represent protocol extension data
@@ -1289,9 +1453,12 @@ SESS_TERM Exchange
               of Enable TLS is acceptable.
               It can be a reasonable security policy to both require or disallow
               the use of TLS depending upon the desired network flows.
+              Because this state is negotiated over an unsecured medium,
+              there is a risk of a TLS Stripping as described in <xref target="sec-security" />.
               If the Enable TLS state is unacceptable, the node SHALL terminate
               the session with a reason code of &quot;Contact Failure&quot;.
-              Note that this contact failure is different than a failure of TLS handshake
+              Note that this contact failure reason is different than a failure 
+              of TLS handshake or TLS authentication
               after an agreed-upon and acceptable Enable TLS state.
               If the negotiated Enable TLS value is true and acceptable then
               TLS negotiation feature (described in
@@ -1323,6 +1490,8 @@ SESS_TERM Exchange
               A one-octet field containing generic bit flags about the Item,
               which are listed in
               <xref target="tab-header-extension-flags" />.
+              All reserved header flag bits SHALL be not set by the sender.
+              All reserved header flag bits SHALL be ignored by the receiver.
               If a TCPCL entity receives a Session Extension Item with an unknown Item Type
               and the CRITICAL flag set, the entity SHALL close the
               TCPCL session with SESS_TERM reason code of &quot;Contact Failure&quot;.
@@ -1582,6 +1751,8 @@ SESS_TERM Exchange
                 A one-octet field of single-bit flags, interpreted according to the
                 descriptions in
                 <xref target="tab-XFER_SEGMENT-flags" />.
+                All reserved header flag bits SHALL be not set by the sender.
+                All reserved header flag bits SHALL be ignored by the receiver.
               </t>
               <t hangText="Transfer ID:">
                 A 64-bit unsigned integer identifying the transfer being made.
@@ -1681,6 +1852,8 @@ SESS_TERM Exchange
                 A one-octet field of single-bit flags, interpreted according to the
                 descriptions in
                 <xref target="tab-XFER_SEGMENT-flags" />.
+                All reserved header flag bits SHALL be not set by the sender.
+                All reserved header flag bits SHALL be ignored by the receiver.
               </t>
               <t hangText="Transfer ID:">
                 A 64-bit unsigned integer identifying the transfer being acknowledged.
@@ -1828,6 +2001,8 @@ SESS_TERM Exchange
                   A one-octet field containing generic bit flags about the Item,
                   which are listed in
                   <xref target="tab-transfer-extension-flags" />.
+                  All reserved header flag bits SHALL be not set by the sender.
+                  All reserved header flag bits SHALL be ignored by the receiver.
                   If a TCPCL node receives a Transfer Extension Item with an unknown Item Type
                   and the CRITICAL flag set, the node SHALL refuse the transfer
                   with an XFER_REFUSE reason code of &quot;Extension Failure&quot;.
@@ -1947,7 +2122,7 @@ SESS_TERM Exchange
           After sending a SESS_TERM message, an entity MAY continue a possible in-progress
           transfer in either direction.
           After sending a SESS_TERM message, an entity SHALL NOT begin any new outgoing
-          transfer (i.e. send an XFER_SEGMENT message) for the remainder of the session.
+          transfer for the remainder of the session.
           After receving a SESS_TERM message, an entity SHALL NOT accept any new incoming
           transfer for the remainder of the session.
         </t>
@@ -1987,6 +2162,8 @@ SESS_TERM Exchange
               A one-octet field of single-bit flags, interpreted according to the
               descriptions in
               <xref target="tab-SESS_TERM-flags" />.
+              All reserved header flag bits SHALL be not set by the sender.
+              All reserved header flag bits SHALL be ignored by the receiver.
             </t>
             <t hangText="Reason Code:">
               A one-octet refusal reason code interpreted according to the
@@ -2059,7 +2236,7 @@ SESS_TERM Exchange
       <section anchor="sec-idle-shutdown" title="Idle Session Shutdown">
         <t>
           The protocol includes a provision for clean shutdown of idle
-          sessions. Determining the length of time to wait before closing
+          sessions. Determining the length of time to wait before ending
           idle sessions, if they are to be closed at all, is an
           implementation and configuration matter.
         </t>
@@ -2094,7 +2271,7 @@ SESS_TERM Exchange
         presented here that was supplied by IETF contributors. This is not
         intended as, and must not be construed to be, a catalog of available
         implementations or their features. Readers are advised to note that
-        other implementations may exist.
+        other implementations can exist.
       </t>
       <t>
         An example implementation of the this draft of TCPCLv4 has been
@@ -2108,50 +2285,23 @@ SESS_TERM Exchange
     </section>
     <section anchor="sec-security" title="Security Considerations">
       <t>
-        One security consideration for this protocol relates to the fact that
-        entities present their endpoint identifier as part of the contact
-        header exchange. It would be possible for an entity to fake this value
-        and present the identity of a singleton endpoint in which the node is
-        not a member, essentially masquerading as another DTN node. If this
-        identifier is used outside of a TLS-secured session or
-        without further verification as a means to
-        determine which bundles are transmitted over the session, then the
-        node that has falsified its identity would be able to obtain bundles
-        that it otherwise would not have.
-        Therefore, an entity SHALL NOT use the EID value of an unsecured contact header
-        to derive a peer node's identity unless it can corroborate it via other
-        means.
-        When TCPCL session security is mandated by a TCPCL peer, that peer SHALL
-        transmit initial unsecured contact header values indicated in
-        <xref target="tab-empty-contact" />
-        in order.
-        These values avoid unnecessarily
-        leaking session parameters and will be ignored when secure contact header
-        re-exchange occurs.
-      </t>
-      <texttable anchor="tab-empty-contact" title="Recommended Unsecured Contact Header">
-        <ttcol>Parameter</ttcol>
-        <ttcol>Value</ttcol>
-        <c>Flags</c>
-        <c>The USE_TLS flag is set.</c>
-        <c>Keepalive Interval</c>
-        <c>Zero, indicating no keepalive.</c>
-        <c>Segment MRU</c>
-        <c>Zero, indicating all segments are refused.</c>
-        <c>Transfer MRU</c>
-        <c>Zero, indicating all transfers are refused.</c>
-        <c>EID</c>
-        <c>Empty, indicating lack of EID.</c>
-      </texttable>
-      <t>
         TCPCL can be used to provide point-to-point transport security, but does
         not provide security of data-at-rest and does not guarantee
         end-to-end bundle security.
-        The mechanisms defined in
-        <xref target="RFC6257" />
-        and
-        <xref target="I-D.ietf-dtn-bpsec" />
+        The bundle security mechanisms defined in <xref target="I-D.ietf-dtn-bpsec" />
         are to be used instead.
+      </t>
+      <t>
+        When negotating whether to use TLS security as part of the contact
+        header exchange, it is possible for a man-in-the-middle attacker to
+        unset the CAN_TLS flag on either side of the exchange.
+        This leads to the "SSL Stripping" attack described in <xref target="RFC7457" />.
+        If TLS is desired for use on any TCPCL network, it is strongly encouraged
+        that the security policy disallow use of TCPCL when "Enable TLS" is
+        negotiated to false.
+        This requires that the TLS handshake occurs, regardless of the 
+        policy-driven parameters of the handshake and policy-driven handling
+        of the handshake outcome.
       </t>
       <t>
         Even when using TLS to secure the TCPCL session, the actual ciphersuite
@@ -2162,6 +2312,34 @@ SESS_TERM Exchange
         negotiated TLS ciphersuite meets transport security requirements.
         This is identical behavior to STARTTLS use in
         <xref target="RFC2595" />.
+      </t>
+      <t>
+        The certificates exchanged by TLS enable authentication of peer
+        host name and Node ID, but it is possible that a peer either not
+        provide a valid certificate or that the certificate does not validate
+        either the host name or Node ID of the peer.
+        Having a CA-validated certificate does not alone guarantee the identity
+        of the network host or BP node from which the certificate is provided;
+        additional validation procedures bind the host name or node ID
+        based on the contents of the certificate.
+        The host name validation is a weaker form of authentication, because 
+        even if a peer is operating on an authenticated network host name it
+        can provide an invalid Node ID and cause bundles to be "leaked" to
+        an invalid node.
+        Especially in DTN environments, network names and addresses of nodes
+        can be time-variable so binding a certificate to a Node ID is a more 
+        stable identity.
+        Node ID validation ensures that the peer to which a bundle
+        is transferred is in fact the node which the BP Agent expects it to be.
+        It is a reasonable policy to skip host name validation if certificates
+        can be guaranteed to validate the peer's Node ID.
+        In circumstances where certificates can only be issued to network
+        host names, Node ID validation is not possible but it could be
+        reasonable to assume that a trusted host is not going to present an
+        invalid Node ID.
+        Trusting an authenticated host name can be feasable on a network
+        secured by a private CA but is not advisable on the Internet when
+        using a variety of public CAs.
       </t>
       <t>
         Another consideration for this protocol relates to denial-of-service
@@ -2180,13 +2358,15 @@ SESS_TERM Exchange
     </section>
     <section anchor="sec-iana" title="IANA Considerations">
       <t>
-        In this section, registration procedures are as defined in
+        Registration procedures referred to in this section are defined in
         <xref target="RFC8126" />.
       </t>
       <t>
-        Some of the registries below are created new for TCPCLv4 but share code
-        values with TCPCLv3. This was done to disambiguate the use of these values
-        between TCPCLv3 and TCPCLv4 while preserving the semantics of some values.
+        Some of the registries have been defined as version specific to 
+        TCPCLv4, and imports some or all codepoints from TCPCLv3.
+        This was done to disambiguate the use of these codepoints
+        between TCPCLv3 and TCPCLv4 while preserving the semantics of some of
+        the codepoints.
       </t>
       <section anchor="sec-iana-port" title="Port Number">
         <t>
@@ -2266,7 +2446,7 @@ SESS_TERM Exchange
           &quot;Bundle Protocol TCP Convergence-Layer Version 4 Session Extension Types&quot;
           and initialize it with the contents of
           <xref target="tab-iana-header-extension-type" />.
-          The registration procedure is RFC Required within the lower range 0x0001--0x7FFF.
+          The registration procedure is Expert Review within the lower range 0x0001--0x7FFF.
           Values in the range 0x8000--0xFFFF are reserved for use on private networks
           for functions not published to the IANA.
         </t>
@@ -2290,7 +2470,7 @@ SESS_TERM Exchange
           &quot;Bundle Protocol TCP Convergence-Layer Version 4 Transfer Extension Types&quot;
           and initialize it with the contents of
           <xref target="tab-iana-transfer-extension-type" />.
-          The registration procedure is RFC Required within the lower range 0x0001--0x7FFF.
+          The registration procedure is Expert Review within the lower range 0x0001--0x7FFF.
           Values in the range 0x8000--0xFFFF are reserved for use on private networks
           for functions not published to the IANA.
         </t>
@@ -2316,7 +2496,9 @@ SESS_TERM Exchange
           &quot;Bundle Protocol TCP Convergence-Layer Version 4 Message Types&quot;
           and initialize it with the contents of
           <xref target="tab-iana-message-types" />.
-          The registration procedure is RFC Required.
+          The registration procedure is RFC Required within the lower range 0x01--0xEF.
+          Values in the range 0xF0--0xFF are reserved for use on private networks
+          for functions not published to the IANA.
         </t>
         <texttable anchor="tab-iana-message-types" title="Message Type Codes">
           <ttcol>Code</ttcol>
@@ -2337,8 +2519,10 @@ SESS_TERM Exchange
           <c>MSG_REJECT</c>
           <c>0x07</c>
           <c>SESS_INIT</c>
-          <c>0x08--0xf</c>
+          <c>0x08--0xEF</c>
           <c>Unassigned</c>
+          <c>0xF0--0xFF</c>
+          <c>Private/Experimental Use</c>
         </texttable>
       </section>
 
@@ -2350,7 +2534,9 @@ SESS_TERM Exchange
           &quot;Bundle Protocol TCP Convergence-Layer Version 4 XFER_REFUSE Reason Codes&quot;
           and initialize it with the contents of
           <xref target="tab-iana-XFER_REFUSE-codes" />.
-          The registration procedure is RFC Required.
+          The registration procedure is Specification Required within the lower range 0x00--0xEF.
+          Values in the range 0xF0--0xFF are reserved for use on private networks
+          for functions not published to the IANA.
         </t>
         <texttable anchor="tab-iana-XFER_REFUSE-codes" title="XFER_REFUSE Reason Codes">
           <ttcol>Code</ttcol>
@@ -2365,10 +2551,10 @@ SESS_TERM Exchange
           <c>No Resources</c>
           <c>0x04</c>
           <c>Retransmit</c>
-          <c>0x05--0x07</c>
+          <c>0x05--0xEF</c>
           <c>Unassigned</c>
-          <c>0x08--0xFF</c>
-          <c>Reserved for future usage</c>
+          <c>0xF0--0xFF</c>
+          <c>Private/Experimental Use</c>
         </texttable>
       </section>
 
@@ -2380,7 +2566,9 @@ SESS_TERM Exchange
           &quot;Bundle Protocol TCP Convergence-Layer Version 4 SESS_TERM Reason Codes&quot;
           and initialize it with the contents of
           <xref target="tab-iana-SESS_TERM-codes" />.
-          The registration procedure is RFC Required.
+          The registration procedure is Specification Required within the lower range 0x00--0xEF.
+          Values in the range 0xF0--0xFF are reserved for use on private networks
+          for functions not published to the IANA.
         </t>
         <texttable anchor="tab-iana-SESS_TERM-codes" title="SESS_TERM Reason Codes">
           <ttcol>Code</ttcol>
@@ -2397,8 +2585,10 @@ SESS_TERM Exchange
           <c>Contact Failure</c>
           <c>0x05</c>
           <c>Resource Exhaustion</c>
-          <c>0x06--0xFF</c>
+          <c>0x06--0xEF</c>
           <c>Unassigned</c>
+          <c>0xF0--0xFF</c>
+          <c>Private/Experimental Use</c>
         </texttable>
       </section>
 
@@ -2410,7 +2600,9 @@ SESS_TERM Exchange
           &quot;Bundle Protocol TCP Convergence-Layer Version 4 MSG_REJECT Reason Codes&quot;
           and initialize it with the contents of
           <xref target="tab-iana-MSG_REJECT-codes" />.
-          The registration procedure is RFC Required.
+          The registration procedure is Specification Required within the lower range 0x01--0xEF.
+          Values in the range 0xF0--0xFF are reserved for use on private networks
+          for functions not published to the IANA.
         </t>
         <texttable anchor="tab-iana-MSG_REJECT-codes" title="MSG_REJECT Reason Codes">
           <ttcol>Code</ttcol>
@@ -2423,8 +2615,10 @@ SESS_TERM Exchange
           <c>Message Unsupported</c>
           <c>0x03</c>
           <c>Message Unexpected</c>
-          <c>0x04-0xFF</c>
+          <c>0x04--0xEF</c>
           <c>Unassigned</c>
+          <c>0xF0--0xFF</c>
+          <c>Private/Experimental Use</c>
         </texttable>
       </section>
 
@@ -2441,44 +2635,23 @@ SESS_TERM Exchange
 
   <back>
     <references title="Normative References">
-      <reference anchor="BCP195">
-        <front>
-          <title>Recommendations for Secure Use of Transport Layer Security (TLS) and Datagram Transport Layer Security (DTLS)</title>
-          <author initials="Y." surname="Sheffer" fullname="Y. Sheffer">
-            <organization />
-          </author>
-          <author initials="R." surname="Holz" fullname="R. Holz">
-            <organization />
-          </author>
-          <author initials="P." surname="Saint-Andre" fullname="P. Saint-Andre">
-            <organization />
-          </author>
-          <date year="2015" month="May" />
-          <abstract>
-            <t>Transport Layer Security (TLS) and Datagram Transport Layer Security (DTLS) are widely used to protect data exchanged over application
-              protocols such as HTTP, SMTP, IMAP, POP, SIP, and XMPP. Over the last few years, several serious attacks on TLS have emerged, including
-              attacks
-              on its most commonly used cipher suites and their modes of operation. This document provides recommendations for improving the security of
-              deployed services that use TLS and DTLS. The recommendations are applicable to the majority of use cases.</t>
-          </abstract>
-        </front>
-        <seriesInfo name="BCP" value="195" />
-        <seriesInfo name="RFC" value="7525" />
-        <seriesInfo name="DOI" value="10.17487/RFC7525" />
-      </reference>
       <?rfc include="reference.RFC.0793.xml"?>
       <?rfc include="reference.RFC.1122.xml"?>
       <?rfc include="reference.RFC.2119.xml"?>
+      <?rfc include="reference.RFC.3986.xml"?>
       <?rfc include="reference.RFC.5246.xml"?>
+      <?rfc include="reference.RFC.5280.xml"?>
+      <?rfc include="reference.RFC.6125.xml"?>
+      <?rfc include="reference.RFC.7525.xml"?>
       <?rfc include="reference.RFC.8126.xml"?>
+      <?rfc include="reference.RFC.8174.xml"?>
       <?rfc include="reference.I-D.ietf-dtn-bpbis.xml"?>
     </references>
     <references title="Informative References">
       <?rfc include="reference.RFC.2595.xml"?>
       <?rfc include="reference.RFC.4838.xml"?>
-      <?rfc include="reference.RFC.5050.xml"?>
-      <?rfc include="reference.RFC.6257.xml"?>
       <?rfc include="reference.RFC.7242.xml"?>
+      <?rfc include="reference.RFC.7457.xml"?>
       <?rfc include="reference.RFC.7942.xml"?>
       <?rfc include="reference.I-D.ietf-dtn-bpsec.xml"?>
       <reference anchor="github-dtn-bpbis-tcpcl" target="https://github.com/BSipos-RKF/dtn-bpbis-tcpcl/tree/develop">
@@ -2502,15 +2675,17 @@ SESS_TERM Exchange
         <list style="symbols">
           <t>Split contact header into pre-TLS protocol negotiation and SESS_INIT parameter negotiation. The contact header is now fixed-length.</t>
           <t>Changed contact header content to limit number of negotiated options.</t>
-          <t>Added contact option to negotiate maximum segment size (per each direction).</t>
+          <t>Added session option to negotiate maximum segment size (per each direction).</t>
+          <t>Renamed "Endpoint ID" to "Node ID" to conform with BPv7 terminology.</t>
           <t>Added session extension capability.</t>
           <t>Added transfer extension capability. Moved transfer total length into an extension item.</t>
           <t>Defined new IANA registries for message / type / reason codes to allow renaming some codes for clarity.</t>
+          <t>Segments of all new IANA registries are reserved for private/experimental use.</t>
           <t>Expanded Message Header to octet-aligned fields instead of bit-packing.</t>
           <t>Added a bundle transfer identification number to all bundle-related messages (XFER_SEGMENT, XFER_ACK, XFER_REFUSE).</t>
           <t>Use flags in XFER_ACK to mirror flags from XFER_SEGMENT.</t>
           <t>Removed all uses of SDNV fields and replaced with fixed-bit-length fields.</t>
-          <t>Renamed SHUTDOWN to SESS_TERM to deconflict term "shutdown".</t>
+          <t>Renamed SHUTDOWN to SESS_TERM to deconflict term "shutdown" related to TCP connections.</t>
           <t>Removed the notion of a re-connection delay parameter.</t>
         </list>
       </t>
