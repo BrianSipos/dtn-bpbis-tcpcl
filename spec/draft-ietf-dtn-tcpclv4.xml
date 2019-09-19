@@ -2739,6 +2739,7 @@ TCP Connecting
       <?rfc include="reference.RFC.3986.xml"?>
       <?rfc include="reference.RFC.5246.xml"?>
       <?rfc include="reference.RFC.5280.xml"?>
+      <?rfc include="reference.RFC.6066.xml"?>
       <?rfc include="reference.RFC.6125.xml"?>
       <?rfc include="reference.RFC.7525.xml"?>
       <?rfc include="reference.RFC.8126.xml"?>
