@@ -2,7 +2,7 @@
 <!DOCTYPE rfc SYSTEM "rfc2629.dtd" [
 ]>
 <?rfc toc="yes"?>
-<rfc ipr="trust200902" category="std" docName="draft-ietf-dtn-tcpclv4-13" obsoletes="7242">
+<rfc ipr="trust200902" category="std" docName="draft-ietf-dtn-tcpclv4-14" obsoletes="7242">
   <front>
     <title abbrev="DTN TCPCLv4">
       Delay-Tolerant Networking TCP Convergence Layer Protocol Version 4
@@ -184,7 +184,7 @@
     <section title="Requirements Language">
       <t>
       The key words &quot;MUST&quot;, &quot;MUST NOT&quot;, &quot;REQUIRED&quot;, 
-      &quot;SHALL&quot;, &quot;SHALLNOT&quot;, &quot;SHOULD&quot;, 
+      &quot;SHALL&quot;, &quot;SHALL NOT&quot;, &quot;SHOULD&quot;, 
       &quot;SHOULD NOT&quot;, &quot;RECOMMENDED&quot;, &quot;NOT RECOMMENDED&quot;,
       &quot;MAY&quot;, and &quot;OPTIONAL&quot; in this document are to be interpreted as
       described in BCP 14 <xref target="RFC2119" /> <xref target="RFC8174" />
@@ -236,7 +236,7 @@
               The lifetime of a TCPCL session is bound to the lifetime of an underlying TCP connection.
               A TCPCL session is terminated when the TCP
               connection ends, due either to one or both entities actively
-              terminating the TCP connection or due to network errors causing
+              closing the TCP connection or due to network errors causing
               a failure of the TCP connection.
               For the remainder of this document, the term &quot;session&quot;
               without the prefix &quot;TCPCL&quot; refers to a TCPCL session.
@@ -422,7 +422,7 @@
               The TCPCL supports indication to the reciver just before any
               transmssion data is sent.
               This corresponds to reception of the XFER_SEGMENT message with
-              the START flag set.
+              the START flag of 1.
             </t>
             <t hangText="Interrupt Reception:">
               The TCPCL allows a BP agent to interrupt an individual transfer
@@ -519,15 +519,20 @@
         </t>
         <t>
           A SESS_TERM message is used to start the ending of a TCPCL session
-          (see
-          <xref target="sec-SESS_TERM" />).
+          (see <xref target="sec-SESS_TERM" />).
           During shutdown sequencing, in-progress transfers can be completed but no
           new transfers can be initiated.
           A SESS_TERM message can also be used to refuse a session setup by a
           peer (see
           <xref target="sec-contact-negotiate" />).
-          It is an implementation matter to determine whether or not to close a
-          TCPCL session while there are no transfers queued or in-progress.
+          Regardless of the reason, session termination is initiated by one
+          of the entities and responded-to by the other as illustrated by
+          <xref target="fig-sessterm-init" /> and 
+          <xref target="fig-sessterm-respond" />.
+          Even when there are no transfers queued or in-progress, the session
+          termination procedure allows each entity to distinguish between
+          a clean end to a session and the TCP connection being closed because
+          of some underlying network issue.
         </t>
         <t>
           Once a session is established, TCPCL is a symmetric protocol between the peers.
@@ -1014,7 +1019,7 @@ TCP Connecting
               A one-octet field of single-bit flags, interpreted according to the
               descriptions in
               <xref target="tab-contact-header-flags" />.
-              All reserved header flag bits SHALL be not set by the sender.
+              All reserved header flag bits SHALL be set to 0 by the sender.
               All reserved header flag bits SHALL be ignored by the receiver.
             </t>
           </list>
@@ -1061,7 +1066,7 @@ TCP Connecting
           version on a first session attempt for a TCPCL peer.
           If the active node receives a Contact Header with a different
           protocol version than the one sent earlier on the TCP connection,
-          the TCP connection SHALL be terminated.
+          the TCP connection SHALL be closed.
           If the active node receives a SESS_TERM message with reason of
           "Version Mismatch", that node MAY attempt further TCPCL sessions with the
           peer using earlier protocol version numbers in decreasing order.
@@ -1115,8 +1120,12 @@ TCP Connecting
             any TCPCL node SHALL follow all recommended practices of 
             BCP 195 <xref target="RFC7525" />, or any updates or successors that 
             become part of BCP 195.
-            The TLS handshake SHOULD include a Server Name Indication from
-            the active peer.
+            When possible, the TLS handshake SHOULD include a Server Name Indication (SNI) from
+            the active peer in accordance with <xref target="RFC6066" />.
+            The SNI SHALL contain the same host name used to establish 
+            the TCP connection.
+            The passive peer MAY use the SNI host name to choose an appropriate
+            server-side certificate.
             The TLS handshake SHALL request a client-side certificate to allow
             authentication of the active peer.
             The passive peer SHOULD supply a certificate within the 
@@ -1124,7 +1133,8 @@ TCP Connecting
             The active peer SHOULD supply a certificate within the 
             TLS handshake to allow authentication of its side of the session.
             All certificates supplied during TLS handshake SHALL conform with
-            the profile of <xref target="RFC5280" />.
+            the profile of <xref target="RFC5280" />, 
+            or any updates or successors to that profile.
             When a certificate is supplied during TLS handshake, the full
             certification chain SHOULD be included unless security policy
             indicates that is unnecessary.
@@ -1189,11 +1199,16 @@ TCP Connecting
             Node ID validation SHALL succeed if the associated certificate
             contains a subjectAltName entry of type uniformResourceIdentifier 
             whose value matches the Node ID of the TCPCL entity.
+            Unless specified otherwise by the definition of the URI scheme 
+            being authenticated,
             URI matching of Node IDs SHALL use the URI comparison logic of
             <xref target="RFC3986" /> and scheme-based normalization of
             those schemes specified in <xref target="I-D.ietf-dtn-bpbis" />.
             This is similar to the URI-ID of <xref target="RFC6125" /> but does
             not require any structure to the scheme-specific-part of the URI.
+            A URI scheme can refine this "exact match" logic with rules
+            about how Node IDs within that scheme are to be compared with
+            the certificate-authenticated URI.
             If Node ID validation fails (including failure because
             the certificate does not contain any subjectAltName URI),
             the entity SHOULD terminate the session
@@ -1346,9 +1361,9 @@ TCP Connecting
 +-----------------------------+
 |      Transfer MRU (U64)     |
 +-----------------------------+
-|        EID Length (U16)     |
+|     Node ID Length (U16)    |
 +-----------------------------+
-|      EID Data (variable)    |
+|    Node ID Data (variable)  |
 +-----------------------------+
 |      Session Extension      |
 |      Items Length (U32)     |
@@ -1481,7 +1496,7 @@ TCP Connecting
         <t>
           Each of the Session Extension Items SHALL be encoded in an identical
           Type-Length-Value (TLV) container form as indicated in
-          <xref target="fig-header-extension" />.
+          <xref target="fig-session-extension" />.
         </t>
         <t>
           The fields of the Session Extension Item are:
@@ -1489,20 +1504,20 @@ TCP Connecting
             <t hangText="Flags:">
               A one-octet field containing generic bit flags about the Item,
               which are listed in
-              <xref target="tab-header-extension-flags" />.
-              All reserved header flag bits SHALL be not set by the sender.
+              <xref target="tab-session-extension-flags" />.
+              All reserved header flag bits SHALL be set to 0 by the sender.
               All reserved header flag bits SHALL be ignored by the receiver.
               If a TCPCL entity receives a Session Extension Item with an unknown Item Type
-              and the CRITICAL flag set, the entity SHALL close the
+              and the CRITICAL flag of 1, the entity SHALL close the
               TCPCL session with SESS_TERM reason code of &quot;Contact Failure&quot;.
-              If the CRITICAL flag is not set, an entity SHALL skip over and ignore
+              If the CRITICAL flag is 0, an entity SHALL skip over and ignore
               any item with an unknown Item Type.
             </t>
             <t hangText="Item Type:">
               A 16-bit unsigned integer field containing the type of the extension item.
               This specification does not define any extension types directly, but does
               allocate an IANA registry for such codes
-              (see <xref target="sec-iana-header-extension-type" />).
+              (see <xref target="sec-iana-session-extension-type" />).
             </t>
             <t hangText="Item Length:">
               A 16-bit unsigned integer field containing the number of Item Value octets
@@ -1519,7 +1534,7 @@ TCP Connecting
             </t>
           </list>
         </t>
-        <figure anchor="fig-header-extension" title="Session Extension Item Format">
+        <figure anchor="fig-session-extension" title="Session Extension Item Format">
           <artwork align="center" xml:space="preserve">
                      1 1 1 1 1 1 1 1 1 1 2 2 2 2 2 2 2 2 2 2 3 3
  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
@@ -1530,7 +1545,7 @@ TCP Connecting
 +---------------+---------------+---------------+---------------+
 </artwork>
         </figure>
-        <texttable anchor="tab-header-extension-flags" title="Session Extension Item Flags">
+        <texttable anchor="tab-session-extension-flags" title="Session Extension Item Flags">
           <ttcol>Name</ttcol>
           <ttcol>Code</ttcol>
           <ttcol>Description</ttcol>
@@ -1677,8 +1692,8 @@ TCP Connecting
           receive unit (MRU)
           (see the field "Segment MRU" of
           <xref target="sec-contact-header" />).
-          The first segment for a bundle MUST set the 'START' flag,
-          and the last one MUST set the 'end' flag in the XFER_SEGMENT message flags.
+          The first segment for a bundle is indicated by the 'START' flag and
+          the last segment is indicated by the 'END' flag.
         </t>
         <t>
           A single transfer (and by extension a single segment) SHALL NOT contain data
@@ -1751,7 +1766,7 @@ TCP Connecting
                 A one-octet field of single-bit flags, interpreted according to the
                 descriptions in
                 <xref target="tab-XFER_SEGMENT-flags" />.
-                All reserved header flag bits SHALL be not set by the sender.
+                All reserved header flag bits SHALL be zero-value by the sender.
                 All reserved header flag bits SHALL be ignored by the receiver.
               </t>
               <t hangText="Transfer ID:">
@@ -1761,7 +1776,7 @@ TCP Connecting
                 Together these fields represent protocol extension data
                 for this specification.
                 The Transfer Extension Length and Transfer Extension Item fields
-                SHALL only be present when the 'START' flag is set on the message.
+                SHALL only be present when the 'START' flag is set to 1 on the message.
                 The Transfer Extension Length is the total number of octets to follow which
                 are used to encode the Transfer Extension Item list.
                 The encoding of each Transfer Extension Item is within a consistent data
@@ -1799,16 +1814,16 @@ TCP Connecting
             The flags portion of the message contains two optional
             values in the two low-order bits, denoted 'START' and 'END' in
             <xref target="tab-XFER_SEGMENT-flags" />.
-            The 'START' bit MUST be set to one if it precedes the transmission of the first
+            The 'START' flag SHALL be set to 1 when transmitting the first
             segment of a transfer.
-            The 'END' bit MUST be set to one when transmitting the last segment of a transfer.
+            The 'END' flag SHALL be set to 1 when transmitting the last segment of a transfer.
             In the case where an entire transfer is accomplished in a single segment,
-            both the 'START' and 'END' bits MUST be set to one.
+            both the 'START' and 'END' flags SHALL be set to 1.
           </t>
           <t>
             Once a transfer of a bundle has commenced, the node MUST only
             send segments containing sequential portions of that bundle until it
-            sends a segment with the 'END' bit set.
+            sends a segment with the 'END' flag set to 1.
             No interleaving of multiple transfers from the same node is possible
             within a single TCPCL session.
             Simultaneous transfers between two entities MAY be achieved using multiple
@@ -1852,7 +1867,7 @@ TCP Connecting
                 A one-octet field of single-bit flags, interpreted according to the
                 descriptions in
                 <xref target="tab-XFER_SEGMENT-flags" />.
-                All reserved header flag bits SHALL be not set by the sender.
+                All reserved header flag bits SHALL be set to 0 by the sender.
                 All reserved header flag bits SHALL be ignored by the receiver.
               </t>
               <t hangText="Transfer ID:">
@@ -1981,9 +1996,9 @@ TCP Connecting
           </t>
           <t>
             Note: If a bundle transmission is aborted in this way, the receiver
-            MAY not receive a segment with the 'END' flag set to '1' for the
+            MAY not receive a segment with the 'END' flag set to 1 for the
             aborted bundle. The beginning of the next bundle is identified by
-            the 'START' bit set to '1', indicating the start of a new transfer, and with
+            the 'START' flag set to 1, indicating the start of a new transfer, and with
             a distinct Transfer ID value.
           </t>
         </section>
@@ -2001,12 +2016,12 @@ TCP Connecting
                   A one-octet field containing generic bit flags about the Item,
                   which are listed in
                   <xref target="tab-transfer-extension-flags" />.
-                  All reserved header flag bits SHALL be not set by the sender.
+                  All reserved header flag bits SHALL be set to 0 by the sender.
                   All reserved header flag bits SHALL be ignored by the receiver.
                   If a TCPCL node receives a Transfer Extension Item with an unknown Item Type
-                  and the CRITICAL flag set, the node SHALL refuse the transfer
+                  and the CRITICAL flag is 1, the node SHALL refuse the transfer
                   with an XFER_REFUSE reason code of &quot;Extension Failure&quot;.
-                  If the CRITICAL flag is not set, an entity SHALL skip over and ignore
+                  If the CRITICAL flag is 0, an entity SHALL skip over and ignore
                   any item with an unknown Item Type.
                 </t>
                 <t hangText="Item Type:">
@@ -2068,7 +2083,7 @@ TCP Connecting
                 The Transfer Length extension SHALL be assigned transfer extension type ID 0x0001.
               </t>
               <t>
-                If a transfer occupies exactly one segment (i.e. both START and END bits are set)
+                If a transfer occupies exactly one segment (i.e. both START and END flags are 1)
                 the Transfer Length extension SHOULD NOT be present.
                 The extension does not provide any additional information for
                 single-segment transfers.
@@ -2110,13 +2125,13 @@ TCP Connecting
           To cleanly shut down a session, a SESS_TERM message SHALL be
           transmitted by either node at any point following complete
           transmission of any other message.
-          When sent to initiate a termination, the REPLY bit of a SESS_TERM message
-          SHALL NOT be set.
+          When sent to initiate a termination, the REPLY flag of a SESS_TERM message
+          SHALL be 0.
           Upon receiving a SESS_TERM message after not sending a SESS_TERM message in
           the same session, an entity SHALL send an acknowledging SESS_TERM message.
           When sent to acknowledge a termination, a SESS_TERM message SHALL have
           identical data content from the message being acknowledged except for
-          the REPLY bit, which is set to indicate acknowledgement.
+          the REPLY flag, which is set to 1 to indicate acknowledgement.
         </t>
         <t>
           After sending a SESS_TERM message, an entity MAY continue a possible in-progress
@@ -2136,7 +2151,7 @@ TCP Connecting
           When performing an unclean shutodwn, a transmitting node SHALL treat
           either sending or receiving a SESS_TERM message
           (i.e. before the final acknowledgment) as a failure of the transfer.
-          Any delay between request to terminate the TCP connection and actual
+          Any delay between request to close the TCP connection and actual
           closing of the connection (a &quot;half-closed&quot; state) MAY be ignored
           by the TCPCL node.
         </t>
@@ -2162,7 +2177,7 @@ TCP Connecting
               A one-octet field of single-bit flags, interpreted according to the
               descriptions in
               <xref target="tab-SESS_TERM-flags" />.
-              All reserved header flag bits SHALL be not set by the sender.
+              All reserved header flag bits SHALL be set to 0 by the sender.
               All reserved header flag bits SHALL be ignored by the receiver.
             </t>
             <t hangText="Reason Code:">
@@ -2294,7 +2309,7 @@ TCP Connecting
       <t>
         When negotating whether to use TLS security as part of the contact
         header exchange, it is possible for a man-in-the-middle attacker to
-        unset the CAN_TLS flag on either side of the exchange.
+        set the CAN_TLS flag to 0 on either side of the exchange.
         This leads to the "SSL Stripping" attack described in <xref target="RFC7457" />.
         If TLS is desired for use on any TCPCL network, it is strongly encouraged
         that the security policy disallow use of TCPCL when "Enable TLS" is
@@ -2438,19 +2453,34 @@ TCP Connecting
         </texttable>
       </section>
 
-      <section anchor="sec-iana-header-extension-type" title="Session Extension Types">
+      <section anchor="sec-iana-session-extension-type" title="Session Extension Types">
         <t>EDITOR NOTE: sub-registry to-be-created upon publication of this specification.</t>
         <t>
           IANA will create, under the &quot;Bundle Protocol&quot; registry,
           a sub-registry titled
           &quot;Bundle Protocol TCP Convergence-Layer Version 4 Session Extension Types&quot;
           and initialize it with the contents of
-          <xref target="tab-iana-header-extension-type" />.
+          <xref target="tab-iana-session-extension-type" />.
           The registration procedure is Expert Review within the lower range 0x0001--0x7FFF.
           Values in the range 0x8000--0xFFFF are reserved for use on private networks
           for functions not published to the IANA.
         </t>
-        <texttable anchor="tab-iana-header-extension-type" title="Session Extension Type Codes">
+        <t>
+          Specifications of new session extension types need to define the
+          encoding of the Item Value data as well as any meaning or 
+          restriction on the number of or order of instances of the type within
+          an extension item list.
+          Specifications need to define how the extension functions
+          when no instance of the new extension type is received during
+          session negotiation.
+        </t>
+        <t>
+          Expert(s) are encouraged to be biased towards
+          approving registrations unless they are abusive, frivolous, or
+          actively harmful (not merely aesthetically displeasing, or
+          architecturally dubious).
+        </t>
+        <texttable anchor="tab-iana-session-extension-type" title="Session Extension Type Codes">
           <ttcol>Code</ttcol>
           <ttcol>Session Extension Type</ttcol>
           <c>0x0000</c>
@@ -2473,6 +2503,20 @@ TCP Connecting
           The registration procedure is Expert Review within the lower range 0x0001--0x7FFF.
           Values in the range 0x8000--0xFFFF are reserved for use on private networks
           for functions not published to the IANA.
+        </t>
+        <t>
+          Specifications of new transfer extension types need to define the
+          encoding of the Item Value data as well as any meaning or 
+          restriction on the number of or order of instances of the type within
+          an extension item list.
+          Specifications need to define how the extension functions
+          when no instance of the new extension type is received in a transfer.
+        </t>
+        <t>
+          Expert(s) are encouraged to be biased towards
+          approving registrations unless they are abusive, frivolous, or
+          actively harmful (not merely aesthetically displeasing, or
+          architecturally dubious).
         </t>
         <texttable anchor="tab-iana-transfer-extension-type" title="Transfer Extension Type Codes">
           <ttcol>Code</ttcol>
@@ -2499,6 +2543,21 @@ TCP Connecting
           The registration procedure is RFC Required within the lower range 0x01--0xEF.
           Values in the range 0xF0--0xFF are reserved for use on private networks
           for functions not published to the IANA.
+        </t>
+        <t>
+          Specifications of new message types need to define the
+          encoding of the message data as well as the purpose and relationship
+          of the new message to existing session/transfer state within
+          the baseline message sequencing.
+        </t>
+        <t>
+          Expert(s) are encouraged to favor new session/transfer extension types
+          over new message types.
+          TCPCL messages are not self-delimiting, so care must be taken 
+          in introducing new message types. If an entity receives an
+          unknown message type the only thing that can be done is to send a
+          MSG_REJECT and close the TCP connection; 
+          not even a clean termination can be done at that point.
         </t>
         <texttable anchor="tab-iana-message-types" title="Message Type Codes">
           <ttcol>Code</ttcol>
@@ -2538,6 +2597,19 @@ TCP Connecting
           Values in the range 0xF0--0xFF are reserved for use on private networks
           for functions not published to the IANA.
         </t>
+        <t>
+          Specifications of new XFER_REFUSE reason codes need to define the
+          meaning of the reason and disambiguate it with pre-exisiting 
+          reasons.
+          Each refusal reason needs to be usable by the receving BP Agent to make
+          retransmission or re-routing decisions.
+        </t>
+        <t>
+          Expert(s) are encouraged to be biased towards
+          approving registrations unless they are abusive, frivolous, or
+          actively harmful (not merely aesthetically displeasing, or
+          architecturally dubious).
+        </t>
         <texttable anchor="tab-iana-XFER_REFUSE-codes" title="XFER_REFUSE Reason Codes">
           <ttcol>Code</ttcol>
           <ttcol>Refusal Reason</ttcol>
@@ -2569,6 +2641,19 @@ TCP Connecting
           The registration procedure is Specification Required within the lower range 0x00--0xEF.
           Values in the range 0xF0--0xFF are reserved for use on private networks
           for functions not published to the IANA.
+        </t>
+        <t>
+          Specifications of new SESS_TERM reason codes need to define the
+          meaning of the reason and disambiguate it with pre-exisiting 
+          reasons.
+          Each termination reason needs to be usable by the receving BP Agent to make
+          re-connection decisions.
+        </t>
+        <t>
+          Expert(s) are encouraged to be biased towards
+          approving registrations unless they are abusive, frivolous, or
+          actively harmful (not merely aesthetically displeasing, or
+          architecturally dubious).
         </t>
         <texttable anchor="tab-iana-SESS_TERM-codes" title="SESS_TERM Reason Codes">
           <ttcol>Code</ttcol>
@@ -2603,6 +2688,19 @@ TCP Connecting
           The registration procedure is Specification Required within the lower range 0x01--0xEF.
           Values in the range 0xF0--0xFF are reserved for use on private networks
           for functions not published to the IANA.
+        </t>
+        <t>
+          Specifications of new MSG_REJECT reason codes need to define the
+          meaning of the reason and disambiguate it with pre-exisiting 
+          reasons.
+          Each rejection reason needs to be usable by the receving TCPCL Entity to make
+          message sequencing and/or session termination decisions.
+        </t>
+        <t>
+          Expert(s) are encouraged to be biased towards
+          approving registrations unless they are abusive, frivolous, or
+          actively harmful (not merely aesthetically displeasing, or
+          architecturally dubious).
         </t>
         <texttable anchor="tab-iana-MSG_REJECT-codes" title="MSG_REJECT Reason Codes">
           <ttcol>Code</ttcol>
