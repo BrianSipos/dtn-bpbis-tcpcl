@@ -1766,7 +1766,7 @@ TCP Connecting
                 A one-octet field of single-bit flags, interpreted according to the
                 descriptions in
                 <xref target="tab-XFER_SEGMENT-flags" />.
-                All reserved header flag bits SHALL be zero-value by the sender.
+                All reserved header flag bits SHALL be set to 0 by the sender.
                 All reserved header flag bits SHALL be ignored by the receiver.
               </t>
               <t hangText="Transfer ID:">
