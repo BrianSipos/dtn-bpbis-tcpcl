@@ -1,4 +1,5 @@
 #include "packet-tcpclv4.h"
+#include <ws_version.h>
 #include <epan/packet.h>
 #include <epan/prefs.h>
 #include <epan/proto.h>
@@ -7,8 +8,15 @@
 #include <epan/reassemble.h>
 #include <epan/tvbuff-int.h>
 #include <epan/dissectors/packet-tcp.h>
+#if WIRESHARK_VERSION_MAJOR >= 3
+#include <epan/dissectors/packet-tls.h>
+#include <epan/dissectors/packet-tls-utils.h>
+#define TLS_DISSECTOR_NAME "tls"
+#else
 #include <epan/dissectors/packet-ssl.h>
 #include <epan/dissectors/packet-ssl-utils.h>
+#define TLS_DISSECTOR_NAME "ssl"
+#endif
 #include <stdio.h>
 #include <inttypes.h>
 
@@ -24,6 +32,7 @@ static int proto_tcpcl = -1;
 /// Dissector handles
 static dissector_handle_t handle_tcpcl;
 static dissector_handle_t handle_ssl;
+static dissector_handle_t handle_bp;
 
 /// Extension sub-dissectors
 static dissector_table_t sess_ext_dissectors;
@@ -1367,7 +1376,9 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
         }
     }
 
-    col_append_sep_str(pinfo->cinfo, COL_INFO, NULL, msgtype_name);
+    if (msgtype_name) {
+        col_append_sep_str(pinfo->cinfo, COL_INFO, NULL, msgtype_name);
+    }
 
     try_negotiate(tcpcl_convo, pinfo, cur_loc);
     // Show negotiation results
@@ -1401,10 +1412,9 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
         gint sublen = 0;
 
         if (tcpcl_decode_bundle) {
-            dissector_handle_t dissect_bp = find_dissector("bpv7");
-            if (dissect_bp) {
+            if (handle_bp) {
                 sublen = call_dissector(
-                    dissect_bp,
+                    handle_bp,
                     xferload_tvb,
                     pinfo,
                     proto_tree_get_parent_tree(tree)
@@ -1573,7 +1583,8 @@ static void proto_register_tcpcl(void) {
 static void proto_reg_handoff_tcpcl(void) {
     dissector_add_uint_with_preference("tcp.port", TCPCL_PORT_NUM, handle_tcpcl);
 
-    handle_ssl = find_dissector("ssl");
+    handle_ssl = find_dissector_add_dependency(TLS_DISSECTOR_NAME, proto_tcpcl);
+    handle_bp = find_dissector_add_dependency("bpv7", proto_tcpcl);
 
     /* Packaged extensions */
     {
@@ -1584,10 +1595,16 @@ static void proto_reg_handoff_tcpcl(void) {
     reinit_tcpcl();
 }
 
+#define PP_STRINGIZE_I(text) #text
+
 /// Interface for wireshark plugin
 WS_DLL_PUBLIC_DEF const char plugin_version[] = "0.0";
 /// Interface for wireshark plugin
-WS_DLL_PUBLIC_DEF const char plugin_release[] = "2.6";
+WS_DLL_PUBLIC_DEF const char plugin_release[] = PP_STRINGIZE_I(WIRESHARK_VERSION_MAJOR) "." PP_STRINGIZE_I(WIRESHARK_VERSION_MINOR);
+/// Interface for wireshark plugin
+WS_DLL_PUBLIC_DEF const int plugin_want_major = WIRESHARK_VERSION_MAJOR;
+/// Interface for wireshark plugin
+WS_DLL_PUBLIC_DEF const int plugin_want_minor = WIRESHARK_VERSION_MINOR;
 /// Interface for wireshark plugin
 WS_DLL_PUBLIC_DEF void plugin_register(void) {
     static proto_plugin plugin_tcpcl;

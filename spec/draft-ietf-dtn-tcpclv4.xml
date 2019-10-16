@@ -2,7 +2,7 @@
 <!DOCTYPE rfc SYSTEM "rfc2629.dtd" [
 ]>
 <?rfc toc="yes"?>
-<rfc ipr="trust200902" category="std" docName="draft-ietf-dtn-tcpclv4-14" obsoletes="7242">
+<rfc ipr="trust200902" category="std" docName="draft-ietf-dtn-tcpclv4-15" obsoletes="7242">
   <front>
     <title abbrev="DTN TCPCLv4">
       Delay-Tolerant Networking TCP Convergence Layer Protocol Version 4
@@ -67,7 +67,7 @@
         <email>simon@per.reau.lt</email>
       </address>
     </author>
-    <date year="2019" month="September" day="19" />
+    <date year="2019" month="October" day="16" />
     <area>Transport</area>
     <workgroup>Delay Tolerant Networking</workgroup>
 
@@ -1120,18 +1120,44 @@ TCP Connecting
             any TCPCL node SHALL follow all recommended practices of 
             BCP 195 <xref target="RFC7525" />, or any updates or successors that 
             become part of BCP 195.
-            When possible, the TLS handshake SHOULD include a Server Name Indication (SNI) from
-            the active peer in accordance with <xref target="RFC6066" />.
-            The SNI SHALL contain the same host name used to establish 
-            the TCP connection.
-            The passive peer MAY use the SNI host name to choose an appropriate
-            server-side certificate.
-            The TLS handshake SHALL request a client-side certificate to allow
-            authentication of the active peer.
-            The passive peer SHOULD supply a certificate within the 
-            TLS handshake to allow authentication of its side of the session.
-            The active peer SHOULD supply a certificate within the 
-            TLS handshake to allow authentication of its side of the session.
+            Within each TLS handshake, the following requirements apply
+            (using the rough order in which they occur):
+            <list style="hanging">
+              <t hangText="Client Hello:">
+                When a resolved host name was used to establish the TCP connection, 
+                the TLS ClientHello SHOULD include a Server Name Indication (SNI) from
+                the active peer in accordance with <xref target="RFC6066" />.
+                When present, the SNI SHALL contain the same host name used to establish 
+                the TCP connection.
+              </t>
+              <t hangText="Server Certificate:">
+                The passive peer SHOULD supply a certificate within the 
+                TLS handshake to allow authentication of its side of the session.
+                When assigned a stable host name or address, 
+                the passive peer certificate SHOULD contain a subjectAltName
+                entry which authenticates that host name or address.
+                The passive peer certificate SHOULD contain a subjectAltName 
+                entry of type uniformResourceIdentifier 
+                which authenticates the Node ID of the peer.
+                The passive peer MAY use the SNI host name to choose an appropriate
+                server-side certificate which authenticates that host name
+                and corresponding Node ID.
+              </t>
+              <t hangText="Certificate Request:">
+                During TLS handshake, the passive peer SHALL request a 
+                client-side certificate.
+              </t>
+              <t hangText="Client Certificate:">
+                The active peer SHOULD supply a certificate chain within the 
+                TLS handshake to allow authentication of its side of the session.
+                When assigned a stable host name or address, 
+                the active peer certificate SHOULD contain a subjectAltName
+                entry which authenticates that host name or address.
+                The active peer certificate SHOULD contain a subjectAltName 
+                entry of type uniformResourceIdentifier 
+                which authenticates the Node ID of the peer.
+              </t>
+            </list>
             All certificates supplied during TLS handshake SHALL conform with
             the profile of <xref target="RFC5280" />, 
             or any updates or successors to that profile.
@@ -1166,6 +1192,17 @@ TCP Connecting
             The logic for attempting validation is separate from the
             logic for handling the result of validation, which is based on
             local security policy.
+          </t>
+          <t>
+            By using the SNI host name (see <xref target="sec-tls-handshake" />) a single
+            passive entity can act as a convergence layer for
+            multiple BP agents with distinct Node IDs.
+            When this &quot;virtual host&quot; behavior is used, the host name
+            is used as the indication of which BP Node the passive entity
+            is attempting to communicate with.
+            A virtual host CL entity can be authenticated by a certificate containing
+            all of the host names and/or Node IDs being hosted or by several
+            certificates each authenticating a single host name and/or Node ID.
           </t>
           <t>
             Any certificate received during TLS handshake SHALL be validated
@@ -2549,6 +2586,10 @@ TCP Connecting
           encoding of the message data as well as the purpose and relationship
           of the new message to existing session/transfer state within
           the baseline message sequencing.
+          The use of new message types need to be negotiated between 
+          TCPCL entities within a session (using the session extension 
+          mechanism) so that the receving entity can properly decode all
+          message types used in the session.
         </t>
         <t>
           Expert(s) are encouraged to favor new session/transfer extension types

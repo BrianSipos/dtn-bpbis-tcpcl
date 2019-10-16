@@ -297,8 +297,8 @@ def bundle_iterable(genmode, gencount):
 def agent_send_bundles(agent, contact, iterable):
     ''' A glib callback to send a sequence of bundles and then shutdown the agent.
 
-    :type agent: :py:cls:`tcpcl.agent.Agent`
-    :type contact: :py:cls:`tcpcl.agent.ContactHandler`
+    :type agent: :py:class:`tcpcl.agent.Agent`
+    :type contact: :py:class:`tcpcl.agent.ContactHandler`
     :param iterable: An iterable object which produces file-like bundles.
     '''
     for bundle in iterable:

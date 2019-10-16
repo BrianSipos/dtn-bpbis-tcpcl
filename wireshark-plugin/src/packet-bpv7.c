@@ -1,6 +1,8 @@
 #include "packet-bpv7.h"
+#include <ws_version.h>
 #include <epan/packet.h>
 #include <epan/prefs.h>
+#include <epan/proto.h>
 #include <epan/expert.h>
 #include <wsutil/crc16.h>
 #include <wsutil/crc32.h>
@@ -1680,11 +1682,18 @@ static void proto_reg_handoff_bp(void) {
     reinit_bp();
 }
 
-const char plugin_version[] = "0.0";
+#define PP_STRINGIZE_I(text) #text
 
-const char plugin_release[] = "2.6";
-
-void plugin_register(void) {
+/// Interface for wireshark plugin
+WS_DLL_PUBLIC_DEF const char plugin_version[] = "0.0";
+/// Interface for wireshark plugin
+WS_DLL_PUBLIC_DEF const char plugin_release[] = PP_STRINGIZE_I(WIRESHARK_VERSION_MAJOR) "." PP_STRINGIZE_I(WIRESHARK_VERSION_MINOR);
+/// Interface for wireshark plugin
+WS_DLL_PUBLIC_DEF const int plugin_want_major = WIRESHARK_VERSION_MAJOR;
+/// Interface for wireshark plugin
+WS_DLL_PUBLIC_DEF const int plugin_want_minor = WIRESHARK_VERSION_MINOR;
+/// Interface for wireshark plugin
+WS_DLL_PUBLIC_DEF void plugin_register(void) {
     static proto_plugin plugin_bp;
     plugin_bp.register_protoinfo = proto_register_bp;
     plugin_bp.register_handoff = proto_reg_handoff_bp;

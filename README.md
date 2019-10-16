@@ -19,14 +19,14 @@ PYTHONPATH=demo-agent/src
 
 An insecure session on the `localhost` address can be established with commands:
 ```
-python3 -m tcpcl.agent --bus-service=tcpcl.Server --eid=server --tls-disable listen --address=localhost
-python3 -m tcpcl.agent --bus-service=tcpcl.Client --eid=client --tls-disable connect localhost
+python3 -m tcpcl.agent --bus-service=tcpcl.Server --nodeid=dtn:server --tls-disable listen --address=localhost
+python3 -m tcpcl.agent --bus-service=tcpcl.Client --nodeid=dtn:client --tls-disable --stop-on-close connect localhost
 ```
 
 To use Fedora/CentOS7 system-default localhost PKI use:
 ```
-python3 -m tcpcl.agent --bus-service=tcpcl.Server --eid=server --tls-key=/etc/pki/tls/private/localhost.key --tls-cert=/etc/pki/tls/certs/localhost.crt listen --address=localhost
-python3 -m tcpcl.agent --bus-service=tcpcl.Client --eid=client --tls-key=/etc/pki/tls/private/localhost.key --tls-cert=/etc/pki/tls/certs/localhost.crt connect localhost
+python3 -m tcpcl.agent --bus-service=tcpcl.Server --nodeid=dtn:server --tls-key=/etc/pki/tls/private/localhost.key --tls-cert=/etc/pki/tls/certs/localhost.crt listen --address=localhost
+python3 -m tcpcl.agent --bus-service=tcpcl.Client --nodeid=dtn:client --tls-key=/etc/pki/tls/private/localhost.key --tls-cert=/etc/pki/tls/certs/localhost.crt --stop-on-close connect localhost
 ```
 
 ## Commanding the Agent

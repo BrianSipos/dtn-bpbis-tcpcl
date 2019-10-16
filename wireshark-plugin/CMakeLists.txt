@@ -16,13 +16,19 @@ endif(MSVC)
 
 find_package(PkgConfig)
 
-pkg_check_modules(WIRESHARK REQUIRED wireshark>=2.6)
+pkg_check_modules(WIRESHARK REQUIRED IMPORTED_TARGET wireshark>=2.6)
+if(TARGET PkgConfig::WIRESHARK)
+    set_target_properties(PkgConfig::WIRESHARK PROPERTIES
+        INTERFACE_COMPILE_DEFINITIONS "HAVE_PLUGINS"
+    )
+endif()
 pkg_get_variable(WIRESHARK_SYSTEM_PLUGINDIR wireshark plugindir)
 set(INSTALL_MODULE_PATH "${WIRESHARK_SYSTEM_PLUGINDIR}/epan" CACHE FILEPATH "path to install the plugin module")
 
-pkg_check_modules(LIBCBOR REQUIRED libcbor>=0.5)
+pkg_check_modules(LIBCBOR REQUIRED IMPORTED_TARGET libcbor>=0.5)
 
 find_package(GTest 1.6)
+
 # Run tests with CTest
 include(CTest)
 enable_testing()

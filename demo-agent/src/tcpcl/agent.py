@@ -23,16 +23,30 @@ class Config(object):
         The D-Bus connection object to register handlers on.
     .. py:attribute:: stop_on_close
         If True, the agent will stop when all of its contacts are closed.
-    .. py:attribute:: eid
-        The EID of this node.
+    .. py:attribute:: ssl_ctx
+        An :py:class:`ssl.SSLContext` object configured for this peer.
+    .. py:attribute:: require_tls
+        If not None, the required negotiated use-TLS state.
+    .. py:attribute:: require_host_authn
+        If truthy, the peer must have its host name authenticated (by TLS).
+    .. py:attribute:: require_node_authn
+        If truthy, the peer must have its Node ID authenticated (by TLS).
+    .. py:attribute:: nodeid
+        The Node ID of this entity, which is a URI.
+    .. py:attribute:: keepalive_time
+        The desired keepalive time to negotiate.
+    .. py:attribute:: idle_time
+        The session idle-timeout time.
     '''
 
     def __init__(self):
         self.bus_conn = dbus.bus.BusConnection(dbus.bus.BUS_SESSION)
         self.stop_on_close = False
         self.ssl_ctx = None
-        self.tls_require = None
-        self.eid = u''
+        self.require_tls = None
+        self.require_host_authn = False
+        self.require_node_authn = False
+        self.nodeid = u''
         self.keepalive_time = 0
         self.idle_time = 0
         #: Maximum size of RX segments in octets
@@ -233,9 +247,19 @@ class Connection(object):
         return self._rx_proxy(self.__s_tls)
 
     def _rx_proxy(self, sock):
+        ''' Process up to a single CHUNK_SIZE incoming block.
+        
+        :return: True if the RX buffer should be pumped more.
+        :rtype: bool
+        '''
         self.__logger.debug('RX proxy')
 
-        data = sock.recv(self.CHUNK_SIZE)
+        try:
+            data = sock.recv(self.CHUNK_SIZE)
+        except (socket.error, ssl.SSLWantReadError) as err:
+            self.__logger.error('Failed to "recv" on socket: %s', err)
+            data = None
+
         if not data:
             # Connection closed
             self.close()
@@ -279,6 +303,9 @@ class Connection(object):
 
     def _tx_proxy(self, sock):
         ''' Process up to a single CHUNK_SIZE outgoing block.
+        
+        :return: True if the TX buffer should be pumped more.
+        :rtype: bool
         '''
         # Pull messages into buffer
         if len(self.__tx_buf) < self.CHUNK_SIZE:
@@ -298,11 +325,16 @@ class Connection(object):
                 tx_size = sock.send(data)
                 self.__logger.debug('Sent %d octets', tx_size)
             except socket.error as err:
-                self.__logger.error('Failed to send chunk: %s', err)
+                self.__logger.error('Failed to "send" on socket: %s', err)
                 tx_size = None
+
             if tx_size:
                 self.__tx_buf = self.__tx_buf[tx_size:]
                 sent_size += tx_size
+            else:
+                # Connection closed
+                self.close()
+                return False
 
         buf_empty = (len(self.__tx_buf) == 0)
         if sent_size:
@@ -347,7 +379,7 @@ class RejectError(Exception):
     ''' Allow recv_* handlers to reject the message.
 
     :param reason: The rejection reason.
-    Should be one of the :py:cls:`messages.RejectMsg.Reason` values.
+    Should be one of the :py:class:`messages.RejectMsg.Reason` values.
     :type reason: int
     '''
 
@@ -360,7 +392,7 @@ class TerminateError(Exception):
     ''' Allow recv_* handlers to terminate a session.
 
     :param reason: The termination reason.
-    Should be one of the :py:cls:`messages.SessionTerm.Reason` values.
+    Should be one of the :py:class:`messages.SessionTerm.Reason` values.
     :type reason: int
     '''
 
@@ -588,8 +620,8 @@ class Messenger(Connection):
             self._in_conn = True
 
             # Check policy before attempt
-            if self._config.tls_require is not None:
-                if self._tls_attempt != self._config.tls_require:
+            if self._config.require_tls is not None:
+                if self._tls_attempt != self._config.require_tls:
                     self.__logger.error('TLS parameter violated policy')
                     self.close()
                     return
@@ -609,8 +641,8 @@ class Messenger(Connection):
                     return
 
             # Check policy after attempt
-            if self._config.tls_require is not None:
-                if self.is_secure() != self._config.tls_require:
+            if self._config.require_tls is not None:
+                if self.is_secure() != self._config.require_tls:
                     self.__logger.error('TLS result violated policy')
                     self.close()
                     return
@@ -641,7 +673,7 @@ class Messenger(Connection):
                     if not self._in_term:
                         self.send_sess_term(pkt.payload.reason, True)
 
-                    self.recv_sess_term(pkt.payload)
+                    self.recv_sess_term(pkt.payload.reason)
 
                 elif msgcls in (messages.Keepalive, messages.RejectMsg):
                     # No need to respond at this level
@@ -707,7 +739,7 @@ class Messenger(Connection):
         options = dict(
             keepalive=self._config.keepalive_time,
             segment_mru=self._config.segment_size_mru,
-            nodeid_data=self._config.eid,
+            nodeid_data=self._config.nodeid,
             ext_items=[],
         )
         pkt = messages.MessageHead() / messages.SessionInit(**options)
@@ -731,34 +763,43 @@ class Messenger(Connection):
                 peer_names = [self._peer_name, hostname] + list(aliaslist)
             else:
                 peer_names = [self._peer_name]
-            self.__logger.info('Authenticating TLS host "%s" with cert: %s', peer_names, cert)
+            host_authn = None
             if cert and peer_names:
-                any_match = None
+                self.__logger.debug('Authenticating TLS host "%s" with subjectAltName: %s',
+                                    peer_names, cert.get('subjectAltName'))
                 for peer_name in peer_names:
                     try:
                         ssl.match_hostname(cert, peer_name)
-                        any_match = peer_name
+                        host_authn = peer_name
                         break
                     except ssl.CertificateError:
                         pass
-
-                if not any_match:
-                    self.__logger.error('Host "%s" not matched by certificate', peer_names)
+            # host authentication result
+            if host_authn:
+                self.__logger.debug('Certificate matched host name "%s"', host_authn)
+            else:
+                self.__logger.warning('Peer host name not authenticated')
+                if self._config.require_host_authn:
                     raise TerminateError(messages.SessionTerm.Reason.CONTACT_FAILURE)
-                else:
-                    self.__logger.debug('Certificate matched host name "%s"', any_match)
 
             # Exact Node ID URI matching
-            if cert and 'subjectAltName' in cert and self._sessinit_peer.nodeid_data:
-                uri_names = []
-                for (name_type, name_data) in cert['subjectAltName']:
+            node_id = self._sessinit_peer.nodeid_data
+            node_authn = None
+            if cert and node_id:
+                self.__logger.debug('Authenticating Node ID "%s" with subjectAltName: %s',
+                                    node_id, cert.get('subjectAltName'))
+                uri_names = set()
+                for (name_type, name_data) in cert.get('subjectAltName', []):
                     if name_type == 'URI':
-                        uri_names.append(name_data)
-                self.__logger.debug('Peer has certified URIs: %s', uri_names)
-
-                if self._sessinit_peer.nodeid_data not in uri_names:
-                    self.__logger.error('Node ID "%s" not in subjectAltName: %s',
-                                        self._sessinit_peer.nodeid_data, uri_names)
+                        uri_names.add(name_data)
+                if node_id in uri_names:
+                    node_authn = node_id
+            # node authentication result
+            if node_authn:
+                self.__logger.debug('Certificate matched Node ID "%s"', node_authn)
+            else:
+                self.__logger.warning('Peer Node ID not authenticated')
+                if self._config.require_node_authn:
                     raise TerminateError(messages.SessionTerm.Reason.CONTACT_FAILURE)
 
         self._keepalive_time = min(self._sessinit_this.keepalive,
@@ -902,7 +943,6 @@ class Messenger(Connection):
         :param reason: The termination reason.
         :type reason: int
         '''
-        self.__logger.debug('SESS_TERM %s', reason)
         if not self._in_sess:
             raise RejectError(messages.RejectMsg.Reason.UNEXPECTED)
 
@@ -1030,9 +1070,9 @@ class BundleItem(object):
 class ContactHandler(Messenger, dbus.service.Object):
     ''' A bus interface to the contact message handler.
 
-    :param hdl_kwargs: Arguments to :py:cls:`Messenger` constructor.
+    :param hdl_kwargs: Arguments to :py:class:`Messenger` constructor.
     :type hdl_kwargs: dict
-    :param bus_kwargs: Arguments to :py:cls:`dbus.service.Object` constructor.
+    :param bus_kwargs: Arguments to :py:class:`dbus.service.Object` constructor.
     :type bus_kwargs: dict
     '''
 
@@ -1203,7 +1243,7 @@ class ContactHandler(Messenger, dbus.service.Object):
         ''' Perform the termination procedure.
 
         :param reason_code: The termination reason.
-        Should be one of the :py:cls:`messages.SessionTerm.Reason` values.
+        Should be one of the :py:class:`messages.SessionTerm.Reason` values.
         :type reason_code: int or None
         '''
         if reason_code is None:
@@ -1403,8 +1443,8 @@ class Agent(dbus.service.Object):
     ''' Overall agent behavior.
 
     :param config: The agent configuration object.
-    :type config: :py:cls:`Config`
-    :param bus_kwargs: Arguments to :py:cls:`dbus.service.Object` constructor.
+    :type config: :py:class:`Config`
+    :param bus_kwargs: Arguments to :py:class:`dbus.service.Object` constructor.
         If not provided the default dbus configuration is used.
     :type bus_kwargs: dict or None
     '''
@@ -1602,13 +1642,26 @@ class Agent(dbus.service.Object):
                 eloop.run()
 
 
-def str2bool(v):
-    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+def str2bool(val):
+    ''' Require an option value to be boolean text.
+    '''
+    if val.lower() in ('yes', 'true', 't', 'y', '1'):
         return True
-    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+    elif val.lower() in ('no', 'false', 'f', 'n', '0'):
         return False
     else:
-        raise argparse.ArgumentTypeError('Boolean value expected.')
+        raise argparse.ArgumentTypeError('Boolean value expected')
+
+
+def uristr(val):
+    ''' Require an option value to be a URI.
+    '''
+    from urllib.parse import urlparse
+
+    nodeid_uri = urlparse(val)
+    if not nodeid_uri.scheme:
+        raise argparse.ArgumentTypeError('URI value expected')
+    return val
 
 
 def main(*argv):
@@ -1619,8 +1672,8 @@ def main(*argv):
                         metavar='LEVEL',
                         help='Console logging lowest level displayed.')
     subp = parser.add_subparsers(dest='action', help='action')
-    parser.add_argument('--eid', type=str,
-                        help='This node EID')
+    parser.add_argument('--nodeid', type=uristr,
+                        help='This entity\'s Node ID')
     parser.add_argument('--keepalive', type=int,
                         help='Keepalive time in seconds')
     parser.add_argument('--idle', type=int,
@@ -1629,6 +1682,8 @@ def main(*argv):
                         help='D-Bus service name')
     parser.add_argument('--tls-disable', dest='tls_enable', default=True, action='store_false',
                         help='Disallow use of TLS on this endpoint')
+    parser.add_argument('--tls-version', type=str,
+                        help='Version name of TLS to use')
     parser.add_argument('--tls-require', default=None, type=str2bool,
                         help='Require the use of TLS for all sessions')
     parser.add_argument('--tls-ca', type=str,
@@ -1675,19 +1730,32 @@ def main(*argv):
         logging.info('Registered as "%s"', bus_serv.get_name())
 
     if args.tls_enable:
-        config.ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS)
+        version_map = {
+            None: ssl.PROTOCOL_TLS,
+            '1.0': ssl.PROTOCOL_TLSv1,
+            '1.1': ssl.PROTOCOL_TLSv1_1,
+            '1.2': ssl.PROTOCOL_TLSv1_2,
+        }
+        try:
+            vers_enum = version_map[args.tls_version]
+        except KeyError:
+            raise argparse.ArgumentTypeError('Invalid TLS version "{0}"'.format(args.tls_version))
+
+        config.ssl_ctx = ssl.SSLContext(vers_enum)
         if args.tls_ciphers:
             config.ssl_ctx.set_ciphers(args.tls_ciphers)
         if args.tls_ca:
             config.ssl_ctx.load_verify_locations(cafile=args.tls_ca)
-        if args.tls_cert:
+        if args.tls_cert or args.tls_key:
+            if not args.tls_cert or not args.tls_key:
+                raise RuntimeError('Neither or both of --tls-cert and --tls-key are needed')
             config.ssl_ctx.load_cert_chain(certfile=args.tls_cert, keyfile=args.tls_key)
         if args.tls_dhparam:
             config.ssl_ctx.load_dh_params(args.tls_dhparam)
         config.ssl_ctx.verify_mode = ssl.CERT_OPTIONAL
 
-    config.eid = args.eid
-    config.tls_require = args.tls_require
+    config.nodeid = args.nodeid
+    config.require_tls = args.tls_require
 
     if args.keepalive:
         config.keepalive_time = args.keepalive
