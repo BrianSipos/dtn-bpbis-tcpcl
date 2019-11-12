@@ -23,11 +23,14 @@ python3 -m tcpcl.agent --bus-service=tcpcl.Server --nodeid=dtn:server --tls-disa
 python3 -m tcpcl.agent --bus-service=tcpcl.Client --nodeid=dtn:client --tls-disable --stop-on-close connect localhost
 ```
 
-To use Fedora/CentOS7 system-default localhost PKI use:
+To use local test PKI hierarchy use:
 ```
-python3 -m tcpcl.agent --bus-service=tcpcl.Server --nodeid=dtn:server --tls-key=/etc/pki/tls/private/localhost.key --tls-cert=/etc/pki/tls/certs/localhost.crt listen --address=localhost
-python3 -m tcpcl.agent --bus-service=tcpcl.Client --nodeid=dtn:client --tls-key=/etc/pki/tls/private/localhost.key --tls-cert=/etc/pki/tls/certs/localhost.crt --stop-on-close connect localhost
+python3 -m tcpcl.agent --bus-service=tcpcl.Server --nodeid=dtn:server --tls-ca=testpki/ca.crt --tls-key=testpki/server.key --tls-cert=testpki/server.crt listen --address=localhost
+python3 -m tcpcl.agent --bus-service=tcpcl.Client --nodeid=dtn:client --tls-ca=testpki/ca.crt --tls-key=testpki/client.key --tls-cert=testpki/client.crt --tls-version=1.2 --tls-cipher AES256-GCM-SHA384 --stop-on-close connect localhost
 ```
+this also forces a ciphersuite with which tools like Wireshark can use the private key to decipher the encrypted data.
+
+It is also possible for either the active- or passive-side agent to log TLS ephemeral key data using the `SSLKEYLOGFILE` environment variable to specify a key material log file (in an indentical way to how Firefox/Chrome browsers use it).
 
 ## Commanding the Agent
 The agent can be accessed via D-Bus based on the `bus-service` name given on the command line.
@@ -96,10 +99,15 @@ The reference commands below use the Ninja build tool, but that is not required.
 
 Building the wireshark modules can be done with a command sequence similar to:
 ```
+if (pkg-config --print-errors --exists 'wireshark > 3'); then
+PLUGIN_PATH=$(pkg-config --define-variable=libdir=${HOME}/.local/lib --variable=plugindir wireshark)
+else
 MODULE_VERS=$(pkg-config --variable=VERSION_RELEASE wireshark)
+PLUGIN_PATH="${HOME}/.local/lib/wireshark/plugins/${MODULE_VERS}"
+fi
 mkdir -p wireshark-plugin/build
 cd wireshark-plugin/build/
-cmake .. -DCMAKE_BUILD_TYPE=Debug -DINSTALL_MODULE_PATH=${HOME}/.local/lib/wireshark/plugins/${MODULE_VERS}/epan/ -G Ninja
+cmake .. -DCMAKE_BUILD_TYPE=Debug -DINSTALL_MODULE_PATH=${PLUGIN_PATH}/epan/ -G Ninja
 ninja install
 ```
 

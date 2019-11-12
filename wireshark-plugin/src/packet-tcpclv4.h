@@ -8,6 +8,7 @@
 #include <epan/packet_info.h>
 
 typedef enum {
+    TCPCL_MSGTYPE_INVALID = 0x00,
     TCPCL_MSGTYPE_XFER_SEGMENT = 0x01,
     TCPCL_MSGTYPE_XFER_ACK = 0x02,
     TCPCL_MSGTYPE_XFER_REFUSE = 0x03,
@@ -16,6 +17,15 @@ typedef enum {
     TCPCL_MSGTYPE_MSG_REJECT = 0x06,
     TCPCL_MSGTYPE_SESS_INIT = 0x07,
 } TcpclMessageType;
+
+typedef enum {
+    TCPCL_SESSEXT_INVALID = 0x00,
+} TcpclSessExtenionType;
+
+typedef enum {
+    TCPCL_XFEREXT_INVALID = 0x00,
+    TCPCL_XFEREXT_TRANSFER_LEN = 0x01,
+} TcpclXferExtenionType;
 
 typedef enum {
     TCPCL_CONTACT_FLAG_CANTLS = 0x01,

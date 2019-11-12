@@ -81,10 +81,20 @@ def randbytes(sizemax=100):
 
 
 def randdtntime():
-    return random.randint(0, 1e10)
+    ''' Generate a random DTN time.
+    20% of the time this will be the invalid/unknown time value.
+    '''
+    if random.uniform(0, 1) < 0.2:
+        return 0
+    else:
+        return random.randint(1, 1e10)
 
 
-def randeid():
+def randnodeid():
+    ''' Generate a random Node ID.
+    50% of the time this will be a DTN URI.
+    50% of the time this will be an IPN URI.
+    '''
     scheme = random.choice([1, 2])
     if scheme == 1:
         if random.uniform(0, 0) < 0.2:
@@ -97,18 +107,25 @@ def randeid():
 
 
 def randtimestamp():
+    ''' Generate a random timestamp tuple.
+    '''
     return [randdtntime(), random.randint(0, 1e3)]
 
 
 def randstatus():
+    ''' Generate a random Bundle Status Report information tuple.
+    50% of the time this will include a time.
+    '''
     result = []
     result.append(random.choice([False, True]))
-    if random.randint(0, 1):
+    if random.uniform(0, 1) < 0.5:
         result.append(randdtntime())
     return result
 
 
 def randcboritem(maxdepth=10):
+    ''' Generate an arbitrary random CBOR data structure.
+    '''
     direct_types = [None, bool, int, float, bytes, str]
     contain_types = [list, dict]
 
@@ -146,7 +163,7 @@ class Generator(object):
     ''' A 'bundle' data generator.
     '''
 
-    KNOWN_BLOCK_TYPES = (7, 8, 9)
+    KNOWN_BLOCK_TYPES = (6, 7, 10)
 
     def create_block_data(self, block_type, block_flags, bundle_flags):
         ''' Block-type-specific data gerator.
@@ -162,20 +179,20 @@ class Generator(object):
                     randstatus(),  # Reporting node deleted the bundle
                 ],
                 random.randint(0, 9),  # Reason code
-                randeid(),  # Source Node EID
+                randnodeid(),  # Source Node ID
                 randtimestamp(),  # Creation timestamp
             ]
             return binaryCborTag([
                 admin_type,
                 admin_data,
             ])
-        elif block_type == 7:
+        elif block_type == 6:
             # Previous Node
-            return binaryCborTag(randeid())
-        elif block_type == 8:
+            return binaryCborTag(randnodeid())
+        elif block_type == 7:
             # Bundle Age
             return binaryCborTag(random.randint(0, 1e10))
-        elif block_type == 9:
+        elif block_type == 10:
             # Hop Count
             return binaryCborTag([
                 random.randint(0, 1e1),  # limit
@@ -233,11 +250,11 @@ class Generator(object):
                 7,  # BP version
                 bundle_flags,  # bundle flags
                 random.randint(1, 2),  # CRC type
-                randeid(),
-                randeid(),
-                randeid(),
+                randnodeid(),
+                randnodeid(),
+                randnodeid(),
                 randtimestamp(),  # creation timestamp
-                random.randint(0, 1e5),  # lifetime
+                random.randint(0, 24*60*60*1e6),  # lifetime (us)
             ],
             crc_type_ix=2,
         )

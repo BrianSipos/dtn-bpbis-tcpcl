@@ -33,6 +33,7 @@ and dynamic segment sizing.
     install_requires=[
         'scapy',
         'cbor2',
+        'crcmod',
         'PyGObject', # glib integration
     ],
     extras_require={},

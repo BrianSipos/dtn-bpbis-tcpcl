@@ -26,37 +26,35 @@ typedef enum {
  */
 typedef enum {
     /// bundle deletion status reports are requested.
-    BP_BUNDLE_REQ_DELETION_REPORT = 0x1000,
+    BP_BUNDLE_REQ_DELETION_REPORT = 0x040000,
     /// bundle delivery status reports are requested.
-    BP_BUNDLE_REQ_DELIVERY_REPORT = 0x0800,
+    BP_BUNDLE_REQ_DELIVERY_REPORT = 0x020000,
     /// bundle forwarding status reports are requested.
-    BP_BUNDLE_REQ_FORWARDING_REPORT = 0x0400,
+    BP_BUNDLE_REQ_FORWARDING_REPORT = 0x010000,
     /// bundle reception status reports are requested.
-    BP_BUNDLE_REQ_RECEPTION_REPORT = 0x0100,
-    /// bundle contains a Manifest block.
-    BP_BUNDLE_CONTAINS_MANIFEST = 0x0080,
+    BP_BUNDLE_REQ_RECEPTION_REPORT = 0x004000,
     /// status time is requested in all status reports.
-    BP_BUNDLE_REQ_STATUS_TIME = 0x0040,
+    BP_BUNDLE_REQ_STATUS_TIME = 0x000040,
     /// user application acknowledgement is requested.
-    BP_BUNDLE_USER_APP_ACK = 0x0020,
+    BP_BUNDLE_USER_APP_ACK = 0x000020,
     /// bundle must not be fragmented.
-    BP_BUNDLE_NO_FRAGMENT = 0x0004,
+    BP_BUNDLE_NO_FRAGMENT = 0x000004,
     /// payload is an administrative record.
-    BP_BUNDLE_PAYLOAD_ADMIN = 0x0002,
+    BP_BUNDLE_PAYLOAD_ADMIN = 0x000002,
     /// bundle is a fragment.
-    BP_BUNDLE_IS_FRAGMENT = 0x0001,
+    BP_BUNDLE_IS_FRAGMENT = 0x000001,
 } BundleProcessingFlag;
 
 /** Block processing control flags.
  * Section 4.1.4.
  */
 typedef enum {
-    /// bundle must be deleted if block can't be processed.
-    BP_BLOCK_DELETE_IF_NO_PROCESS = 0x08,
-    /// transmission of a status report is requested if block can't be processed.
-    BP_BLOCK_STATUS_IF_NO_PROCESS = 0x04,
     /// block must be removed from bundle if it can't be processed.
-    BP_BLOCK_REMOVE_IF_NO_PROCESS = 0x02,
+    BP_BLOCK_REMOVE_IF_NO_PROCESS = 0x10,
+    /// bundle must be deleted if block can't be processed.
+    BP_BLOCK_DELETE_IF_NO_PROCESS = 0x04,
+    /// transmission of a status report is requested if block can't be processed.
+    BP_BLOCK_STATUS_IF_NO_PROCESS = 0x02,
     /// block must be replicated in every fragment.
     BP_BLOCK_REPLICATE_IN_FRAGMENT = 0x01,
 } BlockProcessingFlag;
@@ -68,12 +66,31 @@ typedef enum {
     /// Payload (data)
     BP_BLOCKTYPE_PAYLOAD = 1,
     /// Previous Node
-    BP_BLOCKTYPE_PREV_NODE = 7,
+    BP_BLOCKTYPE_PREV_NODE = 6,
     /// Bundle Age
-    BP_BLOCKTYPE_BUNDLE_AGE = 8,
+    BP_BLOCKTYPE_BUNDLE_AGE = 7,
     /// Hop Count
-    BP_BLOCKTYPE_HOP_COUNT = 9,
+    BP_BLOCKTYPE_HOP_COUNT = 10,
 } BlockTypeCode;
+
+/** Administrative record type codes.
+ * Section 6.1.
+ */
+typedef enum {
+    /// Bundle status report
+    BP_ADMINTYPE_BUNDLE_STATUS = 1,
+} AdminRecordTypeCode;
+
+/** Bundle status report types.
+ * These are not enumerated by the spec but are encoded separately
+ * in Section 5.1.
+ */
+typedef enum {
+    BP_STATUS_REPORT_RECEIVED,
+    BP_STATUS_REPORT_FORWARDED,
+    BP_STATUS_REPORT_DELIVERED,
+    BP_STATUS_REPORT_DELETED,
+} AdminBundleStatusInfoType;
 
 /// The basic header structure of CBOR encoding
 typedef struct {
@@ -133,10 +150,18 @@ void bp_cbor_chunk_mark_errors(packet_info *pinfo, proto_item *item, const bp_cb
  */
 void bp_cbor_chunk_delete(gpointer ptr);
 
+/// DTN time with derived UTC time
+typedef struct {
+    /// DTN time
+    guint64 dtntime;
+    /// Converted to UTC
+    nstime_t utctime;
+} bp_dtn_time_t;
+
 /// Creation Timestamp used to correlate bundles
 typedef struct {
-    /// DTN timestamp
-    gint64 dtntime;
+    /// Absolute time
+    bp_dtn_time_t time;
     /// Sequence number
     guint64 seqno;
 } bp_creation_ts_t;
@@ -159,25 +184,25 @@ typedef struct {
     gint64 scheme;
     /// Derived URI text
     const char *uri;
-} bp_eid_t;
+} bp_nodeid_t;
 
 /** Construct a new timestamp.
  */
-bp_eid_t * bp_eid_new();
+bp_nodeid_t * bp_nodeid_new();
 
 /** Function to match the GDestroyNotify signature.
  */
-void bp_eid_delete(gpointer ptr);
+void bp_nodeid_delete(gpointer ptr);
 
 typedef struct {
     /// Bundle flags (assumed zero)
     guint64 flags;
     /// Destination EID
-    bp_eid_t *dst_eid;
+    bp_nodeid_t *dst_nodeid;
     /// Source EID
-    bp_eid_t *src_eid;
+    bp_nodeid_t *src_nodeid;
     /// Report-to EID
-    bp_eid_t *rep_eid;
+    bp_nodeid_t *rep_nodeid;
     /// Creation Timestamp
     bp_creation_ts_t ts;
     /// CRC type code (assumed zero)

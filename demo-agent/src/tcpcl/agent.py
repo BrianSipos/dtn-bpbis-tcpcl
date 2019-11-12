@@ -135,6 +135,7 @@ class Connection(object):
         old = self.__s_notls
         self.__unlisten_notls()
 
+        self.__logger.debug('Socket binding on %s', sock)
         self.__s_notls = sock
         if self.__s_notls is not None:
             self.__s_notls.setblocking(0)
@@ -199,6 +200,7 @@ class Connection(object):
                                         server_hostname=self._peer_name,
                                         do_handshake_on_connect=False)
 
+        self.__logger.debug('Socket STARTTLS on %s', s_tls)
         self.__logger.info('Negotiating TLS...')
         s_tls.do_handshake()
 
@@ -218,10 +220,21 @@ class Connection(object):
         self.__logger.debug('Unsecuring TLS...')
         self.__unlisten_tls()
 
+        # Fall-back to old unsecure socket upon failure
+        new_notls = self.__s_notls
+        self.__unlisten_notls()
+        self.__s_notls = None
+
         # Keep the unsecured socket
-        new_sock = self.__s_tls.unwrap()
+        self.__logger.debug('TLS unwrap on %s', self.__s_tls)
+        try:
+            new_notls = self.__s_tls.unwrap()
+        except ssl.SSLError as err:
+            self.__logger.warning('Failed to shutdown TLS session: %s', err)
         self.__s_tls = None
-        self._replace_socket(new_sock)
+
+        if new_notls.fileno() >= 0:
+            self._replace_socket(new_notls)
 
     def _conn_name(self):
         ''' A name for the connection type. '''
@@ -248,7 +261,7 @@ class Connection(object):
 
     def _rx_proxy(self, sock):
         ''' Process up to a single CHUNK_SIZE incoming block.
-        
+
         :return: True if the RX buffer should be pumped more.
         :rtype: bool
         '''
@@ -1730,6 +1743,17 @@ def main(*argv):
         logging.info('Registered as "%s"', bus_serv.get_name())
 
     if args.tls_enable:
+        # attempted recommended practice of pre-master secret logging
+        pmk_name = os.environ.get('SSLKEYLOGFILE')
+        if pmk_name:
+            try:
+                import sslkeylog
+                logging.info('Logging pre-master key to: %s', pmk_name)
+                sslkeylog.set_keylog(pmk_name)
+                print('patched', sslkeylog._patched)
+            except ImportError as err:
+                logging.error('Cannot use SSLKEYLOGFILE: %s', err)
+
         version_map = {
             None: ssl.PROTOCOL_TLS,
             '1.0': ssl.PROTOCOL_TLSv1,

@@ -41,6 +41,26 @@ static dissector_table_t xfer_ext_dissectors;
 /// Transfer reassembly
 static reassembly_table tcpcl_reassembly_table;
 
+static const value_string message_type_vals[]={
+    {TCPCL_MSGTYPE_SESS_INIT, "SESS_INIT"},
+    {TCPCL_MSGTYPE_SESS_TERM, "SESS_TERM"},
+    {TCPCL_MSGTYPE_MSG_REJECT, "MSG_REJECT"},
+    {TCPCL_MSGTYPE_KEEPALIVE, "KEEPALIVE"},
+    {TCPCL_MSGTYPE_XFER_SEGMENT, "XFER_SEGMENT"},
+    {TCPCL_MSGTYPE_XFER_ACK, "XFER_ACK"},
+    {TCPCL_MSGTYPE_XFER_REFUSE, "XFER_REFUSE"},
+    {0, NULL},
+};
+
+static const value_string sessext_type_vals[]={
+    {0, NULL},
+};
+
+static const value_string xferext_type_vals[]={
+    {TCPCL_XFEREXT_TRANSFER_LEN, "Transfer Length"},
+    {0, NULL},
+};
+
 static const value_string sess_term_reason_vals[]={
     {0x00, "Unknown"},
     {0x01, "Idle timeout"},
@@ -141,6 +161,7 @@ static gint ett_xferload_fragment = -1;
 static gint ett_xferload_fragments = -1;
 
 static int hf_xferext_transferlen_total_len = -1;
+
 /// Field definitions
 static hf_register_info fields[] = {
     {&hf_tcpcl, {"TCP Convergence Layer Version 4", "tcpclv4", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL}},
@@ -155,34 +176,34 @@ static hf_register_info fields[] = {
     {&hf_negotiate_use_tls, {"Negotiated Use TLS", "tcpclv4.negotiated.use_tls", FT_BOOLEAN, BASE_NONE, NULL, 0x0, NULL, HFILL}},
 
     {&hf_mhdr_tree, {"TCPCLv4 Message", "tcpclv4.mhdr", FT_PROTOCOL, BASE_NONE, NULL, 0x0, NULL, HFILL}},
-    {&hf_mhdr_type, {"Message Type", "tcpclv4.mhdr.type", FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL}},
+    {&hf_mhdr_type, {"Message Type", "tcpclv4.mhdr.type", FT_UINT8, BASE_HEX, VALS(message_type_vals), 0x0, NULL, HFILL}},
 
     // Session extension fields
     {&hf_sessext_tree, {"Session Extension Item", "tcpclv4.sessext", FT_PROTOCOL, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_sessext_flags, {"Item Flags", "tcpclv4.sessext.flags", FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL}},
     {&hf_sessext_flags_crit, {"CRITICAL", "tcpclv4.sessext.flags.critical", FT_UINT8, BASE_DEC, NULL, TCPCL_EXTENSION_FLAG_CRITICAL, NULL, HFILL}},
-    {&hf_sessext_type, {"Item Type", "tcpclv4.sessext.type", FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL}},
+    {&hf_sessext_type, {"Item Type", "tcpclv4.sessext.type", FT_UINT8, BASE_HEX, VALS(sessext_type_vals), 0x0, NULL, HFILL}},
     {&hf_sessext_len, {"Item Length", "tcpclv4.sessext.len", FT_UINT32, BASE_DEC, NULL, 0x0, NULL, HFILL}},
-    {&hf_sessext_data, {"Item Data", "tcpclv4.sessext.data", FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL}},
+    {&hf_sessext_data, {"Type-Specific Data", "tcpclv4.sessext.data", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL}},
 
     // Transfer extension fields
     {&hf_xferext_tree, {"Transfer Extension Item", "tcpclv4.xferext", FT_PROTOCOL, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_xferext_flags, {"Item Flags", "tcpclv4.xferext.flags", FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL}},
     {&hf_xferext_flags_crit, {"CRITICAL", "tcpclv4.xferext.flags.critical", FT_UINT8, BASE_DEC, NULL, TCPCL_EXTENSION_FLAG_CRITICAL, NULL, HFILL}},
-    {&hf_xferext_type, {"Item Type", "tcpclv4.xferext.type", FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL}},
+    {&hf_xferext_type, {"Item Type", "tcpclv4.xferext.type", FT_UINT8, BASE_HEX, VALS(xferext_type_vals), 0x0, NULL, HFILL}},
     {&hf_xferext_len, {"Item Length", "tcpclv4.xferext.len", FT_UINT32, BASE_DEC, NULL, 0x0, NULL, HFILL}},
-    {&hf_xferext_data, {"Item Data", "tcpclv4.xferext.data", FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL}},
+    {&hf_xferext_data, {"Type-Specific Data", "tcpclv4.xferext.data", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL}},
 
     // SESS_INIT fields
-    {&hf_sess_init_keepalive, {"Keepalive Interval (s)", "tcpclv4.sess_init.keepalive", FT_UINT16, BASE_DEC, NULL, 0x0, NULL, HFILL}},
-    {&hf_sess_init_seg_mru, {"Segment MRU (octets)", "tcpclv4.sess_init.seg_mru", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
-    {&hf_sess_init_xfer_mru, {"Transfer MRU (octets)", "tcpclv4.sess_init.xfer_mru", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
-    {&hf_sess_init_nodeid_len, {"Node ID Length (octets)", "tcpclv4.sess_init.nodeid_len", FT_UINT16, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+    {&hf_sess_init_keepalive, {"Keepalive Interval", "tcpclv4.sess_init.keepalive", FT_UINT16, BASE_DEC|BASE_UNIT_STRING, &units_seconds, 0x0, NULL, HFILL}},
+    {&hf_sess_init_seg_mru, {"Segment MRU", "tcpclv4.sess_init.seg_mru", FT_UINT64, BASE_DEC|BASE_UNIT_STRING, &units_octet_octets, 0x0, NULL, HFILL}},
+    {&hf_sess_init_xfer_mru, {"Transfer MRU", "tcpclv4.sess_init.xfer_mru", FT_UINT64, BASE_DEC|BASE_UNIT_STRING, &units_octet_octets, 0x0, NULL, HFILL}},
+    {&hf_sess_init_nodeid_len, {"Node ID Length", "tcpclv4.sess_init.nodeid_len", FT_UINT16, BASE_DEC|BASE_UNIT_STRING, &units_octet_octets, 0x0, NULL, HFILL}},
     {&hf_sess_init_nodeid_data, {"Node ID Data (UTF8)", "tcpclv4.sess_init.nodeid_data", FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL}},
-    {&hf_sess_init_extlist_len, {"Extension Items Length (octets)", "tcpclv4.sess_init.extlist_len", FT_UINT32, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+    {&hf_sess_init_extlist_len, {"Extension Items Length", "tcpclv4.sess_init.extlist_len", FT_UINT32, BASE_DEC|BASE_UNIT_STRING, &units_octet_octets, 0x0, NULL, HFILL}},
     {&hf_sess_init_related, {"Related SESS_INIT", "tcpclv4.sess_init.related", FT_FRAMENUM, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     // Session negotiation results
-    {&hf_negotiate_keepalive, {"Negotiated Keepalive Interval (s)", "tcpclv4.negotiated.keepalive", FT_UINT16, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+    {&hf_negotiate_keepalive, {"Negotiated Keepalive Interval", "tcpclv4.negotiated.keepalive", FT_UINT16, BASE_DEC|BASE_UNIT_STRING, &units_seconds, 0x0, NULL, HFILL}},
     // SESS_TERM fields
     {&hf_sess_term_flags, {"Flags", "tcpclv4.sess_term.flags", FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL}},
     {&hf_sess_term_flags_reply, {"REPLY", "tcpclv4.sess_term.flags.reply", FT_UINT8, BASE_DEC, NULL, TCPCL_SESS_TERM_FLAG_REPLY, NULL, HFILL}},
@@ -196,13 +217,13 @@ static hf_register_info fields[] = {
     {&hf_xfer_id, {"Transfer ID", "tcpclv4.xfer_id", FT_UINT64, BASE_HEX, NULL, 0x0, NULL, HFILL}},
     {&hf_xfer_total_len, {"Expected Total Length", "tcpclv4.xfer.total_len", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
     // XFER_SEGMENT fields
-    {&hf_xfer_segment_extlist_len, {"Extension Items Length (octets)", "tcpclv4.xfer_segment.extlist_len", FT_UINT32, BASE_DEC, NULL, 0x0, NULL, HFILL}},
-    {&hf_xfer_segment_data_len, {"Data Length (octets)", "tcpclv4.xfer_segment.data_len", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+    {&hf_xfer_segment_extlist_len, {"Extension Items Length", "tcpclv4.xfer_segment.extlist_len", FT_UINT32, BASE_DEC|BASE_UNIT_STRING, &units_octet_octets, 0x0, NULL, HFILL}},
+    {&hf_xfer_segment_data_len, {"Data Length", "tcpclv4.xfer_segment.data_len", FT_UINT64, BASE_DEC|BASE_UNIT_STRING, &units_octet_octets, 0x0, NULL, HFILL}},
     {&hf_xfer_segment_seen_len, {"Seen Length", "tcpclv4.xfer_segment.seen_len", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
     {&hf_xfer_segment_related_ack, {"Related XFER_ACK", "tcpclv4.xfer_segment.related_ack", FT_FRAMENUM, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_xfer_segment_time_diff, {"Acknowledgment Time", "tcpclv4.xfer_segment.time_diff", FT_RELATIVE_TIME, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     // XFER_ACK fields
-    {&hf_xfer_ack_ack_len, {"Acknowledged Length (octets)", "tcpclv4.xfer_ack.ack_len", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+    {&hf_xfer_ack_ack_len, {"Acknowledged Length", "tcpclv4.xfer_ack.ack_len", FT_UINT64, BASE_DEC|BASE_UNIT_STRING, &units_octet_octets, 0x0, NULL, HFILL}},
     {&hf_xfer_ack_related_seg, {"Related XFER_SEGMENT", "tcpclv4.xfer_ack.related_seg", FT_FRAMENUM, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_xfer_ack_time_diff, {"Acknowledgment Time", "tcpclv4.xfer_ack.time_diff", FT_RELATIVE_TIME, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     // XFER_REFUSE fields
@@ -249,7 +270,7 @@ static hf_register_info fields[] = {
         FT_BYTES, BASE_NONE, NULL, 0x00, NULL, HFILL } },
 
     // Specific extensions
-    {&hf_xferext_transferlen_total_len, {"Total Length (octets)", "tcpclv4.xferext.transfer_length.total_len", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+    {&hf_xferext_transferlen_total_len, {"Total Length", "tcpclv4.xferext.transfer_length.total_len", FT_UINT64, BASE_DEC|BASE_UNIT_STRING, &units_octet_octets, 0x0, NULL, HFILL}},
 };
 static const int *chdr_flags[] = {
     &hf_chdr_flags_cantls,
@@ -302,8 +323,10 @@ static int ett_sess_term_flags = -1;
 static int ett_xfer_flags = -1;
 static int ett_sessext = -1;
 static int ett_sessext_flags = -1;
+static int ett_sessext_data = -1;
 static int ett_xferext = -1;
 static int ett_xferext_flags = -1;
+static int ett_xferext_data = -1;
 static int *ett[] = {
     &ett_tcpcl,
     &ett_chdr,
@@ -314,8 +337,10 @@ static int *ett[] = {
     &ett_xfer_flags,
     &ett_sessext,
     &ett_sessext_flags,
+    &ett_sessext_data,
     &ett_xferext,
     &ett_xferext_flags,
+    &ett_xferext_data,
     &ett_xferload_fragment,
     &ett_xferload_fragments,
 };
@@ -891,12 +916,11 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
 #if 0
         fprintf(stdout, "DISSECT decoding msg type %x, buf length %d\n", msgtype, tvb_captured_length(tvb));
 #endif
+        msgtype_name = val_to_str(msgtype, message_type_vals, "type %" PRIx8);
 
         wmem_strbuf_t *suffix_text = wmem_strbuf_new(wmem_packet_scope(), NULL);
         switch(msgtype) {
             case TCPCL_MSGTYPE_SESS_INIT: {
-                msgtype_name = "SESS_INIT";
-
                 guint16 keepalive = tvb_get_guint16(tvb, offset, ENC_BIG_ENDIAN);
                 proto_tree_add_uint(tree_msg, hf_sess_init_keepalive, tvb, offset, 2, keepalive);
                 offset += 2;
@@ -947,15 +971,23 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                     extitem_offset += 2;
 
                     tvbuff_t *extitem_tvb = tvb_new_subset_length(tvb, offset + extlist_offset + extitem_offset, extitem_len);
-                    int sublen = dissector_try_uint(sess_ext_dissectors, extitem_type, extitem_tvb, pinfo, tree_ext);
+                    proto_item *item_extdata = proto_tree_add_item(tree_ext, hf_sessext_data, extitem_tvb, 0, tvb_captured_length(extitem_tvb), ENC_NA);
+                    proto_tree *tree_extdata = proto_item_add_subtree(item_extdata, ett_sessext_data);
+
+                    int sublen = dissector_try_uint(sess_ext_dissectors, extitem_type, extitem_tvb, pinfo, tree_extdata);
                     if (sublen == 0) {
                         expert_add_info(pinfo, item_type, &ei_invalid_sessext_type);
                     }
-                    proto_item_append_text(item_ext, ", Type=0x%x", extitem_type);
                     extitem_offset += extitem_len;
 
                     proto_item_set_len(item_ext, extitem_offset);
                     extlist_offset += extitem_offset;
+
+                    const gchar *extitem_name = val_to_str(msgtype, sessext_type_vals, "type %" PRIx8);
+                    proto_item_append_text(item_ext, ": %s", extitem_name);
+                    if (is_critical) {
+                        proto_item_append_text(item_ext, ", CRITICAL");
+                    }
                 }
                 // advance regardless of any internal offset processing
                 offset += extlist_len;
@@ -977,8 +1009,6 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                 break;
             }
             case TCPCL_MSGTYPE_SESS_TERM: {
-                msgtype_name = "SESS_TERM";
-
                 guint8 flags = tvb_get_guint8(tvb, offset);
                 proto_tree_add_bitmask(tree_msg, tvb, offset, hf_sess_term_flags, ett_sess_term_flags, sess_term_flags, ENC_BIG_ENDIAN);
                 offset += 1;
@@ -1016,8 +1046,6 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                 break;
             }
             case TCPCL_MSGTYPE_XFER_SEGMENT:{
-                msgtype_name = "XFER_SEGMENT";
-
                 guint8 flags = tvb_get_guint8(tvb, offset);
                 proto_item *item_flags = proto_tree_add_bitmask(tree_msg, tvb, offset, hf_xfer_flags, ett_xfer_flags, xfer_flags, ENC_BIG_ENDIAN);
                 offset += 1;
@@ -1054,14 +1082,22 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                         extitem_offset += 2;
 
                         tvbuff_t *extitem_tvb = tvb_new_subset_length(tvb, offset + extlist_offset + extitem_offset, extitem_len);
+                        proto_item *item_extdata = proto_tree_add_item(tree_ext, hf_xferext_data, extitem_tvb, 0, tvb_captured_length(extitem_tvb), ENC_NA);
+                        proto_tree *tree_extdata = proto_item_add_subtree(item_extdata, ett_xferext_data);
+
                         frame_loc_t *extitem_loc = frame_loc_new(pinfo, extitem_tvb, 0);
                         tcpcl_peer_associate_transfer(tx_peer, extitem_loc, xfer_id);
-                        int sublen = dissector_try_uint(xfer_ext_dissectors, extitem_type, extitem_tvb, pinfo, tree_ext);
+                        int sublen = dissector_try_uint(xfer_ext_dissectors, extitem_type, extitem_tvb, pinfo, tree_extdata);
                         if (sublen == 0) {
                             expert_add_info(pinfo, item_type, &ei_invalid_xferext_type);
                         }
-                        proto_item_append_text(item_ext, ", Type=0x%x", extitem_type);
                         extitem_offset += extitem_len;
+
+                        const gchar *extitem_name = val_to_str(msgtype, xferext_type_vals, "type %" PRIx8);
+                        proto_item_append_text(item_ext, ": %s", extitem_name);
+                        if (is_critical) {
+                            proto_item_append_text(item_ext, ", CRITICAL");
+                        }
 
                         proto_item_set_len(item_ext, extitem_offset);
                         extlist_offset += extitem_offset;
@@ -1219,8 +1255,6 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                 break;
             }
             case TCPCL_MSGTYPE_XFER_ACK:{
-                msgtype_name = "XFER_ACK";
-
                 guint8 flags = tvb_get_guint8(tvb, offset);
                 proto_item *item_flags = proto_tree_add_bitmask(tree_msg, tvb, offset, hf_xfer_flags, ett_xfer_flags, xfer_flags, ENC_BIG_ENDIAN);
                 offset += 1;
@@ -1305,8 +1339,6 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                 break;
             }
             case TCPCL_MSGTYPE_XFER_REFUSE: {
-                msgtype_name = "XFER_REFUSE";
-
                 guint8 reason = tvb_get_guint8(tvb, offset);
                 proto_tree_add_uint(tree_msg, hf_xfer_refuse_reason, tvb, offset, 1, reason);
                 offset += 1;
@@ -1340,12 +1372,9 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                 break;
             }
             case TCPCL_MSGTYPE_KEEPALIVE: {
-                msgtype_name = "KEEPALIVE";
                 break;
             }
             case TCPCL_MSGTYPE_MSG_REJECT: {
-                msgtype_name = "MSG_REJECT";
-
                 guint8 reason = tvb_get_guint8(tvb, offset);
                 proto_tree_add_uint(tree_msg, hf_msg_reject_reason, tvb, offset, 1, reason);
                 offset += 1;
@@ -1362,7 +1391,7 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
         }
 
         proto_item_set_len(item_msg, offset - payload_len);
-        proto_item_append_text(item_msg, ", Type: %s (0x%x)%s", msgtype_name, msgtype, wmem_strbuf_get_str(suffix_text));
+        proto_item_append_text(item_msg, ": %s%s", msgtype_name, wmem_strbuf_get_str(suffix_text));
         wmem_strbuf_finalize(suffix_text);
 
         if (tcpcl_analyze_sequence) {
@@ -1589,7 +1618,7 @@ static void proto_reg_handoff_tcpcl(void) {
     /* Packaged extensions */
     {
         dissector_handle_t dis_h = create_dissector_handle(dissect_xferext_transferlen, proto_tcpcl);
-        dissector_add_uint("tcpclv4.xfer_ext", 1, dis_h);
+        dissector_add_uint("tcpclv4.xfer_ext", TCPCL_XFEREXT_TRANSFER_LEN, dis_h);
     }
 
     reinit_tcpcl();
