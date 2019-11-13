@@ -173,12 +173,12 @@
               Policies or mechanisms for assigning X.509 certificates, 
               provisioning, deploying, or accessing certificates and private keys, 
               deploying or accessing certificate revocation lists (CRLs), 
-              or configuring security parameters on an individual BP node or
+              or configuring security parameters on an individual entity or
               across a network.
             </t>
             <t>
               Uses of TLS which are not based on X.509 certificate 
-              authentication, such as TLS-PSK of <xref target="RFC4279" />.
+              authentication (see <xref target="sec-security-tlsnopki" />).
             </t>
           </list>
           Any TCPCL implementation requires a BP agent to perform those above 
@@ -2405,96 +2405,173 @@ TCP Connecting
     </section>
     <section anchor="sec-security" title="Security Considerations">
       <t>
-        TCPCL can be used to provide point-to-point transport security, but does
-        not provide security of data-at-rest and does not guarantee
-        end-to-end bundle security.
-        The bundle security mechanisms defined in <xref target="I-D.ietf-dtn-bpsec" />
-        are to be used instead.
+        This section separates security considerations into threat categories
+        based on guidance of BCP 72 <xref target="RFC3552" />.
       </t>
-      <t>
-        When security policy allows non-TLS sessions,
-        TCPCL does not protect against active network attackers.
-        It is possible for a man-in-the-middle attacker to
-        set the CAN_TLS flag to 0 on either side of the Contact Header exchange.
-        This leads to the "SSL Stripping" attack described in <xref target="RFC7457" />.
-        The purpose of the CAN_TLS flag is to allow the use of TCPCL on
-        entities which simply do not have a TLS implementation available.
-        When TLS is available on an entity, it is strongly encouraged
-        that the security policy disallow non-TLS sessions.
-        This requires that the TLS handshake occurs, regardless of the 
-        policy-driven parameters of the handshake and policy-driven handling
-        of the handshake outcome.
-      </t>
-      <t>
-        Even when using TLS to secure the TCPCL session, the actual ciphersuite
-        negotiated between the TLS peers can be insecure.
-        It is up to security policies within each TCPCL node to ensure that the
-        negotiated TLS ciphersuite meets transport security requirements.
-        This is identical behavior to STARTTLS use in
-        <xref target="RFC2595" />.
-      </t>
-      <t>
-        Even with a secure block cipher and securely-established session keys,
-        there are limits to the amount of plaintext which can be safely 
-        encrypted with a given set of keys as described in 
-        <xref target="AEAD-LIMITS" />.
-        When permitted by the negotiated TLS version 
-        (see <xref target="RFC8446" />), it is advisable to take
-        advantage of session key updates to avoid those limits.
-        When key updates are not possible, establishing new TCPCL/TLS session
-        is an alternative to limit session key use.
-      </t>
-      <t>
-        The certificates exchanged by TLS enable authentication of peer
-        host name and Node ID, but it is possible that a peer either not
-        provide a valid certificate or that the certificate does not validate
-        either the host name or Node ID of the peer.
-        Having a CA-validated certificate does not alone guarantee the identity
-        of the network host or BP node from which the certificate is provided;
-        additional validation procedures bind the host name or node ID
-        based on the contents of the certificate.
-        The host name validation is a weaker form of authentication, because 
-        even if a peer is operating on an authenticated network host name it
-        can provide an invalid Node ID and cause bundles to be "leaked" to
-        an invalid node.
-        Especially in DTN environments, network names and addresses of nodes
-        can be time-variable so binding a certificate to a Node ID is a more 
-        stable identity.
-        Node ID validation ensures that the peer to which a bundle
-        is transferred is in fact the node which the BP Agent expects it to be.
-        It is a reasonable policy to skip host name validation if certificates
-        can be guaranteed to validate the peer's Node ID.
-        In circumstances where certificates can only be issued to network
-        host names, Node ID validation is not possible but it could be
-        reasonable to assume that a trusted host is not going to present an
-        invalid Node ID.
-        Trusting an authenticated host name can be feasable on a network
-        secured by a private CA but is not advisable on the Internet when
-        using a variety of public CAs.
-      </t>
-      <t>
-        Another consideration for this protocol relates to denial-of-service
-        attacks.
-        An entity can send a large amount of data over a TCPCL
-        session, requiring the receiving entity to handle the data, attempt
-        to stop the flood of data by sending a XFER_REFUSE message, or
-        forcibly terminate the session.
-        This burden could cause denial of service on other, well-behaving
-        sessions.
-        There is also nothing to prevent a malicious entity from continually
-        establishing sessions and repeatedly trying to send copious amounts 
-        of bundle data.
-        There is also the possibility of a "data dribble" attack in which
-        an entity presents a very small Segment MRU which causes transfers
-        to be split among an large number of very small segments and causes
-        the segmentation overhead to overwhelm the network througput.
-        Similarly, an entity can present a very small Transfer MRU which will
-        cause resources to be wasted on establishing and upkeeping a
-        TCPCL session over which a bundle could never be transferred.
-        A listening entity MAY take countermeasures such as ignoring TCP SYN
-        messages, closing TCP connections as soon as they are established,
-        sending a SESS_TERM message quickly or with a delay, etc.
-      </t>
+      <section anchor="sec-security-tlsnopki" title="Non-Certificate TLS Use">
+        <t>
+This specification makes use of public key infrastructure (PKI)
+certificate validation and authentication.
+In environments where a PKI is unavailable,
+alternate uses of TLS which do not require certificates such as 
+<xref target="RFC5489" /> are available and can be used to ensure 
+confidentality within TCPCL.
+Using non-PKI node authentication methods is outside of the scope of this 
+document.
+        </t>
+      </section>
+      <section title="Threat: Passive Leak of Node Data">
+        <t>
+When used without TLS security, the TCPCL exposes the Node ID and other
+configuration data to passive eavesdroppers.
+This occurs even when no transfers occur within a TCPCL session.
+This can be avoided by always using TLS, even if authentication is not 
+available (see <xref target="sec-security-tlsnopki" />).
+        </t>
+      </section>
+      <section title="Threat: Passive Leak of Bundle Data">
+        <t>
+TCPCL can be used to provide point-to-point transport security, but does
+not provide security of data-at-rest and does not guarantee
+end-to-end bundle security.
+The bundle security mechanisms defined in <xref target="I-D.ietf-dtn-bpsec" />
+are to be used instead.
+        </t>
+        <t>
+When used without TLS security, the TCPCL exposes all bundle data to passive
+eavesdroppers.
+This can be avoided by always using TLS, even if authentication is not 
+available (see <xref target="sec-security-tlsnopki" />).
+        </t>
+      </section>
+      <section title="Threat: TCPCL Downgrade">
+        <t>
+When a TCPCL entity supports multiple versions of the protocol it is possible
+for a malicious or misconfigued peer to use an older version of TCPCL which
+does not support transport security.
+It is up to security policies within each TCPCL node to ensure that the
+TCPCL version in use meets transport security requirements.
+        </t>
+      </section>
+      <section title="Threat: Transport Security Stripping">
+        <t>
+When security policy allows non-TLS sessions,
+TCPCL does not protect against active network attackers.
+It is possible for a man-in-the-middle attacker to
+set the CAN_TLS flag to 0 on either side of the Contact Header exchange.
+This leads to the "SSL Stripping" attack described in <xref target="RFC7457" />.
+        </t>
+        <t>
+The purpose of the CAN_TLS flag is to allow the use of TCPCL on
+entities which simply do not have a TLS implementation available.
+When TLS is available on an entity, it is strongly encouraged
+that the security policy disallow non-TLS sessions.
+This requires that the TLS handshake occurs, regardless of the 
+policy-driven parameters of the handshake and policy-driven handling
+of the handshake outcome.
+        </t>
+        <t>
+The negotiated use of TLS is identical behavior to STARTTLS use in
+<xref target="RFC2595" /> and <xref target="RFC4511" />.
+        </t>
+      </section>
+      <section title="Threat: Weak Ciphersuite Downgrade">
+        <t>
+Even when using TLS to secure the TCPCL session, the actual ciphersuite
+negotiated between the TLS peers can be insecure.
+It is up to security policies within each TCPCL node to ensure that the
+negotiated TLS ciphersuite meets transport security requirements.
+        </t>
+      </section>
+      <section title="Threat: Invalid Certificate Use">
+        <t>
+There are many reasons, described in <xref target="RFC5280" />, why a 
+certificate can fail to validate, including using the certificate outside
+of its valid time interval, using purposes for which it was not authorized,
+or using it after it has been revoked by its CA.
+Validating a certificate is a complex task and may require network connectivity
+if a mechanism such as the Online Certificate Status Protocol (OCSP) is used
+by the CA.
+The configuration and use of particular certificate validation methods are 
+outside of the scope of this document.
+        </t>
+      </section>
+      <section title="Threat: Symmetric Key Overuse">
+        <t>
+Even with a secure block cipher and securely-established session keys,
+there are limits to the amount of plaintext which can be safely 
+encrypted with a given set of keys as described in 
+<xref target="AEAD-LIMITS" />.
+When permitted by the negotiated TLS version 
+(see <xref target="RFC8446" />), it is advisable to take
+advantage of session key updates to avoid those limits.
+When key updates are not possible, establishing new TCPCL/TLS session
+is an alternative to limit session key use.
+        </t>
+      </section>
+      <section title="Threat: BP Node Impersonation">
+        <t>
+The certificates exchanged by TLS enable authentication of peer
+host name and Node ID, but it is possible that a peer either not
+provide a valid certificate or that the certificate does not validate
+either the host name or Node ID of the peer.
+Having a CA-validated certificate does not alone guarantee the identity
+of the network host or BP node from which the certificate is provided;
+additional validation procedures in <xref target="sec-tls-handshake" />
+bind the host name or node ID based on the contents of the certificate.
+        </t>
+        <t>
+The host name validation is a weaker form of authentication, because 
+even if a peer is operating on an authenticated network host name it
+can provide an invalid Node ID and cause bundles to be "leaked" to
+an invalid node.
+Especially in DTN environments, network names and addresses of nodes
+can be time-variable so binding a certificate to a Node ID is a more 
+stable identity.
+Trusting an authenticated host name can be feasable on a network
+secured by a private CA but is not advisable on the Internet when
+using a variety of public CAs.
+        </t>
+        <t>
+Node ID validation ensures that the peer to which a bundle
+is transferred is in fact the node which the BP Agent expects it to be.
+It is a reasonable policy to skip host name validation if certificates
+can be guaranteed to validate the peer's Node ID.
+In circumstances where certificates can only be issued to network
+host names, Node ID validation is not possible but it could be
+reasonable to assume that a trusted host is not going to present an
+invalid Node ID.
+        </t>
+      </section>
+      <section title="Threat: Denial of Service">
+        <t>
+An entity can send a large amount of data over a TCPCL
+session, requiring the receiving entity to handle the data, attempt
+to stop the flood of data by sending a XFER_REFUSE message, or
+forcibly terminate the session.
+This burden could cause denial of service on other, well-behaving
+sessions.
+        </t>
+        <t>
+There is also nothing to prevent a malicious entity from continually
+establishing sessions and repeatedly trying to send copious amounts 
+of bundle data.
+        </t>
+        <t>
+There is also the possibility of a "data dribble" attack in which
+an entity presents a very small Segment MRU which causes transfers
+to be split among an large number of very small segments and causes
+the segmentation overhead to overwhelm the network througput.
+Similarly, an entity can present a very small Transfer MRU which will
+cause resources to be wasted on establishing and upkeeping a
+TCPCL session over which a bundle could never be transferred.
+        </t>
+        <t>
+A listening entity can take countermeasures such as ignoring TCP SYN
+messages, closing TCP connections as soon as they are established,
+sending a SESS_TERM message quickly or with a delay, etc.
+        </t>
+      </section>
     </section>
     <section anchor="sec-iana" title="IANA Considerations">
       <t>
@@ -2887,8 +2964,9 @@ TCP Connecting
       </reference>
       <?rfc include="reference.RFC.2595.xml"?>
       <?rfc include="reference.RFC.3552.xml"?>
-      <?rfc include="reference.RFC.4279.xml"?>
+      <?rfc include="reference.RFC.4511.xml"?>
       <?rfc include="reference.RFC.4838.xml"?>
+      <?rfc include="reference.RFC.5489.xml"?>
       <?rfc include="reference.RFC.7242.xml"?>
       <?rfc include="reference.RFC.7435.xml"?>
       <?rfc include="reference.RFC.7457.xml"?>

@@ -106,9 +106,10 @@ MODULE_VERS=$(pkg-config --variable=VERSION_RELEASE wireshark)
 PLUGIN_PATH="${HOME}/.local/lib/wireshark/plugins/${MODULE_VERS}"
 fi
 mkdir -p wireshark-plugin/build
-cd wireshark-plugin/build/
+pushd wireshark-plugin/build/
 cmake .. -DCMAKE_BUILD_TYPE=Debug -DINSTALL_MODULE_PATH=${PLUGIN_PATH}/epan/ -G Ninja
-ninja install
+cmake --build . --target install
+popd
 ```
 
 At this point the two modules "libtcpclv4" and "libbpv7" will be installed in the wireshark plugin path and will be loaded at next wireshark application startup.
