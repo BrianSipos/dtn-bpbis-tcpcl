@@ -19,6 +19,8 @@ from tcpcl import formats, contact, messages, extend
 class Config(object):
     ''' Agent configuration.
 
+    .. py:attribute:: enable_test
+        A set of test-mode behaviors to enable.
     .. py:attribute:: bus_conn
         The D-Bus connection object to register handlers on.
     .. py:attribute:: stop_on_close
@@ -40,6 +42,7 @@ class Config(object):
     '''
 
     def __init__(self):
+        self.enable_test = set()
         self.bus_conn = dbus.bus.BusConnection(dbus.bus.BUS_SESSION)
         self.stop_on_close = False
         self.ssl_ctx = None
@@ -749,11 +752,14 @@ class Messenger(Connection):
         ''' Send the initial SESS_INIT message.
         Parameters are based on current configuration.
         '''
+        ext_items = []
+        if 'private_extensions' in self._config.enable_test:
+            ext_items.append(messages.SessionExtendHeader(flags=messages.SessionExtendHeader.Flag.CRITICAL) / extend.SessionPrivateDummy())
         options = dict(
             keepalive=self._config.keepalive_time,
             segment_mru=self._config.segment_size_mru,
             nodeid_data=self._config.nodeid,
-            ext_items=[],
+            ext_items=ext_items,
         )
         pkt = messages.MessageHead() / messages.SessionInit(**options)
         self.send_message(pkt)
@@ -1001,7 +1007,7 @@ class Messenger(Connection):
         if not self._in_sess:
             raise RejectError(messages.RejectMsg.Reason.UNEXPECTED)
 
-    def send_xfer_data(self, transfer_id, data, flg, ext=None):
+    def send_xfer_data(self, transfer_id, data, flg, ext_items=None):
         ''' Send a XFER_DATA message.
 
         :param transfer_id: The bundle ID number.
@@ -1010,23 +1016,23 @@ class Messenger(Connection):
         :type data: str
         :param flg: Data flags for :py:class:`TransferSegment`
         :type flg: int
-        :param ext: Extension items for the starting segment only.
-        :type ext: list or None
+        :param ext_items: Extension items for the starting segment only.
+        :type ext_items: list or None
         '''
         if not self._in_sess:
             raise RuntimeError(
                 'Attempt to transfer before session established')
-        if ext and not flg & messages.TransferSegment.Flag.START:
+        if ext_items and not flg & messages.TransferSegment.Flag.START:
             raise RuntimeError(
                 'Cannot send extension items outside of START message')
-        if ext is None:
-            ext = []
+        if ext_items is None:
+            ext_items = []
 
         self.send_message(messages.MessageHead() /
                           messages.TransferSegment(transfer_id=transfer_id,
                                                    flags=flg,
                                                    data=data,
-                                                   ext_items=ext))
+                                                   ext_items=ext_items))
 
     def send_xfer_ack(self, transfer_id, length, flg):
         ''' Send a XFER_ACK message.
@@ -1421,10 +1427,12 @@ class ContactHandler(Messenger, dbus.service.Object):
 
         # send next segment
         flg = 0
-        xfer_ext = []
+        ext_items = []
+        if 'private_extensions' in self._config.enable_test:
+            ext_items.append(messages.TransferExtendHeader(flags=messages.SessionExtendHeader.Flag.CRITICAL) / extend.TransferPrivateDummy())
         if self._tx_length == 0:
             flg |= messages.TransferSegment.Flag.START
-            xfer_ext.append(
+            ext_items.append(
                 messages.TransferExtendHeader() / extend.TransferTotalLength(total_length=self._tx_tmp.total_length)
             )
         data = self._tx_tmp.file.read(self._send_segment_size)
@@ -1433,7 +1441,7 @@ class ContactHandler(Messenger, dbus.service.Object):
             flg |= messages.TransferSegment.Flag.END
 
         # Actual segment
-        self.send_xfer_data(self._tx_tmp.transfer_id, data, flg, xfer_ext)
+        self.send_xfer_data(self._tx_tmp.transfer_id, data, flg, ext_items)
         # Mark the transmit time
         self._segment_tx_times[self._tx_length] = datetime.datetime.utcnow()
 
@@ -1711,6 +1719,9 @@ def main(*argv):
                         help='Allowed TLS cipher filter')
     parser.add_argument('--stop-on-close', default=False, action='store_true',
                         help='Stop the agent when connection is closed')
+    parser.add_argument('--enable-test', type=str, default=[],
+                        action='append', choices=['private_extensions'],
+                        help='Allowed TLS cipher filter')
 
     parser_listen = subp.add_parser('listen',
                                     help='Listen for TCP connections')
@@ -1736,6 +1747,7 @@ def main(*argv):
 
     config = Config()
 
+    config.enable_test = frozenset(args.enable_test)
     config.stop_on_close = args.stop_on_close
     if args.bus_service:
         bus_serv = dbus.service.BusName(

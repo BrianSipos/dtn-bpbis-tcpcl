@@ -4,14 +4,14 @@
 import sys
 import argparse
 import logging
-import cbor2
-import crcmod
 import io
 import random
 import shutil
 import string
 import struct
 import unittest
+import cbor2
+import crcmod
 from gi.repository import GLib as glib
 
 LOGGER = logging.getLogger(__name__)
@@ -254,7 +254,7 @@ class Generator(object):
                 randnodeid(),
                 randnodeid(),
                 randtimestamp(),  # creation timestamp
-                random.randint(0, 24*60*60*1e6),  # lifetime (us)
+                random.randint(0, 24 * 60 * 60 * 1e6),  # lifetime (us)
             ],
             crc_type_ix=2,
         )
@@ -374,6 +374,7 @@ def main():
 
     config_pasv = tcpcl.agent.Config()
     config_pasv.stop_on_close = True
+    config_pasv.enable_test = ['private_extensions']
 
     def run_pasv(config):
         agent = tcpcl.agent.Agent(config)
@@ -382,6 +383,7 @@ def main():
 
     config_actv = tcpcl.agent.Config()
     config_actv.stop_on_close = True
+    config_actv.enable_test = ['private_extensions']
 
     def run_actv(config):
         agent = tcpcl.agent.Agent(config)

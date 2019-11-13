@@ -108,7 +108,6 @@ static int hf_canonical_block_flags_status_no_process = -1;
 static int hf_canonical_block_flags_remove_no_process = -1;
 static int hf_canonical_block_flags_replicate_in_fragment = -1;
 static int hf_canonical_crc_type = -1;
-static int hf_canonical_data_len = -1;
 static int hf_canonical_data = -1;
 static int hf_canonical_crc_field = -1;
 
@@ -158,16 +157,16 @@ static hf_register_info fields[] = {
     {&hf_nodeid_as_uri, {"Node ID as URI", "bpv7.nodeid.as_uri", FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL}},
 
     {&hf_primary_version, {"Version", "bpv7.primary.version", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
-    {&hf_primary_bundle_flags, {"Bundle Flags", "bpv7.primary.bundle_flags", FT_UINT32, BASE_HEX, NULL, 0x0, NULL, HFILL}},
-    {&hf_primary_bundle_flags_deletion_report, {"Deletion Report", "bpv7.primary.bundle_flags.deleteion_report", FT_UINT32, BASE_DEC, NULL, BP_BUNDLE_REQ_DELETION_REPORT, NULL, HFILL}},
-    {&hf_primary_bundle_flags_delivery_report, {"Delivery Report", "bpv7.primary.bundle_flags.delivery_report", FT_UINT32, BASE_DEC, NULL, BP_BUNDLE_REQ_DELIVERY_REPORT, NULL, HFILL}},
-    {&hf_primary_bundle_flags_forwarding_report, {"Forwarding Report", "bpv7.primary.bundle_flags.forwarding_report", FT_UINT32, BASE_DEC, NULL, BP_BUNDLE_REQ_FORWARDING_REPORT, NULL, HFILL}},
-    {&hf_primary_bundle_flags_reception_report, {"Reception Report", "bpv7.primary.bundle_flags.reception_report", FT_UINT32, BASE_DEC, NULL, BP_BUNDLE_REQ_RECEPTION_REPORT, NULL, HFILL}},
-    {&hf_primary_bundle_flags_req_status_time, {"Request Status time", "bpv7.primary.bundle_flags.req_status_time", FT_UINT32, BASE_DEC, NULL, BP_BUNDLE_REQ_STATUS_TIME, NULL, HFILL}},
-    {&hf_primary_bundle_flags_user_app_ack, {"User App. Ack.", "bpv7.primary.bundle_flags.user_app_ack", FT_UINT32, BASE_DEC, NULL, BP_BUNDLE_USER_APP_ACK, NULL, HFILL}},
-    {&hf_primary_bundle_flags_no_fragment, {"No Fragment", "bpv7.primary.bundle_flags.no_fragment", FT_UINT32, BASE_DEC, NULL, BP_BUNDLE_NO_FRAGMENT, NULL, HFILL}},
+    {&hf_primary_bundle_flags, {"Bundle Flags", "bpv7.primary.bundle_flags", FT_UINT64, BASE_HEX, NULL, 0x0, NULL, HFILL}},
+    {&hf_primary_bundle_flags_is_fragment, {"Bundle is Fragment", "bpv7.primary.bundle_flags.is_fragment", FT_UINT32, BASE_DEC, NULL, BP_BUNDLE_IS_FRAGMENT, NULL, HFILL}},
     {&hf_primary_bundle_flags_payload_admin, {"Payload is Administrative", "bpv7.primary.bundle_flags.payload_admin", FT_UINT32, BASE_DEC, NULL, BP_BUNDLE_PAYLOAD_ADMIN, NULL, HFILL}},
-    {&hf_primary_bundle_flags_is_fragment, {"Is Fragment", "bpv7.primary.bundle_flags.is_fragment", FT_UINT32, BASE_DEC, NULL, BP_BUNDLE_IS_FRAGMENT, NULL, HFILL}},
+    {&hf_primary_bundle_flags_no_fragment, {"Bundle must not be Fragmented", "bpv7.primary.bundle_flags.no_fragment", FT_UINT32, BASE_DEC, NULL, BP_BUNDLE_NO_FRAGMENT, NULL, HFILL}},
+    {&hf_primary_bundle_flags_user_app_ack, {"Acknowledgement by Application required", "bpv7.primary.bundle_flags.user_app_ack", FT_UINT32, BASE_DEC, NULL, BP_BUNDLE_USER_APP_ACK, NULL, HFILL}},
+    {&hf_primary_bundle_flags_req_status_time, {"Status time requested in reports", "bpv7.primary.bundle_flags.req_status_time", FT_UINT32, BASE_DEC, NULL, BP_BUNDLE_REQ_STATUS_TIME, NULL, HFILL}},
+    {&hf_primary_bundle_flags_reception_report, {"Request reporting of bundle reception", "bpv7.primary.bundle_flags.reception_report", FT_UINT32, BASE_DEC, NULL, BP_BUNDLE_REQ_RECEPTION_REPORT, NULL, HFILL}},
+    {&hf_primary_bundle_flags_forwarding_report, {"Request reporting of bundle forwarding", "bpv7.primary.bundle_flags.forwarding_report", FT_UINT32, BASE_DEC, NULL, BP_BUNDLE_REQ_FORWARDING_REPORT, NULL, HFILL}},
+    {&hf_primary_bundle_flags_delivery_report, {"Request reporting of bundle delivery", "bpv7.primary.bundle_flags.delivery_report", FT_UINT32, BASE_DEC, NULL, BP_BUNDLE_REQ_DELIVERY_REPORT, NULL, HFILL}},
+    {&hf_primary_bundle_flags_deletion_report, {"Request reporting of bundle deletion", "bpv7.primary.bundle_flags.deleteion_report", FT_UINT32, BASE_DEC, NULL, BP_BUNDLE_REQ_DELETION_REPORT, NULL, HFILL}},
     {&hf_primary_crc_type, {"CRC Type", "bpv7.primary.crc_type", FT_UINT64, BASE_DEC | BASE_VAL64_STRING, VALS64(crc_vals), 0x0, NULL, HFILL}},
     {&hf_primary_dst_nodeid, {"Destination Node ID", "bpv7.primary.dst_nodeid", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_primary_src_nodeid, {"Source Node ID", "bpv7.primary.src_nodeid", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL}},
@@ -182,14 +181,13 @@ static hf_register_info fields[] = {
 
     {&hf_canonical_type_code, {"Type Code", "bpv7.canonical.type_code", FT_UINT64, BASE_DEC | BASE_VAL64_STRING, VALS64(blocktype_vals), 0x0, NULL, HFILL}},
     {&hf_canonical_block_num, {"Block Number", "bpv7.canonical.block_num", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
-    {&hf_canonical_block_flags, {"Block Flags", "bpv7.canonical.block_flags", FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL}},
-    {&hf_canonical_block_flags_remove_no_process, {"Remove if not processed", "bpv7.canonical.block_flags.remove_if_no_process", FT_UINT8, BASE_DEC, NULL, BP_BLOCK_REMOVE_IF_NO_PROCESS, NULL, HFILL}},
-    {&hf_canonical_block_flags_delete_no_process, {"Delete if not processed", "bpv7.canonical.block_flags.delete_if_no_process", FT_UINT8, BASE_DEC, NULL, BP_BLOCK_DELETE_IF_NO_PROCESS, NULL, HFILL}},
-    {&hf_canonical_block_flags_status_no_process, {"Status if not processed", "bpv7.canonical.block_flags.status_if_no_process", FT_UINT8, BASE_DEC, NULL, BP_BLOCK_STATUS_IF_NO_PROCESS, NULL, HFILL}},
-    {&hf_canonical_block_flags_replicate_in_fragment, {"Replicate in fragment", "bpv7.canonical.block_flags.replicate_in_fragment", FT_UINT8, BASE_DEC, NULL, BP_BLOCK_REPLICATE_IN_FRAGMENT, NULL, HFILL}},
+    {&hf_canonical_block_flags, {"Block Flags", "bpv7.canonical.block_flags", FT_UINT64, BASE_HEX, NULL, 0x0, NULL, HFILL}},
+    {&hf_canonical_block_flags_replicate_in_fragment, {"Replicate block in fragment", "bpv7.canonical.block_flags.replicate_in_fragment", FT_UINT8, BASE_DEC, NULL, BP_BLOCK_REPLICATE_IN_FRAGMENT, NULL, HFILL}},
+    {&hf_canonical_block_flags_status_no_process, {"Status bundle if not processed", "bpv7.canonical.block_flags.status_if_no_process", FT_UINT8, BASE_DEC, NULL, BP_BLOCK_STATUS_IF_NO_PROCESS, NULL, HFILL}},
+    {&hf_canonical_block_flags_delete_no_process, {"Delete bundle if not processed", "bpv7.canonical.block_flags.delete_if_no_process", FT_UINT8, BASE_DEC, NULL, BP_BLOCK_DELETE_IF_NO_PROCESS, NULL, HFILL}},
+    {&hf_canonical_block_flags_remove_no_process, {"Discard block if not processed", "bpv7.canonical.block_flags.discard_if_no_process", FT_UINT8, BASE_DEC, NULL, BP_BLOCK_REMOVE_IF_NO_PROCESS, NULL, HFILL}},
     {&hf_canonical_crc_type, {"CRC Type", "bpv7.canonical.crc_type", FT_UINT64, BASE_DEC | BASE_VAL64_STRING, VALS64(crc_vals), 0x0, NULL, HFILL}},
-    {&hf_canonical_data_len, {"Type-Specific Data Length", "bpv7.canonical.data_len", FT_UINT64, BASE_DEC | BASE_UNIT_STRING, &units_octet_octets, 0x0, NULL, HFILL}},
-    {&hf_canonical_data, {"Type-Specific Data", "bpv7.canonical.data", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL}},
+    {&hf_canonical_data, {"Type-Specific Data", "bpv7.canonical.data", FT_UINT64, BASE_DEC | BASE_UNIT_STRING, &units_octet_octets, 0x0, NULL, HFILL}},
     {&hf_canonical_crc_field, {"CRC Field", "bpv7.canonical.crc_field", FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL}},
 
     {&hf_previous_node_nodeid, {"Previous Node ID", "bpv7.previous_node.nodeid", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL}},
@@ -276,6 +274,7 @@ static expert_field ei_invalid_bp_version = EI_INIT;
 static expert_field ei_nodeid_scheme_unknown = EI_INIT;
 static expert_field ei_block_type_unknown = EI_INIT;
 static expert_field ei_block_partial_decode = EI_INIT;
+static expert_field ei_crc_type_unknown = EI_INIT;
 static expert_field ei_block_failed_crc = EI_INIT;
 static expert_field ei_block_num_dupe = EI_INIT;
 static expert_field ei_block_payload_index = EI_INIT;
@@ -290,14 +289,15 @@ static ei_register_info expertitems[] = {
     {&ei_item_missing, {"bpv7.item_missing", PI_MALFORMED, PI_ERROR, "CBOR item is missing or incorrect type", EXPFILL}},
     {&ei_invalid_bp_version, {"bpv7.invalid_bp_version", PI_MALFORMED, PI_ERROR, "Invalid BP version", EXPFILL}},
     {&ei_nodeid_scheme_unknown, {"bpv7.eid_scheme_unknown", PI_UNDECODED, PI_WARN, "Unknown Node ID scheme code", EXPFILL}},
-    {&ei_block_type_unknown, {"bpv7.block_type_unknown", PI_UNDECODED, PI_WARN, "Unknown block type code", EXPFILL}},
+    {&ei_block_type_unknown, {"bpv7.block_type_unknown", PI_UNDECODED, PI_ERROR, "Unknown block type code", EXPFILL}},
     {&ei_block_partial_decode, {"bpv7.block_partial_decode", PI_UNDECODED, PI_WARN, "Block data not fully dissected", EXPFILL}},
+    {&ei_crc_type_unknown, {"bpv7.ei_crc_type_unknown", PI_UNDECODED, PI_ERROR, "Unknown CRC Type code", EXPFILL}},
     {&ei_block_failed_crc, {"bpv7.block_failed_crc", PI_CHECKSUM, PI_WARN, "Block failed CRC", EXPFILL}},
     {&ei_block_num_dupe, {"bpv7.block_num_dupe", PI_PROTOCOL, PI_WARN, "Duplicate block number", EXPFILL}},
     {&ei_block_payload_index, {"bpv7.block_payload_index", PI_PROTOCOL, PI_WARN, "Payload must be the last block", EXPFILL}},
     {&ei_block_payload_num, {"bpv7.block_payload_num", PI_PROTOCOL, PI_WARN, "Invalid payload block number", EXPFILL}},
     {&ei_block_payload_dupe, {"bpv7.block_payload_dupe", PI_PROTOCOL, PI_WARN, "Duplicate payload block", EXPFILL}},
-    {&ei_admin_type_unknown, {"bpv7.admin_type_unknown", PI_UNDECODED, PI_WARN, "Unknown administrative type code", EXPFILL}},
+    {&ei_admin_type_unknown, {"bpv7.admin_type_unknown", PI_UNDECODED, PI_ERROR, "Unknown administrative type code", EXPFILL}},
 };
 
 /** Delete an arbitrary object allocated under this file scope.
@@ -785,6 +785,9 @@ static proto_item * proto_tree_add_cbor_bitmask(proto_tree *tree, int hfindex, c
         case FT_UINT32:
             flagsize = 4;
             break;
+        case FT_UINT64:
+            flagsize = 8;
+            break;
         default:
             fprintf(stderr, "Unhandled bitmask size: %d", field->type);
             return NULL;
@@ -818,13 +821,13 @@ static proto_item * proto_tree_add_cbor_string(proto_tree *tree, int hfindex, pa
         case CBOR_TYPE_STRING: {
             char *value = (char *)tvb_get_string_enc(wmem_packet_scope(), tvb, head->start + head->head_length, head->head_value, ENC_UTF_8);
             // This function needs a null-terminated string
-            item = proto_tree_add_string(tree, hfindex, tvb, head->start, head->head_length + head->head_value, value);
+            item = proto_tree_add_string(tree, hfindex, tvb, head->start + head->head_length, head->head_value, value);
             wmem_free(wmem_packet_scope(), value);
             break;
         }
         case CBOR_TYPE_BYTESTRING: {
             guint8 *value = tvb_memdup(wmem_packet_scope(), tvb, head->start + head->head_length, head->head_value);
-            item = proto_tree_add_bytes(tree, hfindex, tvb, head->start, head->head_length + head->head_value, value);
+            item = proto_tree_add_bytes(tree, hfindex, tvb, head->start + head->head_length, head->head_value, value);
             wmem_free(wmem_packet_scope(), value);
             break;
         }
@@ -1142,11 +1145,14 @@ static gint dissect_block_primary(tvbuff_t *tvb, packet_info *pinfo, proto_tree 
 
     chunk = bp_scan_cbor_chunk(tvb, offset);
     guint64 *crc_type = cbor_require_uint64(chunk);
-    proto_tree_add_cbor_uint64(tree_block, hf_primary_crc_type, pinfo, tvb, chunk, crc_type);
+    proto_item *item_crc_type = proto_tree_add_cbor_uint64(tree_block, hf_primary_crc_type, pinfo, tvb, chunk, crc_type);
     offset += chunk->data_length;
     field_ix++;
     bp_cbor_chunk_delete(chunk);
     block->crc_type = (crc_type ? *crc_type : BP_CRC_NONE);
+    if (crc_type) {
+        proto_item_append_text(item_block, ", CRC Type: %s", val64_to_str(*crc_type, crc_vals, "%" PRIu64));
+    }
 
     proto_tree_add_cbor_nodeid(tree_block, hf_primary_dst_nodeid, pinfo, tvb, &offset, block->dst_nodeid);
     field_ix++;
@@ -1207,30 +1213,36 @@ static gint dissect_block_primary(tvbuff_t *tvb, packet_info *pinfo, proto_tree 
         field_ix++;
         bp_cbor_chunk_delete(chunk);
     }
-    if (crc_type && (*crc_type != 0)) {
-        if (!cbor_require_array_size(tvb, pinfo, item_block, chunk_head, field_ix + 1, field_ix + 1)) {
-            // Skip whole array
-            offset = start;
-            cbor_skip_next_item(tvb, &offset);
 
-            bp_cbor_chunk_delete(chunk_head);
-            return offset - start;
+    switch (block->crc_type) {
+        case BP_CRC_NONE:
+            break;
+        case BP_CRC_16:
+        case BP_CRC_32: {
+            if (!cbor_require_array_size(tvb, pinfo, item_block, chunk_head, field_ix + 1, field_ix + 1)) {
+                // Skip whole array
+                offset = start;
+                cbor_skip_next_item(tvb, &offset);
+
+                bp_cbor_chunk_delete(chunk_head);
+                return offset - start;
+            }
+
+            chunk = bp_scan_cbor_chunk(tvb, offset);
+            tvbuff_t *crc_field = cbor_require_string(tvb, chunk);
+            proto_item *item_crc_field = proto_tree_add_cbor_string(tree_block, hf_primary_crc_field, pinfo, tvb, chunk);
+            offset += chunk->data_length;
+            field_ix++;
+            bp_cbor_chunk_delete(chunk);
+            block->crc_field = crc_field;
+
+            tvbuff_t *tvb_block = tvb_new_subset_length(tvb, start, offset - start);
+            show_crc_info(tvb_block, pinfo, tree_block, crc_type, crc_field, item_crc_field);
+            break;
         }
-
-        chunk = bp_scan_cbor_chunk(tvb, offset);
-        tvbuff_t *crc_field = cbor_require_string(tvb, chunk);
-        proto_item *item_crc_field = proto_tree_add_cbor_string(tree_block, hf_primary_crc_field, pinfo, tvb, chunk);
-        offset += chunk->data_length;
-        field_ix++;
-        bp_cbor_chunk_delete(chunk);
-        block->crc_field = crc_field;
-
-        tvbuff_t *tvb_block = tvb_new_subset_length(tvb, start, offset - start);
-        show_crc_info(tvb_block, pinfo, tree_block, crc_type, crc_field, item_crc_field);
-
-        if (crc_type) {
-            proto_item_append_text(item_block, ", CRC Type: %s", val64_to_str(*crc_type, crc_vals, "%" PRIu64));
-        }
+        default:
+            expert_add_info(pinfo, item_crc_type, &ei_crc_type_unknown);
+            break;
     }
 
     bp_cbor_chunk_delete(chunk_head);
@@ -1287,7 +1299,7 @@ static gint dissect_block_canonical(tvbuff_t *tvb, packet_info *pinfo, proto_tre
 
     chunk = bp_scan_cbor_chunk(tvb, offset);
     guint64 *crc_type = cbor_require_uint64(chunk);
-    proto_tree_add_cbor_uint64(tree_block, hf_canonical_crc_type, pinfo, tvb, chunk, crc_type);
+    proto_item *item_crc_type = proto_tree_add_cbor_uint64(tree_block, hf_canonical_crc_type, pinfo, tvb, chunk, crc_type);
     offset += chunk->data_length;
     field_ix++;
     bp_cbor_chunk_delete(chunk);
@@ -1302,36 +1314,43 @@ static gint dissect_block_canonical(tvbuff_t *tvb, packet_info *pinfo, proto_tre
     field_ix++;
     bp_cbor_chunk_delete(chunk);
     block->data = tvb_data;
-    if (!tvb_data) {
-        expert_add_info_format(pinfo, item_block, &ei_item_missing, "Data field is missing");
-    }
-    else {
-        proto_item *item_len = proto_tree_add_uint64(tree_block, hf_canonical_data_len, tvb_data, 0, tvb_captured_length(tvb_data), tvb_captured_length(tvb_data));
-        PROTO_ITEM_SET_GENERATED(item_len);
-    }
-    proto_item *item_data = proto_tree_add_item(tree_block, hf_canonical_data, tvb_data, 0, tvb_captured_length(tvb_data), ENC_NA);
+    const guint tvb_data_len = (tvb_data ? tvb_captured_length(tvb_data) : 0);
+    //proto_item *item_data = proto_tree_add_item(tree_block, hf_canonical_data, tvb_data, 0, tvb_data_len, ENC_NA);
+    proto_item *item_data = proto_tree_add_uint64(tree_block, hf_canonical_data, tvb_data, 0, tvb_data_len, tvb_data_len);
     proto_tree *tree_data = proto_item_add_subtree(item_data, ett_canonical_data);
+    if (!tvb_data) {
+        expert_add_info_format(pinfo, item_data, &ei_item_missing, "Data field is missing");
+    }
 
-    if (crc_type && (*crc_type != 0)) {
-        if (!cbor_require_array_size(tvb, pinfo, item_block, chunk_head, field_ix + 1, field_ix + 1)) {
-            // Skip whole array
-            offset = start;
-            cbor_skip_next_item(tvb, &offset);
+    switch (block->crc_type) {
+        case BP_CRC_NONE:
+            break;
+        case BP_CRC_16:
+        case BP_CRC_32: {
+            if (!cbor_require_array_size(tvb, pinfo, item_block, chunk_head, field_ix + 1, field_ix + 1)) {
+                // Skip whole array
+                offset = start;
+                cbor_skip_next_item(tvb, &offset);
 
-            bp_cbor_chunk_delete(chunk_head);
-            return offset - start;
+                bp_cbor_chunk_delete(chunk_head);
+                return offset - start;
+            }
+
+            chunk = bp_scan_cbor_chunk(tvb, offset);
+            tvbuff_t *crc_field = cbor_require_string(tvb, chunk);
+            proto_item *item_crc_field = proto_tree_add_cbor_string(tree_block, hf_canonical_crc_field, pinfo, tvb, chunk);
+            offset += chunk->data_length;
+            field_ix++;
+            bp_cbor_chunk_delete(chunk);
+            block->crc_field = crc_field;
+
+            tvbuff_t *tvb_block = tvb_new_subset_length(tvb, start, offset - start);
+            show_crc_info(tvb_block, pinfo, tree_block, crc_type, crc_field, item_crc_field);
+            break;
         }
-
-        chunk = bp_scan_cbor_chunk(tvb, offset);
-        tvbuff_t *crc_field = cbor_require_string(tvb, chunk);
-        proto_item *item_crc_field = proto_tree_add_cbor_string(tree_block, hf_canonical_crc_field, pinfo, tvb, chunk);
-        offset += chunk->data_length;
-        field_ix++;
-        bp_cbor_chunk_delete(chunk);
-        block->crc_field = crc_field;
-
-        tvbuff_t *tvb_block = tvb_new_subset_length(tvb, start, offset - start);
-        show_crc_info(tvb_block, pinfo, tree_block, crc_type, crc_field, item_crc_field);
+        default:
+            expert_add_info(pinfo, item_crc_type, &ei_crc_type_unknown);
+            break;
     }
 
     if (tvb_data) {
@@ -1345,7 +1364,7 @@ static gint dissect_block_canonical(tvbuff_t *tvb, packet_info *pinfo, proto_tre
             dissect_data.bundle = bundle;
             dissect_data.block = block;
             const int sublen = call_dissector_with_data(data_dissect, tvb_data, pinfo, tree_data, &dissect_data);
-            if ((sublen < 0) || ((guint)sublen < tvb_captured_length(tvb_data))) {
+            if ((sublen < 0) || ((guint)sublen < tvb_data_len)) {
                 expert_add_info(pinfo, item_block, &ei_block_partial_decode);
             }
         }

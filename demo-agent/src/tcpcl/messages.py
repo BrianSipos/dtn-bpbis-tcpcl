@@ -26,6 +26,21 @@ class MessageHead(packet.Packet):
 class TlvHead(packet.Packet):
     ''' Generic TLV header with data as payload. '''
 
+    @classmethod
+    def bind_extension(cls, ext_id):
+        ''' Bind an extension class to a derived header class.
+        This decorator should be applied to extension type classes.
+
+        :param cls: The header class to extend.
+        :param ext_id: The extension type ID number.
+        '''
+
+        def func(ext_cls):
+            packet.bind_layers(cls, ext_cls, type=ext_id)
+            return ext_cls
+
+        return func
+
     @enum.unique
     class Flag(enum.IntEnum):
         ''' Message flags.
@@ -54,7 +69,7 @@ class SessionInit(formats.NoPayloadPacket):
     ''' An SESS_INIT with no payload. '''
 
     #: Largest 64-bit size value
-    SIZE_MAX = 2**64 - 1
+    SIZE_MAX = 2 ** 64 - 1
 
     fields_desc = [
         formats.UInt16Field('keepalive', default=0),
@@ -210,6 +225,7 @@ class TransferAck(formats.NoPayloadPacket):
         formats.UInt64Field('transfer_id', default=0),
         formats.UInt64Field('length', default=None),
     ]
+
 
 packet.bind_layers(MessageHead, TransferSegment, msg_id=0x1)
 packet.bind_layers(MessageHead, TransferAck, msg_id=0x2)

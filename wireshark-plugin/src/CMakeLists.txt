@@ -14,5 +14,5 @@ if(INSTALL_MODULE_PATH)
 endif(INSTALL_MODULE_PATH)
 
 if (GTEST_FOUND)
-#    add_subdirectory(test)
+    add_subdirectory(test)
 endif()

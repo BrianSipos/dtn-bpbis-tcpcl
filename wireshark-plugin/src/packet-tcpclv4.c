@@ -164,9 +164,9 @@ static int hf_xferext_transferlen_total_len = -1;
 
 /// Field definitions
 static hf_register_info fields[] = {
-    {&hf_tcpcl, {"TCP Convergence Layer Version 4", "tcpclv4", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL}},
+    {&hf_tcpcl, {"TCP Convergence Layer Version 4", "tcpclv4", FT_PROTOCOL, BASE_NONE, NULL, 0x0, NULL, HFILL}},
 
-    {&hf_chdr_tree, {"TCPCLv4 Contact Header", "tcpclv4.chdr", FT_PROTOCOL, BASE_NONE, NULL, 0x0, NULL, HFILL}},
+    {&hf_chdr_tree, {"TCPCLv4 Contact Header", "tcpclv4.chdr", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_chdr_magic, {"Protocol Magic", "tcpclv4.chdr.magic", FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_chdr_version, {"Protocol Version", "tcpclv4.chdr.version", FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL}},
     {&hf_chdr_flags, {"Contact Flags", "tcpclv4.chdr.flags", FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL}},
@@ -175,7 +175,7 @@ static hf_register_info fields[] = {
     {&hf_chdr_related, {"Related Header", "tcpclv4.chdr.related", FT_FRAMENUM, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_negotiate_use_tls, {"Negotiated Use TLS", "tcpclv4.negotiated.use_tls", FT_BOOLEAN, BASE_NONE, NULL, 0x0, NULL, HFILL}},
 
-    {&hf_mhdr_tree, {"TCPCLv4 Message", "tcpclv4.mhdr", FT_PROTOCOL, BASE_NONE, NULL, 0x0, NULL, HFILL}},
+    {&hf_mhdr_tree, {"TCPCLv4 Message", "tcpclv4.mhdr", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_mhdr_type, {"Message Type", "tcpclv4.mhdr.type", FT_UINT8, BASE_HEX, VALS(message_type_vals), 0x0, NULL, HFILL}},
 
     // Session extension fields
@@ -916,7 +916,7 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
 #if 0
         fprintf(stdout, "DISSECT decoding msg type %x, buf length %d\n", msgtype, tvb_captured_length(tvb));
 #endif
-        msgtype_name = val_to_str(msgtype, message_type_vals, "type %" PRIx8);
+        msgtype_name = val_to_str(msgtype, message_type_vals, "type 0x%" PRIx32);
 
         wmem_strbuf_t *suffix_text = wmem_strbuf_new(wmem_packet_scope(), NULL);
         switch(msgtype) {
@@ -983,7 +983,7 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                     proto_item_set_len(item_ext, extitem_offset);
                     extlist_offset += extitem_offset;
 
-                    const gchar *extitem_name = val_to_str(msgtype, sessext_type_vals, "type %" PRIx8);
+                    const gchar *extitem_name = val_to_str(extitem_type, sessext_type_vals, "type 0x%" PRIx32);
                     proto_item_append_text(item_ext, ": %s", extitem_name);
                     if (is_critical) {
                         proto_item_append_text(item_ext, ", CRITICAL");
@@ -1093,7 +1093,7 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                         }
                         extitem_offset += extitem_len;
 
-                        const gchar *extitem_name = val_to_str(msgtype, xferext_type_vals, "type %" PRIx8);
+                        const gchar *extitem_name = val_to_str(extitem_type, xferext_type_vals, "type 0x%" PRIx32);
                         proto_item_append_text(item_ext, ": %s", extitem_name);
                         if (is_critical) {
                             proto_item_append_text(item_ext, ", CRITICAL");
