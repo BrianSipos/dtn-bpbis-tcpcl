@@ -1,0 +1,20 @@
+name: Wireshark Plugin
+
+on: [push]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v1
+    - name: dependencies
+      run: |
+        sudo apt install cmake wireshark-dev libcbor-dev googletest-dev
+    - name: configure
+      run: cd wireshark-plugin/build && cmake ..
+    - name: build
+      run: cmake --build wireshark-plugin/build/ --target install
+    - name: check
+      run: cd wireshark-plugin/build && ctest -V
