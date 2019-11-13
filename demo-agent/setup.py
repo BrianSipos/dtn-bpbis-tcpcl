@@ -1,8 +1,6 @@
 import os
 from setuptools import setup, find_packages
 
-own_path = os.path.dirname(os.path.realpath(__file__))
-
 setup(
     # Basic info
     name='ietf-dtn-tcpcl-demo',
@@ -27,9 +25,9 @@ and dynamic segment sizing.
 
     # Packages and depencies
     package_dir={
-        '': '{0}/src'.format(own_path)
+        '': 'src',
     },
-    packages=find_packages(where='{0}/src'.format(own_path)),
+    packages=find_packages(where='src'),
     install_requires=[
         'scapy',
         'cbor2',
