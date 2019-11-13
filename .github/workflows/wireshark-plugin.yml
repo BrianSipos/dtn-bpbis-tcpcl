@@ -13,8 +13,13 @@ jobs:
       run: |
         sudo apt-get install cmake wireshark-dev libcbor-dev libgtest-dev
     - name: configure
-      run: cd wireshark-plugin/build && cmake ..
+      run: |
+        mkdir wireshark-plugin/build
+        cd wireshark-plugin/build
+        cmake ..
     - name: build
       run: cmake --build wireshark-plugin/build/ --target install
     - name: check
-      run: cd wireshark-plugin/build && ctest -V
+      run: |
+        cd wireshark-plugin/build
+        ctest -V
