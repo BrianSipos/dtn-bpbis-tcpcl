@@ -12,7 +12,5 @@ jobs:
     - name: dependencies
       run: |
         sudo apt-get install libxml2-utils xml2rfc
-    - name: xmllint
-      run: xmllint --noout --schema spec/rfc2629.xsd spec/draft-ietf-dtn-tcpclv4.xml
     - name: xml2rfc
       run: make -C spec
