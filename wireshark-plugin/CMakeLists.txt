@@ -22,6 +22,12 @@ if(TARGET PkgConfig::WIRESHARK)
         INTERFACE_COMPILE_DEFINITIONS "HAVE_PLUGINS"
     )
 endif()
+if(NOT wireshark_VERSION VERSION_LESS "3.0")
+  set(WIRESHARK_APIVERS 3)
+else()
+  set(WIRESHARK_APIVERS 2)
+endif()
+
 pkg_get_variable(WIRESHARK_SYSTEM_PLUGINDIR wireshark plugindir)
 set(INSTALL_MODULE_PATH "${WIRESHARK_SYSTEM_PLUGINDIR}/epan" CACHE FILEPATH "path to install the plugin module")
 

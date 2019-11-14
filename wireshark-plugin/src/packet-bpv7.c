@@ -1,5 +1,4 @@
 #include "packet-bpv7.h"
-#include <ws_version.h>
 #include <epan/packet.h>
 #include <epan/prefs.h>
 #include <epan/proto.h>
@@ -9,6 +8,14 @@
 #include <wsutil/crc32.h>
 #include <stdio.h>
 #include <inttypes.h>
+
+#if WIRESHARK_APIVERS >= 3
+#include <ws_version.h>
+#else
+#include <config.h>
+#define WIRESHARK_VERSION_MAJOR VERSION_MAJOR
+#define WIRESHARK_VERSION_MINOR VERSION_MINOR
+#endif
 
 /// Protocol preferences and defaults
 static gboolean bp_compute_crc = TRUE;

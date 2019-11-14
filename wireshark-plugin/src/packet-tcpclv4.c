@@ -1,5 +1,4 @@
 #include "packet-tcpclv4.h"
-#include <ws_version.h>
 #include <epan/packet.h>
 #include <epan/prefs.h>
 #include <epan/proto.h>
@@ -8,17 +7,22 @@
 #include <epan/reassemble.h>
 #include <epan/tvbuff-int.h>
 #include <epan/dissectors/packet-tcp.h>
-#if WIRESHARK_VERSION_MAJOR >= 3
+#include <stdio.h>
+#include <inttypes.h>
+
+#if WIRESHARK_APIVERS >= 3
+#include <ws_version.h>
 #include <epan/dissectors/packet-tls.h>
 #include <epan/dissectors/packet-tls-utils.h>
 #define TLS_DISSECTOR_NAME "tls"
 #else
+#include <config.h>
 #include <epan/dissectors/packet-ssl.h>
 #include <epan/dissectors/packet-ssl-utils.h>
 #define TLS_DISSECTOR_NAME "ssl"
+#define WIRESHARK_VERSION_MAJOR VERSION_MAJOR
+#define WIRESHARK_VERSION_MINOR VERSION_MINOR
 #endif
-#include <stdio.h>
-#include <inttypes.h>
 
 /// Protocol preferences and defaults
 static const guint TCPCL_PORT_NUM = 4556;
