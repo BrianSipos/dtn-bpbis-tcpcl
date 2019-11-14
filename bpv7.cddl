@@ -54,15 +54,21 @@ primary-block = [
 ]
 bundle-control-flags = uint .bits bundleflagbits
 bundleflagbits = &(
+  reserved: 21,
+  reserved: 20,
+  reserved: 19,
+  bundle-deletion-status-reports-are-requested: 18,
+  bundle-delivery-status-reports-are-requested: 17,
+  bundle-forwarding-status-reports-are-requested: 16,
   reserved: 15,
-  reserved: 14,
+  bundle-reception-status-reports-are-requested: 14,
   reserved: 13,
-  bundle-deletion-status-reports-are-requested: 12,
-  bundle-delivery-status-reports-are-requested: 11,
-  bundle-forwarding-status-reports-are-requested: 10,
+  reserved: 12,
+  reserved: 11,
+  reserved: 10,
   reserved: 9,
-  bundle-reception-status-reports-are-requested: 8,
-  bundle-contains-a-Manifest-block: 7,
+  reserved: 8,
+  reserved: 7,
   status-time-is-requested-in-all-status-reports: 6,
   user-application-acknowledgement-is-requested: 5,
   reserved: 4,
@@ -87,10 +93,10 @@ blockflagbits = &(
   reserved: 7,
   reserved: 6,
   reserved: 5,
-  reserved: 4,
-  bundle-must-be-deleted-if-block-cannot-be-processed: 3,
-  status-report-must-be-transmitted-if-block-cannot-be-processed: 2,
-  block-must-be-removed-from-bundle-if-it-cannot-be-processed: 1,
+  block-must-be-removed-from-bundle-if-it-cannot-be-processed: 4,
+  reserved: 3,
+  bundle-must-be-deleted-if-block-cannot-be-processed: 2,
+  status-report-must-be-transmitted-if-block-cannot-be-processed: 1,
   block-must-be-replicated-in-every-fragment: 0
 )
 block-type-specific-data = bstr / #6.24(bstr)
