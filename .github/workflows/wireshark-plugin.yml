@@ -12,6 +12,11 @@ jobs:
     - name: dependencies
       run: |
         sudo apt-get install cmake wireshark-dev libgcrypt-dev gnutls-dev libgtest-dev
+        # Annoying need on Ubuntu 18.04
+        cd /usr/src/gtest
+        sudo cmake CMakeLists.txt
+        sudo make
+        sudo cp *.a /usr/lib
     - name: configure
       run: |
         mkdir wireshark-plugin/build
