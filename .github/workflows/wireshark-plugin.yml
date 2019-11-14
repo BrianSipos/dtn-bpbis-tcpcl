@@ -18,7 +18,7 @@ jobs:
         cd wireshark-plugin/build
         cmake ..
     - name: build
-      run: cmake --build wireshark-plugin/build/ --target install
+      run: cmake --build wireshark-plugin/build/ --target all
     - name: check
       run: |
         cd wireshark-plugin/build
