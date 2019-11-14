@@ -4,7 +4,6 @@ target_link_libraries(tcpclv4 PUBLIC PkgConfig::WIRESHARK)
 
 add_library(bpv7 SHARED packet-bpv7.h packet-bpv7.c)
 target_link_libraries(bpv7 PUBLIC PkgConfig::WIRESHARK)
-target_link_libraries(bpv7 PUBLIC PkgConfig::LIBCBOR)
 
 if(INSTALL_MODULE_PATH)
     install(

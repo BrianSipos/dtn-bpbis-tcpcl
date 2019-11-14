@@ -25,8 +25,6 @@ endif()
 pkg_get_variable(WIRESHARK_SYSTEM_PLUGINDIR wireshark plugindir)
 set(INSTALL_MODULE_PATH "${WIRESHARK_SYSTEM_PLUGINDIR}/epan" CACHE FILEPATH "path to install the plugin module")
 
-pkg_check_modules(LIBCBOR REQUIRED IMPORTED_TARGET libcbor>=0.5)
-
 find_package(GTest 1.6)
 
 # Run tests with CTest

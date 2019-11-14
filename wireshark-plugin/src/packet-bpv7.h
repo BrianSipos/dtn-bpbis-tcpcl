@@ -7,7 +7,6 @@
 #include <epan/proto.h>
 #include <epan/expert.h>
 #include <glib.h>
-#include <cbor.h>
 
 /** Bundle CRC types.
  * Section 4.1.1.
@@ -114,6 +113,27 @@ bp_cbor_head_t * bp_scan_cbor_head(tvbuff_t *tvb, gint start);
 /** Function to match the GDestroyNotify signature.
  */
 void bp_cbor_head_delete(gpointer ptr);
+
+/// The same enumeration from libcbor-0.5
+typedef enum cbor_type {
+    CBOR_TYPE_UINT = 0, ///< positive integers
+    CBOR_TYPE_NEGINT = 1, ///< negative integers
+    CBOR_TYPE_BYTESTRING = 2, ///< byte strings
+    CBOR_TYPE_STRING = 3, ///< text strings
+    CBOR_TYPE_ARRAY = 4, ///< arrays
+    CBOR_TYPE_MAP = 5, ///< maps
+    CBOR_TYPE_TAG = 6, ///< tags
+    CBOR_TYPE_FLOAT_CTRL = 7, ///< decimals and special values (true, false, nil, ...)
+} cbor_type;
+
+/// The same enumeration from libcbor-0.5
+typedef enum {
+    CBOR_CTRL_NONE = 0,
+    CBOR_CTRL_FALSE = 20,
+    CBOR_CTRL_TRUE = 21,
+    CBOR_CTRL_NULL = 22,
+    CBOR_CTRL_UNDEF = 23
+} _cbor_ctrl;
 
 /// The basic header structure of CBOR encoding
 typedef struct {

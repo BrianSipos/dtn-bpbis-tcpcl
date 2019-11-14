@@ -2972,7 +2972,7 @@ sending a SESS_TERM message quickly or with a delay, etc.
       <?rfc include="reference.RFC.7457.xml"?>
       <?rfc include="reference.RFC.7942.xml"?>
       <?rfc include="reference.I-D.ietf-dtn-bpsec.xml"?>
-      <reference anchor="github-dtn-bpbis-tcpcl" target="https://github.com/BSipos-RKF/dtn-bpbis-tcpcl/tree/develop">
+      <reference anchor="github-dtn-bpbis-tcpcl" target="https://github.com/BSipos-RKF/dtn-bpbis-tcpcl/">
         <front>
           <title>TCPCL Example Implementation</title>
           <author initials="B." surname="Sipos" fullname="Brian Sipos">
