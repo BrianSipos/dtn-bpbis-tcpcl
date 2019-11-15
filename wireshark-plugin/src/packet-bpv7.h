@@ -62,6 +62,7 @@ typedef enum {
  * Section 4.2.3 and Section 4.3.
  */
 typedef enum {
+    BP_BLOCKTYPE_INVALID = 0,
     /// Payload (data)
     BP_BLOCKTYPE_PAYLOAD = 1,
     /// Previous Node
@@ -198,7 +199,7 @@ void bp_creation_ts_delete(gpointer ptr);
  */
 gint bp_creation_ts_compare(gconstpointer a, gconstpointer b, gpointer user_data);
 
-/// EID encoding
+/// Metadata from a Node ID
 typedef struct {
     /// Scheme ID number
     gint64 scheme;
@@ -214,6 +215,7 @@ bp_nodeid_t * bp_nodeid_new();
  */
 void bp_nodeid_delete(gpointer ptr);
 
+/// Metadata extracted from the primary block
 typedef struct {
     /// Bundle flags (assumed zero)
     guint64 flags;
@@ -225,6 +227,10 @@ typedef struct {
     bp_nodeid_t *rep_nodeid;
     /// Creation Timestamp
     bp_creation_ts_t ts;
+    /// Optional fragment start offset
+    guint64 *frag_offset;
+    /// Optional bundle total length
+    guint64 *total_len;
     /// CRC type code (assumed zero)
     BundleCrcType crc_type;
     /// Raw bytes of CRC field
@@ -243,16 +249,17 @@ typedef struct {
     /// The index of the block within the bundle.
     /// This is for internal bookkeeping, *not* the block number.
     guint64 index;
-
+    /// Type of this block
     const guint64 *type_code;
+    /// Unique identifier for this block
     const guint64 *block_number;
+    /// All flags on this block
     guint64 flags;
     /// CRC type code (assumed zero)
     BundleCrcType crc_type;
     /// Raw bytes of CRC field
     tvbuff_t *crc_field;
-
-    /// Type-specific data
+    /// Type-specific data, unencoded
     tvbuff_t *data;
 } bp_block_canonical_t;
 
@@ -274,11 +281,17 @@ gint bp_block_compare_index(gconstpointer a, gconstpointer b, gpointer user_data
  */
 gint bp_block_compare_block_number(gconstpointer a, gconstpointer b, gpointer user_data);
 
+/// Metadata extracted per-bundle
 typedef struct {
+    /// Index of the frame
+    guint32 frame_num;
     /// Required primary block
     bp_block_primary_t *primary;
     /// Additional blocks in order (type bp_block_canonical_t)
     GSequence *blocks;
+    /// Map from block type code (guint64) to sequence (GPtrArray) of
+    /// pointers to block of that type (bp_block_canonical_t owned by #blocks)
+    GHashTable *block_types;
 } bp_bundle_t;
 
 /** Construct a new object on the file allocator.
@@ -288,6 +301,40 @@ bp_bundle_t * bp_bundle_new();
 /** Function to match the GDestroyNotify signature.
  */
 void bp_bundle_delete(gpointer ptr);
+
+/// Identification of an individual bundle
+typedef struct {
+    /// Pointer to an external Source Node ID
+    bp_nodeid_t *src;
+    /// Pointer to an external Creation Timestamp
+    bp_creation_ts_t *ts;
+    /// Pointer to external optional fragment start offset
+    guint64 *frag_offset;
+    /// Pointer to external optional bundle total length
+    guint64 *total_len;
+} bp_bundle_ident_t;
+
+/** Construct a new object on the file allocator.
+ */
+bp_bundle_ident_t * bp_bundle_ident_new(bp_nodeid_t *src, bp_creation_ts_t *ts, guint64 *off, guint64 *len);
+
+/** Function to match the GDestroyNotify signature.
+ */
+void bp_bundle_ident_delete(gpointer ptr);
+
+/** Function to match the GCompareFunc signature.
+ */
+gboolean bp_bundle_ident_equal(gconstpointer a, gconstpointer b);
+
+/** Function to match the GHashFunc signature.
+ */
+guint bp_bundle_ident_hash(gconstpointer key);
+
+/// Metadata for an entire conversation
+typedef struct {
+    /// Map from a bundle ID (bp_bundle_ident_t) to bundle (bp_bundle_t)
+    GHashTable *bundles;
+} bp_history_t;
 
 /** Data supplied to each block sub-dissector.
  */

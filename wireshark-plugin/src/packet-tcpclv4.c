@@ -481,19 +481,20 @@ gint frame_loc_compare(gconstpointer a, gconstpointer b, gpointer user_data _U_)
 }
 
 gboolean frame_loc_equal(gconstpointer a, gconstpointer b) {
-    const frame_loc_t *aloc = a;
-    const frame_loc_t *bloc = b;
+    const frame_loc_t *aobj = a;
+    const frame_loc_t *bobj = b;
     return (
-        (aloc->frame_num == bloc->frame_num)
-        && (aloc->src_ix == bloc->src_ix)
-        && (aloc->raw_offset == bloc->raw_offset)
+        (aobj->frame_num == bobj->frame_num)
+        && (aobj->src_ix == bobj->src_ix)
+        && (aobj->raw_offset == bobj->raw_offset)
     );
 }
 
 guint frame_loc_hash(gconstpointer key) {
+    const frame_loc_t *obj = key;
     return (
-        g_int_hash(&(((frame_loc_t *)key)->frame_num))
-        ^ g_int64_hash(&(((frame_loc_t *)key)->raw_offset))
+        g_int_hash(&(obj->frame_num))
+        ^ g_int64_hash(&(obj->raw_offset))
     );
 }
 
@@ -1480,6 +1481,7 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
     return offset;
 }
 
+/// Top-level protocol dissector
 static int dissect_tcpcl(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data) {
     /* Retrieve information from conversation, or add it if it isn't
      * there yet */
@@ -1512,6 +1514,10 @@ static int dissect_tcpcl(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
     proto_item_set_len(item_tcpcl, buflen);
 
     return buflen;
+}
+
+/// Re-initialize after a configuration change
+static void reinit_tcpcl(void) {
 }
 
 static int dissect_xferext_transferlen(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, void *data _U_) {
@@ -1547,9 +1553,7 @@ static int dissect_xferext_transferlen(tvbuff_t *tvb, packet_info *pinfo _U_, pr
     return tvb_captured_length(tvb);
 }
 
-static void reinit_tcpcl(void) {
-}
-
+/// Overall registration of the protocol
 static void proto_register_tcpcl(void) {
     proto_tcpcl = proto_register_protocol(
         "DTN TCP Convergence Layer Protocol Version 4", /* name */

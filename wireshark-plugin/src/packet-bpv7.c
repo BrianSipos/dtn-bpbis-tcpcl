@@ -22,6 +22,8 @@ static gboolean bp_compute_crc = TRUE;
 
 /// Protocol handles
 static int proto_bp = -1;
+/// Protocol-level data
+static bp_history_t *bp_history = NULL;
 
 /// Extension sub-dissectors
 static dissector_table_t block_dissectors;
@@ -41,6 +43,22 @@ static const val64_string blocktype_vals[] = {
     {BP_BLOCKTYPE_BUNDLE_AGE, "Bundle Age"},
     {BP_BLOCKTYPE_HOP_COUNT, "Hop Count"},
     {0, NULL},
+};
+
+typedef struct {
+    /// Type of block
+    guint64 type_code;
+    /// Limit on total count
+    guint64 limit;
+} blocktype_limit;
+/// Block type count limits
+static const blocktype_limit blocktype_limits[] = {
+    {BP_BLOCKTYPE_PAYLOAD, 1},
+    {BP_BLOCKTYPE_PREV_NODE, 1},
+    {BP_BLOCKTYPE_BUNDLE_AGE, 1},
+    {BP_BLOCKTYPE_HOP_COUNT, 1},
+    // Mandatory last row
+    {BP_BLOCKTYPE_INVALID, 0},
 };
 
 static const val64_string admin_type_vals[] = {
@@ -107,6 +125,8 @@ static int hf_primary_frag_offset = -1;
 static int hf_primary_total_length = -1;
 static int hf_primary_crc_field = -1;
 
+static int hf_bundle_ident = -1;
+
 static int hf_canonical_type_code = -1;
 static int hf_canonical_block_num = -1;
 static int hf_canonical_block_flags = -1;
@@ -138,6 +158,8 @@ static int hf_status_rep_subj_src_nodeid = -1;
 static int hf_status_rep_subj_ts = -1;
 static int hf_status_rep_subj_frag_offset = -1;
 static int hf_status_rep_subj_payload_len = -1;
+static int hf_status_rep_subj_ident = -1;
+static int hf_status_rep_subj_ref = -1;
 
 /// Field definitions
 static hf_register_info fields[] = {
@@ -186,6 +208,8 @@ static hf_register_info fields[] = {
     {&hf_primary_total_length, {"Total Application Data Unit Length", "bpv7.primary.total_len", FT_UINT64, BASE_DEC | BASE_UNIT_STRING, &units_octet_octets, 0x0, NULL, HFILL}},
     {&hf_primary_crc_field, {"CRC Field", "bpv7.primary.crc_field", FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL}},
 
+    {&hf_bundle_ident, {"Bundle Identity", "bpv7.bundle.identity", FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL}},
+
     {&hf_canonical_type_code, {"Type Code", "bpv7.canonical.type_code", FT_UINT64, BASE_DEC | BASE_VAL64_STRING, VALS64(blocktype_vals), 0x0, NULL, HFILL}},
     {&hf_canonical_block_num, {"Block Number", "bpv7.canonical.block_num", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
     {&hf_canonical_block_flags, {"Block Flags", "bpv7.canonical.block_flags", FT_UINT64, BASE_HEX, NULL, 0x0, NULL, HFILL}},
@@ -216,10 +240,12 @@ static hf_register_info fields[] = {
     {&hf_status_rep_delivered, {"Reporting node delivered bundle", "bpv7.status_rep.delivered", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_status_rep_deleted, {"Reporting node deleted bundle", "bpv7.status_rep.deleted", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_status_rep_reason_code, {"Reason Code", "bpv7.status_rep.reason_code", FT_UINT64, BASE_DEC | BASE_VAL64_STRING, VALS64(status_report_reason_vals), 0x0, NULL, HFILL}},
-    {&hf_status_rep_subj_src_nodeid, {"Subject Source Node ID", "bpv7.status_rep.sub_src_nodeid", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL}},
+    {&hf_status_rep_subj_src_nodeid, {"Subject Source Node ID", "bpv7.status_rep.subj_src_nodeid", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_status_rep_subj_ts, {"Subject Creation Timestamp", "bpv7.status_rep.subj_ts", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_status_rep_subj_frag_offset, {"Subject Fragment Offset", "bpv7.status_rep.subj_frag_offset", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
-    {&hf_status_rep_subj_payload_len, {"Subject Payload Length", "bpv7.status_rep.sub_payload_len", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+    {&hf_status_rep_subj_payload_len, {"Subject Payload Length", "bpv7.status_rep.subj_payload_len", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+    {&hf_status_rep_subj_ident, {"Subject Identity", "bpv7.status_rep.identity", FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL}},
+    {&hf_status_rep_subj_ref, {"Subject Bundle", "bpv7.status_rep.subj_ref", FT_FRAMENUM, BASE_NONE, NULL, 0x0, NULL, HFILL}},
 };
 
 static const int *bundle_flags[] = {
@@ -280,13 +306,13 @@ static expert_field ei_item_missing = EI_INIT;
 static expert_field ei_invalid_bp_version = EI_INIT;
 static expert_field ei_nodeid_scheme_unknown = EI_INIT;
 static expert_field ei_block_type_unknown = EI_INIT;
+static expert_field ei_block_type_dupe = EI_INIT;
 static expert_field ei_block_partial_decode = EI_INIT;
 static expert_field ei_crc_type_unknown = EI_INIT;
 static expert_field ei_block_failed_crc = EI_INIT;
 static expert_field ei_block_num_dupe = EI_INIT;
 static expert_field ei_block_payload_index = EI_INIT;
 static expert_field ei_block_payload_num = EI_INIT;
-static expert_field ei_block_payload_dupe = EI_INIT;
 static expert_field ei_admin_type_unknown = EI_INIT;
 static ei_register_info expertitems[] = {
     {&ei_cbor_invalid, {"bpv7.cbor_invalid", PI_MALFORMED, PI_ERROR, "CBOR cannot be decoded", EXPFILL}},
@@ -297,13 +323,13 @@ static ei_register_info expertitems[] = {
     {&ei_invalid_bp_version, {"bpv7.invalid_bp_version", PI_MALFORMED, PI_ERROR, "Invalid BP version", EXPFILL}},
     {&ei_nodeid_scheme_unknown, {"bpv7.eid_scheme_unknown", PI_UNDECODED, PI_WARN, "Unknown Node ID scheme code", EXPFILL}},
     {&ei_block_type_unknown, {"bpv7.block_type_unknown", PI_UNDECODED, PI_ERROR, "Unknown block type code", EXPFILL}},
+    {&ei_block_type_dupe, {"bpv7.block_type_dupe", PI_PROTOCOL, PI_WARN, "Duplicate block of this type", EXPFILL}},
     {&ei_block_partial_decode, {"bpv7.block_partial_decode", PI_UNDECODED, PI_WARN, "Block data not fully dissected", EXPFILL}},
     {&ei_crc_type_unknown, {"bpv7.ei_crc_type_unknown", PI_UNDECODED, PI_ERROR, "Unknown CRC Type code", EXPFILL}},
     {&ei_block_failed_crc, {"bpv7.block_failed_crc", PI_CHECKSUM, PI_WARN, "Block failed CRC", EXPFILL}},
     {&ei_block_num_dupe, {"bpv7.block_num_dupe", PI_PROTOCOL, PI_WARN, "Duplicate block number", EXPFILL}},
     {&ei_block_payload_index, {"bpv7.block_payload_index", PI_PROTOCOL, PI_WARN, "Payload must be the last block", EXPFILL}},
     {&ei_block_payload_num, {"bpv7.block_payload_num", PI_PROTOCOL, PI_WARN, "Invalid payload block number", EXPFILL}},
-    {&ei_block_payload_dupe, {"bpv7.block_payload_dupe", PI_PROTOCOL, PI_WARN, "Duplicate payload block", EXPFILL}},
     {&ei_admin_type_unknown, {"bpv7.admin_type_unknown", PI_UNDECODED, PI_ERROR, "Unknown administrative type code", EXPFILL}},
 };
 
@@ -464,7 +490,7 @@ bp_creation_ts_t * bp_creation_ts_new() {
 
 void bp_creation_ts_delete(gpointer ptr) {
     // no sub-deletions
-    wmem_free(wmem_file_scope(), ptr);
+    file_scope_delete(ptr);
 }
 
 gint bp_creation_ts_compare(gconstpointer a, gconstpointer b, gpointer user_data _U_) {
@@ -494,8 +520,8 @@ bp_nodeid_t * bp_nodeid_new() {
 
 void bp_nodeid_delete(gpointer ptr) {
     bp_nodeid_t *obj = (bp_nodeid_t *)ptr;
-    wmem_free(wmem_file_scope(), (char *)(obj->uri));
-    wmem_free(wmem_file_scope(), ptr);
+    file_scope_delete((char *)(obj->uri));
+    file_scope_delete(ptr);
 }
 
 bp_block_primary_t * bp_block_primary_new() {
@@ -503,6 +529,8 @@ bp_block_primary_t * bp_block_primary_new() {
     obj->dst_nodeid = bp_nodeid_new();
     obj->src_nodeid = bp_nodeid_new();
     obj->rep_nodeid = bp_nodeid_new();
+    obj->frag_offset = NULL;
+    obj->total_len = NULL;
     return obj;
 }
 
@@ -511,7 +539,9 @@ void bp_block_primary_delete(gpointer ptr) {
     bp_nodeid_delete(obj->dst_nodeid);
     bp_nodeid_delete(obj->src_nodeid);
     bp_nodeid_delete(obj->rep_nodeid);
-    wmem_free(wmem_file_scope(), ptr);
+    file_scope_delete(obj->frag_offset);
+    file_scope_delete(obj->total_len);
+    file_scope_delete(ptr);
 }
 
 bp_block_canonical_t * bp_block_canonical_new(guint64 index) {
@@ -522,7 +552,7 @@ bp_block_canonical_t * bp_block_canonical_new(guint64 index) {
 
 void bp_block_canonical_delete(gpointer ptr) {
     // no sub-deletions
-    wmem_free(wmem_file_scope(), ptr);
+    file_scope_delete(ptr);
 }
 
 gint bp_block_compare_index(gconstpointer a, gconstpointer b, gpointer user_data _U_) {
@@ -559,10 +589,24 @@ gint bp_block_compare_block_number(gconstpointer a, gconstpointer b, gpointer us
     }
 }
 
+static guint64 * guint64_new(const guint64 val) {
+    guint64 *obj = wmem_new(wmem_file_scope(), guint64);
+    *obj = val;
+    return obj;
+}
+
+#define guint64_delete file_scope_delete
+
+static void gptrarray_delete(gpointer ptr) {
+    GPtrArray *obj = ptr;
+    g_ptr_array_free(obj, FALSE);
+}
+
 bp_bundle_t * bp_bundle_new() {
     bp_bundle_t *obj = wmem_new(wmem_file_scope(), bp_bundle_t);
     obj->primary = bp_block_primary_new();
     obj->blocks = g_sequence_new(bp_block_canonical_delete);
+    obj->block_types = g_hash_table_new_full(g_int64_hash, g_int64_equal, guint64_delete, gptrarray_delete);
     return obj;
 }
 
@@ -570,10 +614,56 @@ void bp_bundle_delete(gpointer ptr) {
     bp_bundle_t *obj = (bp_bundle_t *)ptr;
     bp_block_primary_delete(obj->primary);
     g_sequence_free(obj->blocks);
-    wmem_free(wmem_file_scope(), ptr);
+    g_hash_table_destroy(obj->block_types);
+    file_scope_delete(ptr);
 }
 
-nstime_t dtn_to_utctime(const gint64 dtntime) {
+bp_bundle_ident_t * bp_bundle_ident_new(bp_nodeid_t *src, bp_creation_ts_t *ts, guint64 *off, guint64 *len) {
+    bp_bundle_ident_t *ident = wmem_new(wmem_file_scope(), bp_bundle_ident_t);
+    ident->src = src;
+    ident->ts = ts;
+    ident->frag_offset = off;
+    ident->total_len = len;
+    return ident;
+}
+
+void bp_bundle_ident_delete(gpointer ptr) {
+    file_scope_delete(ptr);
+}
+
+/** Either both values are defined and equal or both are null.
+ */
+static gboolean optional_uint64_equal(const guint64 *a, const guint64 *b) {
+    if (a && b) {
+        return (*a == *b);
+    }
+    else {
+        return (a == NULL) && (b == NULL);
+    }
+}
+
+gboolean bp_bundle_ident_equal(gconstpointer a, gconstpointer b) {
+    const bp_bundle_ident_t *aobj = a;
+    const bp_bundle_ident_t *bobj = b;
+    return (
+        g_str_equal(aobj->src->uri, bobj->src->uri)
+        && (aobj->ts->time.dtntime == bobj->ts->time.dtntime)
+        && (aobj->ts->seqno == bobj->ts->seqno)
+        && optional_uint64_equal(aobj->frag_offset, bobj->frag_offset)
+        && optional_uint64_equal(aobj->total_len, bobj->total_len)
+    );
+}
+
+guint bp_bundle_ident_hash(gconstpointer key) {
+    const bp_bundle_ident_t *obj = key;
+    return (
+        g_str_hash(obj->src->uri)
+        ^ g_int64_hash(&(obj->ts->time.dtntime))
+        ^ g_int64_hash(&(obj->ts->seqno))
+    );
+}
+
+static nstime_t dtn_to_utctime(const gint64 dtntime) {
     // Offset from Section 4.1.6
     nstime_t utctime;
     utctime.secs = 946684800 + dtntime;
@@ -581,7 +671,7 @@ nstime_t dtn_to_utctime(const gint64 dtntime) {
     return utctime;
 }
 
-gboolean cbor_is_indefinite_break(const bp_cbor_chunk_t *chunk) {
+static gboolean cbor_is_indefinite_break(const bp_cbor_chunk_t *chunk) {
     return (
         (chunk->type_major == CBOR_TYPE_FLOAT_CTRL)
         && (chunk->type_minor == 31)
@@ -961,7 +1051,7 @@ static void proto_tree_add_cbor_nodeid(proto_tree *tree, int hfindex, packet_inf
         proto_item_append_text(item_nodeid, ": %s", uri);
     }
     else {
-        wmem_free(wmem_file_scope(), uribuf);
+        file_scope_delete(uribuf);
     }
 
     if (eid) {
@@ -969,7 +1059,7 @@ static void proto_tree_add_cbor_nodeid(proto_tree *tree, int hfindex, packet_inf
         eid->uri = uri;
     }
     else {
-        wmem_free(wmem_file_scope(), uri);
+        file_scope_delete(uri);
     }
 
     proto_item_set_len(item_nodeid, *offset - eid_start);
@@ -998,7 +1088,7 @@ static void proto_tree_add_dtn_time(proto_tree *tree, int hfindex, packet_info *
 
                 gchar *time_text = abs_time_to_str(wmem_file_scope(), &utctime, ABSOLUTE_TIME_UTC, TRUE);
                 proto_item_append_text(item_time, ": %s", time_text);
-                wmem_free(wmem_file_scope(), time_text);
+                file_scope_delete(time_text);
 
                 if (out) {
                     out->utctime = utctime;
@@ -1117,6 +1207,28 @@ static void show_crc_info(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree_bl
     }
 }
 
+static void proto_tree_add_ident(proto_tree *tree, int hfindex, tvbuff_t *tvb, const bp_bundle_ident_t *ident) {
+    wmem_strbuf_t *ident_text = wmem_strbuf_new(wmem_packet_scope(), NULL);
+    wmem_strbuf_append_printf(
+        ident_text,
+        "Source: %s, DTN Time: %" PRIu64 ", Seq: %" PRIu64,
+        ident->src->uri,
+        ident->ts->time.dtntime,
+        ident->ts->seqno
+    );
+    if (ident->frag_offset) {
+        wmem_strbuf_append_printf(ident_text, ", Frag Offset: %" PRIu64, *(ident->frag_offset));
+    }
+    if (ident->total_len) {
+        wmem_strbuf_append_printf(ident_text, ", Total Length: %" PRIu64, *(ident->total_len));
+    }
+
+    proto_item *item_subj_ident = proto_tree_add_string(tree, hfindex, tvb, 0, 0, wmem_strbuf_get_str(ident_text));
+    PROTO_ITEM_SET_GENERATED(item_subj_ident);
+    wmem_strbuf_finalize(ident_text);
+}
+
+
 static gint dissect_block_primary(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree_block,
                                   gint start, bp_block_primary_t *block,
                                   bp_bundle_t *bundle _U_) {
@@ -1207,15 +1319,15 @@ static gint dissect_block_primary(tvbuff_t *tvb, packet_info *pinfo, proto_tree 
         }
 
         chunk = bp_scan_cbor_chunk(tvb, offset);
-        const guint64 *frag_offset = cbor_require_uint64(chunk);
-        proto_tree_add_cbor_uint64(tree_block, hf_primary_frag_offset, pinfo, tvb, chunk, frag_offset);
+        block->frag_offset = cbor_require_uint64(chunk);
+        proto_tree_add_cbor_uint64(tree_block, hf_primary_frag_offset, pinfo, tvb, chunk, block->frag_offset);
         offset += chunk->data_length;
         field_ix++;
         bp_cbor_chunk_delete(chunk);
 
         chunk = bp_scan_cbor_chunk(tvb, offset);
-        const guint64 *total_len = cbor_require_uint64(chunk);
-        proto_tree_add_cbor_uint64(tree_block, hf_primary_total_length, pinfo, tvb, chunk, total_len);
+        block->total_len = cbor_require_uint64(chunk);
+        proto_tree_add_cbor_uint64(tree_block, hf_primary_total_length, pinfo, tvb, chunk, block->total_len);
         offset += chunk->data_length;
         field_ix++;
         bp_cbor_chunk_delete(chunk);
@@ -1277,8 +1389,40 @@ static gint dissect_block_canonical(tvbuff_t *tvb, packet_info *pinfo, proto_tre
     offset += chunk->data_length;
     field_ix++;
     bp_cbor_chunk_delete(chunk);
-
     block->type_code = type_code;
+
+    // Check duplicate of this type
+    if (type_code) {
+        guint64 limit = UINT64_MAX;
+        for (int ix = 0; ; ++ix) {
+            const blocktype_limit *row = blocktype_limits + ix;
+            if (row->type_code == BP_BLOCKTYPE_INVALID) {
+                break;
+            }
+            if (row->type_code == *type_code) {
+                limit = row->limit;
+                break;
+            }
+        }
+
+        guint64 count = 0;
+        GPtrArray *list_found = g_hash_table_lookup(bundle->block_types, type_code);
+        if (list_found) {
+            for (guint ix = 0; ix < list_found->len; ++ix) {
+                const gpointer block_found = g_ptr_array_index(list_found, ix);
+                if (block == block_found) {
+                    continue;
+                }
+                ++count;
+            }
+        }
+
+        if (count > limit) {
+            // First non-identical block triggers the error
+            expert_add_info(pinfo, item_type, &ei_block_type_dupe);
+        }
+    }
+
     proto_item_append_text(item_block, ": %s", val64_to_str(*type_code, blocktype_vals, "type %" PRIu64));
     dissector_handle_t data_dissect = NULL;
     if (type_code) {
@@ -1402,6 +1546,7 @@ static gint dissect_block_canonical(tvbuff_t *tvb, packet_info *pinfo, proto_tre
     return offset - start;
 }
 
+/// Top-level protocol dissector
 static int dissect_bp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_) {
     gint offset = 0;
     {
@@ -1415,6 +1560,7 @@ static int dissect_bp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void 
     proto_tree *tree_bundle = proto_item_add_subtree(item_bundle, ett_bundle);
 
     bp_bundle_t *bundle = bp_bundle_new();
+    bundle->frame_num = pinfo->num;
 
     // Read blocks directly from buffer with same addresses as #tvb
     const guint buflen = tvb_captured_length(tvb);
@@ -1434,6 +1580,7 @@ static int dissect_bp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void 
     bp_cbor_chunk_delete(chunk);
 
     guint64 block_ix = 0;
+    bp_bundle_ident_t *ident = NULL;
     while (TRUE) {
         if (offset >= (gint)buflen) {
             proto_item *item_break = proto_tree_add_item(tree_bundle, hf_bundle_break, tvb, offset, 0, ENC_NA);
@@ -1460,12 +1607,32 @@ static int dissect_bp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void 
             bp_block_primary_t *block = bp_block_primary_new();
             offset += dissect_block_primary(tvb, pinfo, tree_block, offset, block, bundle);
             bundle->primary = block;
+
+            if (!ident) {
+                ident = bp_bundle_ident_new(
+                    bundle->primary->src_nodeid,
+                    &(bundle->primary->ts),
+                    bundle->primary->frag_offset,
+                    bundle->primary->total_len
+                );
+                proto_tree_add_ident(tree_bundle, hf_bundle_ident, tvb, ident);
+            }
         }
         else {
             // Non-primary block
             proto_item_prepend_text(item_block, "Canonical ");
             bp_block_canonical_t *block = bp_block_canonical_new(block_ix);
             offset += dissect_block_canonical(tvb, pinfo, tree_block, offset, block, bundle);
+
+            if (block->type_code) {
+                GPtrArray *type_list = g_hash_table_lookup(bundle->block_types, block->type_code);
+                if (!type_list) {
+                    type_list = g_ptr_array_new();
+                    g_hash_table_insert(bundle->block_types, guint64_new(*(block->type_code)), type_list);
+                }
+
+                g_ptr_array_add(type_list, block);
+            }
         }
 
         proto_item_set_len(item_block, offset - block_start);
@@ -1479,11 +1646,21 @@ static int dissect_bp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void 
         proto_item_append_text(item_bundle, ", Dst: %s", block->dst_nodeid ? block->dst_nodeid->uri : NULL);
     }
 
-    bp_bundle_delete(bundle);
+    // Keep bundle metadata around
+    gpointer ident_found = g_hash_table_lookup(bp_history->bundles, ident);
+    if (!ident_found) {
+        g_hash_table_insert(bp_history->bundles, ident, bundle);
+    }
+    else {
+        bp_bundle_ident_delete(ident);
+        bp_bundle_delete(bundle);
+    }
+
     proto_item_set_len(item_bundle, offset);
     return buflen;
 }
 
+/// Re-initialize after a configuration change
 static void reinit_bp(void) {
 }
 
@@ -1507,7 +1684,7 @@ static gboolean proto_tree_add_status_assertion(proto_tree *tree, int hfassert, 
     bp_cbor_chunk_delete(chunk);
     if (status_val) {
         result = *status_val;
-        wmem_free(wmem_file_scope(), status_val);
+        file_scope_delete(status_val);
     }
 
     if (head->head_value > 1) {
@@ -1612,18 +1789,18 @@ static int dissect_status_report(tvbuff_t *tvb, packet_info *pinfo, proto_tree *
     bp_cbor_chunk_delete(chunk);
     status_field_ix++;
 
-    // Complex type
-    proto_tree_add_cbor_nodeid(tree_status, hf_status_rep_subj_src_nodeid, pinfo, tvb, &offset, NULL);
+    bp_bundle_ident_t *subj = bp_bundle_ident_new(bp_nodeid_new(), bp_creation_ts_new(), NULL, NULL);
+
+    proto_tree_add_cbor_nodeid(tree_status, hf_status_rep_subj_src_nodeid, pinfo, tvb, &offset, subj->src);
     status_field_ix++;
 
-    // Complex type
-    proto_tree_add_cbor_timestamp(tree_status, hf_status_rep_subj_ts, pinfo, tvb, &offset, NULL);
+    proto_tree_add_cbor_timestamp(tree_status, hf_status_rep_subj_ts, pinfo, tvb, &offset, subj->ts);
     status_field_ix++;
 
     if (chunk_status->head_value > status_field_ix) {
         chunk = bp_scan_cbor_chunk(tvb, offset);
-        guint64 *subj_frag_offset = cbor_require_uint64(chunk);
-        proto_tree_add_cbor_uint64(tree_status, hf_status_rep_subj_frag_offset, pinfo, tvb, chunk, subj_frag_offset);
+        subj->frag_offset = cbor_require_uint64(chunk);
+        proto_tree_add_cbor_uint64(tree_status, hf_status_rep_subj_frag_offset, pinfo, tvb, chunk, subj->frag_offset);
         offset += chunk->data_length;
         bp_cbor_chunk_delete(chunk);
         status_field_ix++;
@@ -1631,12 +1808,21 @@ static int dissect_status_report(tvbuff_t *tvb, packet_info *pinfo, proto_tree *
 
     if (chunk_status->head_value > status_field_ix) {
         chunk = bp_scan_cbor_chunk(tvb, offset);
-        guint64 *subj_payload_length = cbor_require_uint64(chunk);
-        proto_tree_add_cbor_uint64(tree_status, hf_status_rep_subj_payload_len, pinfo, tvb, chunk, subj_payload_length);
+        subj->total_len = cbor_require_uint64(chunk);
+        proto_tree_add_cbor_uint64(tree_status, hf_status_rep_subj_payload_len, pinfo, tvb, chunk, subj->total_len);
         offset += chunk->data_length;
         bp_cbor_chunk_delete(chunk);
         status_field_ix++;
     }
+
+    proto_tree_add_ident(tree_status, hf_status_rep_subj_ident, tvb, subj);
+
+    const bp_bundle_t *subj_found = g_hash_table_lookup(bp_history->bundles, subj);
+    if (subj_found) {
+        proto_item *item_subj_ref = proto_tree_add_uint(tree_status, hf_status_rep_subj_ref, tvb, 0, 0, subj_found->frame_num);
+        PROTO_ITEM_SET_GENERATED(item_subj_ref);
+    }
+    bp_bundle_ident_delete(subj);
 
     proto_item *item_admin = proto_tree_get_parent(tree);
     {
@@ -1696,20 +1882,6 @@ static int dissect_block_payload(tvbuff_t *tvb, packet_info *pinfo, proto_tree *
     proto_tree *item_bundle = proto_tree_get_parent(tree_bundle);
     // Back up to top-level
     proto_item *tree_top = proto_tree_get_parent_tree(tree_bundle);
-
-    // Check duplicate payloads
-    for (GSequenceIter *it = g_sequence_get_begin_iter(context->bundle->blocks);
-            !g_sequence_iter_is_end(it);
-            it = g_sequence_iter_next(it)) {
-        const bp_block_canonical_t *block = g_sequence_get(it);
-        if (block == context->block) {
-            continue;
-        }
-        if (block->type_code && (*(block->type_code) == BP_BLOCKTYPE_PAYLOAD)) {
-            expert_add_info(pinfo, proto_tree_get_parent(tree), &ei_block_payload_dupe);
-            break;
-        }
-    }
 
     // Visible in new source
     tvbuff_t *tvb_payload = tvb_new_subset_remaining(tvb, 0);
@@ -1794,12 +1966,26 @@ static int dissect_block_hop_count(tvbuff_t *tvb, packet_info *pinfo, proto_tree
     return offset;
 }
 
+/// Clear state when new file scope is entered
+static void history_init(void) {
+    bp_history = wmem_new0(wmem_file_scope(), bp_history_t);
+    bp_history->bundles = g_hash_table_new_full(bp_bundle_ident_hash, bp_bundle_ident_equal, bp_bundle_ident_delete, bp_bundle_delete);
+}
+
+static void history_cleanup(void) {
+    g_hash_table_destroy(bp_history->bundles);
+    file_scope_delete(bp_history);
+}
+
+/// Overall registration of the protocol
 static void proto_register_bp(void) {
     proto_bp = proto_register_protocol(
         "DTN Bundle Protocol Version 7", /* name */
         "BPv7", /* short name */
         "bpv7" /* abbrev */
     );
+    register_init_routine(&history_init);
+    register_cleanup_routine(&history_cleanup);
 
     proto_register_field_array(proto_bp, fields, array_length(fields));
     proto_register_subtree_array(ett, array_length(ett));
@@ -1843,7 +2029,7 @@ static void proto_reg_handoff_bp(void) {
     }
     {
         dissector_handle_t hdl = create_dissector_handle(dissect_status_report, proto_bp);
-        dissector_add_uint("bpv7.admin_record_type", 1, hdl);
+        dissector_add_uint("bpv7.admin_record_type", BP_ADMINTYPE_BUNDLE_STATUS, hdl);
     }
 
     reinit_bp();
