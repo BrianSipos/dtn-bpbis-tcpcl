@@ -178,7 +178,9 @@
             </t>
             <t>
               Uses of TLS which are not based on X.509 certificate 
-              authentication (see <xref target="sec-security-tlsnopki" />).
+              authentication (see <xref target="sec-security-tlsnopki" />)
+              or in which authentication is not available
+              (see <xref target="sec-security-tlsnoauth" />).
             </t>
           </list>
           Any TCPCL implementation requires a BP agent to perform those above 
@@ -1187,8 +1189,7 @@ TCP Connecting
                 which is not the Node ID of that entity.
               </t>
               <t hangText="Server Certificate:">
-                When performing certificate-based authentication,
-                the passive entity SHALL supply a certificate within the 
+                The passive entity SHALL supply a certificate within the 
                 TLS handshake to allow authentication of its side of the session.
                 When assigned a stable host name or address, 
                 the passive entity certificate SHOULD contain a subjectAltName
@@ -1205,8 +1206,7 @@ TCP Connecting
                 client-side certificate.
               </t>
               <t hangText="Client Certificate:">
-                When performing certificate-based authentication,
-                the active entity SHALL supply a certificate chain within the 
+                The active entity SHALL supply a certificate chain within the 
                 TLS handshake to allow authentication of its side of the session.
                 When assigned a stable host name or address, 
                 the active entity certificate SHOULD contain a subjectAltName
@@ -2408,25 +2408,13 @@ TCP Connecting
         This section separates security considerations into threat categories
         based on guidance of BCP 72 <xref target="RFC3552" />.
       </t>
-      <section anchor="sec-security-tlsnopki" title="Non-Certificate TLS Use">
-        <t>
-This specification makes use of public key infrastructure (PKI)
-certificate validation and authentication.
-In environments where a PKI is unavailable,
-alternate uses of TLS which do not require certificates such as 
-<xref target="RFC5489" /> are available and can be used to ensure 
-confidentality within TCPCL.
-Using non-PKI node authentication methods is outside of the scope of this 
-document.
-        </t>
-      </section>
       <section title="Threat: Passive Leak of Node Data">
         <t>
 When used without TLS security, the TCPCL exposes the Node ID and other
 configuration data to passive eavesdroppers.
 This occurs even when no transfers occur within a TCPCL session.
 This can be avoided by always using TLS, even if authentication is not 
-available (see <xref target="sec-security-tlsnopki" />).
+available (see <xref target="sec-security-tlsalt" />).
         </t>
       </section>
       <section title="Threat: Passive Leak of Bundle Data">
@@ -2441,10 +2429,10 @@ are to be used instead.
 When used without TLS security, the TCPCL exposes all bundle data to passive
 eavesdroppers.
 This can be avoided by always using TLS, even if authentication is not 
-available (see <xref target="sec-security-tlsnopki" />).
+available (see <xref target="sec-security-tlsalt" />).
         </t>
       </section>
-      <section title="Threat: TCPCL Downgrade">
+      <section title="Threat: TCPCL Version Downgrade">
         <t>
 When a TCPCL entity supports multiple versions of the protocol it is possible
 for a malicious or misconfigued peer to use an older version of TCPCL which
@@ -2479,6 +2467,7 @@ The negotiated use of TLS is identical behavior to STARTTLS use in
         <t>
 Even when using TLS to secure the TCPCL session, the actual ciphersuite
 negotiated between the TLS peers can be insecure.
+Recommendations for ciphersuite use are included in BCP 195 <xref target="RFC7525" />.
 It is up to security policies within each TCPCL node to ensure that the
 negotiated TLS ciphersuite meets transport security requirements.
         </t>
@@ -2545,32 +2534,74 @@ invalid Node ID.
       </section>
       <section title="Threat: Denial of Service">
         <t>
+The behaviors described in this section all amount to a potential 
+denial-of-service to a TCPCL entity.
+The denial-of-service could be limited to an individual TCPCL session,
+could affect other well-behaving sessions on an entity, 
+or could affect all sessions on a host.
+        </t>
+        <t>
+A malicious entity can continually establish TCPCL sessions and delay sending
+of protocol-required data to trigger timeouts.
+The victim entity can block TCP connections from network peers which are
+thought to be incorrectly behaving within TCPCL.
+        </t>
+        <t>
 An entity can send a large amount of data over a TCPCL
-session, requiring the receiving entity to handle the data, attempt
-to stop the flood of data by sending a XFER_REFUSE message, or
-forcibly terminate the session.
-This burden could cause denial of service on other, well-behaving
-sessions.
+session, requiring the receiving entity to handle the data.
+The victim entity can attempt to stop the flood of data by sending an 
+XFER_REFUSE message, or forcibly terminate the session.
         </t>
         <t>
-There is also nothing to prevent a malicious entity from continually
-establishing sessions and repeatedly trying to send copious amounts 
-of bundle data.
-        </t>
-        <t>
-There is also the possibility of a "data dribble" attack in which
+There is the possibility of a "data dribble" attack in which
 an entity presents a very small Segment MRU which causes transfers
 to be split among an large number of very small segments and causes
 the segmentation overhead to overwhelm the network througput.
 Similarly, an entity can present a very small Transfer MRU which will
 cause resources to be wasted on establishing and upkeeping a
 TCPCL session over which a bundle could never be transferred.
+The victim entity can terminate the session during the negotiation
+of <xref target="sec-session-negotiate" /> if the MRUs are unacceptable.
         </t>
         <t>
-A listening entity can take countermeasures such as ignoring TCP SYN
-messages, closing TCP connections as soon as they are established,
-sending a SESS_TERM message quickly or with a delay, etc.
+The keepalive mechanism can be abused to waste throughput within a network
+link which would otherwise be usable for bundle transmissions.
+Due to the quantization of the Keepalive Interval parameter the smallest
+Session Keepalive is one second, which should be long enough to not flood
+the link.
+The victim entity can terminate the session during the negotiation
+of <xref target="sec-session-negotiate" /> if the Keepalive Interval
+is unacceptable.
         </t>
+      </section>
+      <section anchor="sec-security-tlsalt" title="Alternate Uses of TLS">
+        <t>
+This specification makes use of public key infrastructure (PKI)
+certificate validation and authentication within TLS.
+There are alternate uses of TLS which are not necessarily incompatible with
+the security goals of this specification, but are outside of the scope of this 
+document.
+        </t>
+        <section anchor="sec-security-tlsnoauth" title="TLS Without Authentication">
+          <t>
+In environments where PKI is available but there are restrictions on
+the issuance of certificates (including the contents of certificates),
+it may be possible to make use of TLS in a way which authenticates only the
+passive entity of a TCPCL session or which does not authenticate either entity.
+Using TLS in a way which does not authenticate both peer entities of each
+TCPCL session is outside of the scope of this document.
+          </t>
+        </section>
+        <section anchor="sec-security-tlsnopki" title="Non-Certificate TLS Use">
+          <t>
+In environments where PKI is unavailable,
+alternate uses of TLS which do not require certificates such as 
+<xref target="RFC5489" /> are available and can be used to ensure 
+confidentality within TCPCL.
+Using non-PKI node authentication methods is outside of the scope of this 
+document.
+          </t>
+        </section>
       </section>
     </section>
     <section anchor="sec-iana" title="IANA Considerations">
