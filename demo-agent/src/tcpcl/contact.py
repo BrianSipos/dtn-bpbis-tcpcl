@@ -1,8 +1,11 @@
 ''' Items related to contact header and connection negotiation.
 '''
 import enum
+
 from scapy import fields, packet
+
 from . import formats
+
 
 #: Header magic prefix-data
 MAGIC_HEAD = b'dtn!'

@@ -1,13 +1,15 @@
 #!/usr/bin/python3
 ''' A dummy PCAP generator to exercise wireshark dissector.
 '''
-import sys
 import argparse
 import logging
 import random
 import socket
-import scapy
+import sys
+
 from gi.repository import GLib as glib
+import scapy
+
 from tcpcl import contact, messages
 
 

@@ -1,7 +1,10 @@
 import binascii
 import unittest
+
 from scapy.packet import Packet
+
 from .. import formats
+
 
 class TestUInt16Field(unittest.TestCase):
     ''' Verify UInt16Field class '''

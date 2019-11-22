@@ -1,6 +1,8 @@
 import binascii
 import unittest
+
 from .. import contact
+
 
 MAGIC_HEX = b'64746e21'
 

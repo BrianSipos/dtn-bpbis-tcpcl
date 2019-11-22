@@ -1,11 +1,14 @@
 import binascii
 import unittest
+
 from scapy.packet import Raw
-from ..messages import (MessageHead, 
+
+from .. import extend
+from ..messages import (MessageHead,
                         SessionInit, SessionExtendHeader, SessionTerm,
                         TransferSegment, TransferExtendHeader, TransferAck,
                         TransferRefuse, Keepalive, RejectMsg)
-from .. import extend
+
 
 class TestSessionInit(unittest.TestCase):
     

@@ -1,7 +1,9 @@
 ''' Items related to established connection messaging.
 '''
 import enum
+
 from scapy import fields, packet
+
 from . import formats
 
 

@@ -1,18 +1,20 @@
 #!/usr/bin/python3
 ''' A dummy bundle data generator.
 '''
-import sys
 import argparse
-import logging
 import io
+import logging
 import random
 import shutil
 import string
 import struct
+import sys
 import unittest
+
 import cbor2
 import crcmod
 from gi.repository import GLib as glib
+
 
 LOGGER = logging.getLogger(__name__)
 

@@ -1,19 +1,21 @@
 '''
 Implementation of a symmetric TCPCL agent.
 '''
-import datetime
-import binascii
-import os
-import sys
-import logging
 import argparse
+import binascii
+import datetime
+from io import BytesIO
+import logging
+import os
 import socket
 import ssl
-from io import BytesIO
-from gi.repository import GLib as glib
+import sys
+
 import dbus.bus
 import dbus.service
-from tcpcl import formats, contact, messages, extend
+from gi.repository import GLib as glib
+
+from . import formats, contact, messages, extend
 
 
 class Config(object):

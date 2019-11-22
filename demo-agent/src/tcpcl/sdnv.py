@@ -1,8 +1,9 @@
 ''' Conversion behavior for self-delimited numeric value (SDNV) type.
 '''
 
-import math
 import logging
+import math
+
 
 #: module-level logger
 logger = logging.getLogger(__name__)
