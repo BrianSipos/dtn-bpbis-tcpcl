@@ -2618,14 +2618,16 @@ document.
       </t>
       <section anchor="sec-iana-port" title="Port Number">
         <t>
-          Port number 4556 has been previously assigned as the default port for the
+          Within the port registry of <xref target="IANA-PORTS" />,
+          TCP port number 4556 has been previously assigned as the default port for the
           TCP convergence layer in <xref target="RFC7242" />.
-          This assignment is unchanged by protocol version 4, but the
+          This assignment is unchanged by TCPCL version 4, but the assignment
           reference is updated to this specification.
           Each TCPCL entity identifies its TCPCL protocol version in its initial
           contact (see <xref target="sec-iana-protonum" />), so there is no
           ambiguity about what protocol is being used.
-          The related assignments for UDP and DCCP port 4556 are unchanged.
+          The related assignments for UDP and DCCP port 4556 (both registered 
+          by <xref target="RFC7122" />) are unchanged.
         </t>
         <texttable>
           <ttcol>Parameter</ttcol>
@@ -2648,9 +2650,9 @@ document.
       </section>
       <section anchor="sec-iana-protonum" title="Protocol Versions">
         <t>
-          IANA has created, under the &quot;Bundle Protocol&quot; registry, a sub-
-          registry titled &quot;Bundle Protocol TCP Convergence-Layer Version
-          Numbers&quot;.
+          IANA has created, under the &quot;Bundle Protocol&quot; registry
+          <xref target="IANA-BUNDLE" />, a sub-registry titled 
+          &quot;Bundle Protocol TCP Convergence-Layer Version Numbers&quot;.
           The version number table is updated to include this specification.
           The registration procedure is RFC Required.
         </t>
@@ -2689,8 +2691,8 @@ document.
       <section anchor="sec-iana-session-extension-type" title="Session Extension Types">
         <t>EDITOR NOTE: sub-registry to-be-created upon publication of this specification.</t>
         <t>
-          IANA will create, under the &quot;Bundle Protocol&quot; registry,
-          a sub-registry titled
+          IANA will create, under the &quot;Bundle Protocol&quot; registry
+          <xref target="IANA-BUNDLE" />, a sub-registry titled
           &quot;Bundle Protocol TCP Convergence-Layer Version 4 Session Extension Types&quot;
           and initialize it with the contents of
           <xref target="tab-iana-session-extension-type" />.
@@ -2728,8 +2730,8 @@ document.
       <section anchor="sec-iana-transfer-extension-type" title="Transfer Extension Types">
         <t>EDITOR NOTE: sub-registry to-be-created upon publication of this specification.</t>
         <t>
-          IANA will create, under the &quot;Bundle Protocol&quot; registry,
-          a sub-registry titled
+          IANA will create, under the &quot;Bundle Protocol&quot; registry
+          <xref target="IANA-BUNDLE" />, a sub-registry titled
           &quot;Bundle Protocol TCP Convergence-Layer Version 4 Transfer Extension Types&quot;
           and initialize it with the contents of
           <xref target="tab-iana-transfer-extension-type" />.
@@ -2768,8 +2770,8 @@ document.
       <section anchor="sec-iana-message-types" title="Message Types">
         <t>EDITOR NOTE: sub-registry to-be-created upon publication of this specification.</t>
         <t>
-          IANA will create, under the &quot;Bundle Protocol&quot; registry,
-          a sub-registry titled
+          IANA will create, under the &quot;Bundle Protocol&quot; registry
+          <xref target="IANA-BUNDLE" />, a sub-registry titled
           &quot;Bundle Protocol TCP Convergence-Layer Version 4 Message Types&quot;
           and initialize it with the contents of
           <xref target="tab-iana-message-types" />.
@@ -2825,8 +2827,8 @@ document.
       <section anchor="sec-iana-XFER_REFUSE-codes" title="XFER_REFUSE Reason Codes">
         <t>EDITOR NOTE: sub-registry to-be-created upon publication of this specification.</t>
         <t>
-          IANA will create, under the &quot;Bundle Protocol&quot; registry,
-          a sub-registry titled
+          IANA will create, under the &quot;Bundle Protocol&quot; registry
+          <xref target="IANA-BUNDLE" />, a sub-registry titled
           &quot;Bundle Protocol TCP Convergence-Layer Version 4 XFER_REFUSE Reason Codes&quot;
           and initialize it with the contents of
           <xref target="tab-iana-XFER_REFUSE-codes" />.
@@ -2870,8 +2872,8 @@ document.
       <section anchor="sec-iana-SESS_TERM-codes" title="SESS_TERM Reason Codes">
         <t>EDITOR NOTE: sub-registry to-be-created upon publication of this specification.</t>
         <t>
-          IANA will create, under the &quot;Bundle Protocol&quot; registry,
-          a sub-registry titled
+          IANA will create, under the &quot;Bundle Protocol&quot; registry
+          <xref target="IANA-BUNDLE" />, a sub-registry titled
           &quot;Bundle Protocol TCP Convergence-Layer Version 4 SESS_TERM Reason Codes&quot;
           and initialize it with the contents of
           <xref target="tab-iana-SESS_TERM-codes" />.
@@ -2917,8 +2919,8 @@ document.
       <section anchor="sec-iana-MSG_REJECT-codes" title="MSG_REJECT Reason Codes">
         <t>EDITOR NOTE: sub-registry to-be-created upon publication of this specification.</t>
         <t>
-          IANA will create, under the &quot;Bundle Protocol&quot; registry,
-          a sub-registry titled
+          IANA will create, under the &quot;Bundle Protocol&quot; registry
+          <xref target="IANA-BUNDLE" />, a sub-registry titled
           &quot;Bundle Protocol TCP Convergence-Layer Version 4 MSG_REJECT Reason Codes&quot;
           and initialize it with the contents of
           <xref target="tab-iana-MSG_REJECT-codes" />.
@@ -2970,6 +2972,24 @@ document.
 
   <back>
     <references title="Normative References">
+      <reference anchor="IANA-PORTS" target="https://www.iana.org/assignments/service-names-port-numbers/">
+        <front>
+          <title>Service Name and Transport Protocol Port Number Registry</title>
+          <author>
+            <organization>IANA</organization>
+          </author>
+          <date/>
+        </front>
+      </reference>
+      <reference anchor="IANA-BUNDLE" target="https://www.iana.org/assignments/bundle/">
+        <front>
+          <title>Bundle Protocol</title>
+          <author>
+            <organization>IANA</organization>
+          </author>
+          <date/>
+        </front>
+      </reference>
       <?rfc include="reference.RFC.0793.xml"?>
       <?rfc include="reference.RFC.1122.xml"?>
       <?rfc include="reference.RFC.2119.xml"?>
@@ -2998,6 +3018,7 @@ document.
       <?rfc include="reference.RFC.4511.xml"?>
       <?rfc include="reference.RFC.4838.xml"?>
       <?rfc include="reference.RFC.5489.xml"?>
+      <?rfc include="reference.RFC.7122.xml"?>
       <?rfc include="reference.RFC.7242.xml"?>
       <?rfc include="reference.RFC.7435.xml"?>
       <?rfc include="reference.RFC.7457.xml"?>
