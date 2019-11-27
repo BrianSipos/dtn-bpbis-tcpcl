@@ -1,6 +1,5 @@
-''' Session and Transfer extension type definitions. '''
-from scapy import packet
-
+''' Session and Transfer extension type definitions.
+'''
 from . import formats
 from .messages import SessionExtendHeader, TransferExtendHeader
 
