@@ -73,15 +73,22 @@
 
     <abstract>
       <t>
-        This document describes a revised protocol for the TCP-based convergence
-        layer (TCPCL) for Delay-Tolerant Networking (DTN).
-        The protocol revision is based on implementation issues in the original
-        TCPCL Version 3 of RFC7242 and updates to the Bundle Protocol contents,
-        encodings, and convergence layer requirements in Bundle Protocol Version 7.
-        Specifically, the TCPCLv4 uses CBOR-encoded BPv7 bundles as its service data
-        unit being transported and provides a reliable transport of such bundles.
-        Several new IANA registries are defined for TCPCLv4 which define some
-        behaviors inherited from TCPCLv3 but with updated encodings and/or semantics.
+This document describes a TCP-based convergence layer (TCPCL) for 
+Delay-Tolerant Networking (DTN).
+This version of the TCPCL protocol is based on implementation issues in the
+earlier TCPCL Version 3 of RFC7242 and updates to the Bundle Protocol (BP) 
+contents, encodings, and convergence layer requirements in BP Version 7.
+Specifically, the TCPCLv4 uses CBOR-encoded BPv7 bundles as its service data
+unit being transported and provides a reliable transport of such bundles.
+      </t>
+      <t>
+This document is an update of the protocol described in RFC7242,
+reflecting lessons learned.
+For this reason it obsoletes RFC7242, an IRTF-stream document.
+      </t>
+      <t>
+Note to the RFC editor: The Internet Research Task Force is requested
+to mark RFC7242 as obsolete.
       </t>
     </abstract>
   </front>
@@ -123,6 +130,15 @@
         In particular, when BP is using TCP as its bearer with TCPCL as its
         convergence layer, both BP and TCPCL reside at the application layer
         of the Internet model.
+      </t>
+      <t>
+This document is an update of the protocol described in RFC7242,
+reflecting lessons learned.
+For this reason it obsoletes RFC7242, an IRTF-stream document.
+      </t>
+      <t>
+Note to the RFC editor: The Internet Research Task Force is requested
+to mark RFC7242 as obsolete.
       </t>
       <figure anchor="fig-tcpcl-ip-stack"
         title="The Locations of the Bundle Protocol and the TCP Convergence-Layer Protocol above the Internet Protocol Stack">
@@ -2441,7 +2457,7 @@ It is up to security policies within each TCPCL node to ensure that the
 TCPCL version in use meets transport security requirements.
         </t>
       </section>
-      <section title="Threat: Transport Security Stripping">
+      <section title="Threat: Active Transport Security Stripping">
         <t>
 When security policy allows non-TLS sessions,
 TCPCL does not protect against active network attackers.
