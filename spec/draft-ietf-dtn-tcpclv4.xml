@@ -1009,9 +1009,8 @@ TCP Connecting
         </t>
         <t>
           If an entity is capable of exchanging messages according to 
-          TLS 1.2 <xref target="RFC5246" /> or any successors 
-          <xref target="RFC8446" /> that are 
-          compatible with TLS 1.2, the CAN_TLS flag
+          TLS 1.3 <xref target="RFC8446" /> or any successors 
+          which are compatible with that TLS ClientHello, the the CAN_TLS flag
           within its contanct header SHALL be set to 1.
           This behavior prefers the use of TLS when possible, even if security
           policy does not allow or require authentication.
@@ -1155,9 +1154,7 @@ TCP Connecting
             in <xref target="sec-contact-negotiate" />.
             After negotiating an Enable TLS parameter of true, and before any other
             TCPCL messages are sent within the session, the session entities SHALL
-            begin a TLS handshake in accordance with
-            TLS 1.2 <xref target="RFC5246" /> or any successors that are 
-            compatible with TLS 1.2.
+            begin a TLS handshake in accordance with <xref target="RFC8446" />.
             By convention, this protocol uses the node which initiated the
             underlying TCP connection as the &quot;client&quot; role
             of the TLS handshake request.
@@ -2996,7 +2993,6 @@ document.
       <?rfc include="reference.RFC.1122.xml"?>
       <?rfc include="reference.RFC.2119.xml"?>
       <?rfc include="reference.RFC.3986.xml"?>
-      <?rfc include="reference.RFC.5246.xml"?>
       <?rfc include="reference.RFC.5280.xml"?>
       <?rfc include="reference.RFC.6066.xml"?>
       <?rfc include="reference.RFC.6125.xml"?>
