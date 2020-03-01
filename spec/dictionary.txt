@@ -15,6 +15,7 @@ Conv
 CRLs
 dbus
 DCCP
+decodable
 deconflict
 DNS
 dtn

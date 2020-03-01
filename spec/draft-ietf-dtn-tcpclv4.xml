@@ -241,15 +241,22 @@ unit being transported and provides a reliable transport of such bundles.
             <t hangText="TCPCL Session:">
               A TCPCL session (as opposed to a TCP connection) is a TCPCL 
               communication relationship between two TCPCL entities.
-              Within a single TCPCL session there are two possible transfer streams;
-              one in each direction, with one stream from each entity being the outbound
-              stream and the other being the inbound stream.
-              The lifetime of a TCPCL session is bound to the lifetime of an 
-              underlying TCP connection.
+              A TCPCL session operates within an underlying TCP connection
+              and the lifetime of a TCPCL session is bound to the lifetime of 
+              that TCP connection.
               A TCPCL session is terminated when the TCP
               connection ends, due either to one or both entities actively
               closing the TCP connection or due to network errors causing
               a failure of the TCP connection.
+              Within a single TCPCL session there are two possible transfer streams;
+              one in each direction, with one stream from each entity being the outbound
+              stream and the other being the inbound stream 
+              (see <xref target="fig-session-stream" />).
+              From the perspective of a TCPCL session, the two transfer streams 
+              do not logically interact with each other.
+              The streams do operate over the same TCP connection and between the 
+              same BP agents, so there are logical relationships at those layers
+              (message and bundle interleaving respectively).
               For the remainder of this document, the term &quot;session&quot;
               without the prefix &quot;TCPCL&quot; refers to a TCPCL session.
             </t>
@@ -265,9 +272,12 @@ unit being transported and provides a reliable transport of such bundles.
             </t>
             <t hangText="Transfer Stream:">
               A Transfer stream is a uni-directional user-data path within a TCPCL Session.
-              Messages sent over a transfer stream are serialized, meaning that one set of 
-              user data must complete its transmission prior to another set of user data 
-              being transmitted over the same transfer stream.
+              Transfers sent over a transfer stream are serialized, meaning that one 
+              transfer must complete its transmission prior to another transfer 
+              being started over the same transfer stream.
+              At the stream layer there is no logical relationship between transfers 
+              in that stream; it's only within the BP agent that transfers are
+              fully decoded as budles.
               Each uni-directional stream has a single sender entity and a single receiver entity.
             </t>
             <t hangText="Transfer:">
@@ -275,7 +285,8 @@ unit being transported and provides a reliable transport of such bundles.
               for conveyance of an individual bundle from one node to
               another.
               Each transfer within TCPCL is identified by a Transfer ID number
-              which is unique only to a single direction within a single Session.
+              which is guaranteed to be unique only to a single direction 
+              within a single Session.
             </t>
             <t hangText="Transfer Segment:">
               A subset of a transfer of user data being communicated over a transfer stream.
@@ -494,8 +505,8 @@ unit being transported and provides a reliable transport of such bundles.
         <t>
           Once the TCPCL session is established and configured in this way,
           bundles can be transferred in either direction.
-          Each transfer is performed by an sequence of 
-          logical segments of data within XFER_SEGMENT messages.
+          Each transfer is performed by segmenting the transfer data into 
+          one or more XFER_SEGMENT messages.
           Multiple bundles can be transmitted consecutively in a single 
           direction on a single TCPCL connection.
           Segments from different bundles are never interleaved.
@@ -2064,7 +2075,7 @@ TCP Connecting
             XFER_REFUSE based on its Reason Code; 
             the refusal is passed up as an indication to the BP agent 
             that the transfer has been refused.
-            If a transfer refusal has a Reason Code which is undecodable to 
+            If a transfer refusal has a Reason Code which is not decodable to 
             the BP agent, the agent SHOULD treat the refusal as having an 
             Unknown reason.
           </t>
@@ -2305,7 +2316,7 @@ TCP Connecting
           SESS_TERM based on its Reason Code;
           the termination is passed up as an indication to the BP agent 
           that the session state has changed.
-          If a termination has a Reason Code which is undecodable to 
+          If a termination has a Reason Code which is not decodable to 
           the BP agent, the agent SHOULD treat the termination as having an 
           Unknown reason.
         </t>
@@ -2523,11 +2534,18 @@ negotiated TLS ciphersuite meets transport security requirements.
       </section>
       <section title="Threat: Invalid Certificate Use">
         <t>
+Even when TLS itself is operating properly an attacker can attempt to exploit
+vulnerabilities within certificate check algorithms or configuration 
+to establish a secure TCPCL session using an invalid certificate.
+A BP agent treats the peer Node ID within a TCPCL session as authoritative and an
+invalid certificate exploit could lead to bundle data leaking and/or denial of
+service to the Node ID being impersonated.
 There are many reasons, described in <xref target="RFC5280" />, why a 
 certificate can fail to validate, including using the certificate outside
 of its valid time interval, using purposes for which it was not authorized,
 or using it after it has been revoked by its CA.
-Validating a certificate is a complex task and may require network connectivity
+Validating a certificate is a complex task and can require network connectivity
+outside of the primary TCPCL network path(s)
 if a mechanism such as the Online Certificate Status Protocol (OCSP) is used
 by the CA.
 The configuration and use of particular certificate validation methods are 
@@ -2543,8 +2561,9 @@ encrypted with a given set of keys as described in
 When permitted by the negotiated TLS version 
 (see <xref target="RFC8446" />), it is advisable to take
 advantage of session key updates to avoid those limits.
-When key updates are not possible, establishing new TCPCL/TLS session
-is an alternative to limit session key use.
+When key updates are not possible, renegotiation of the TLS session or
+establishing new TCPCL/TLS session
+are alternatives to limit session key use.
         </t>
       </section>
       <section title="Threat: BP Node Impersonation">
