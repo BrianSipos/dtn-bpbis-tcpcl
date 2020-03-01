@@ -199,6 +199,11 @@ unit being transported and provides a reliable transport of such bundles.
         <t>
           This section contains definitions specific to the TCPCL protocol.
           <list style="hanging">
+            <t hangText="Network Byte Order:">
+            Most significant byte first, a.k.a., big endian.
+            All of the integer encodings in this protocol SHALL be transmitted in 
+            network byte order.
+            </t>
             <t hangText="TCPCL Entity:">
               This is the notional TCPCL application that initiates TCPCL sessions.
               This design, implementation, configuration, and specific behavior of such
@@ -889,7 +894,7 @@ TCP Connecting
              Entity A                             Entity B
              ========                             ========
     +-------------------------+         
-    |  Open TCP Connnection   | -&gt;      +-------------------------+
+    |  Open TCP Connection    | -&gt;      +-------------------------+
     +-------------------------+      &lt;- |    Accept Connection    |
                                         +-------------------------+
     +-------------------------+         
@@ -1011,7 +1016,7 @@ TCP Connecting
           If an entity is capable of exchanging messages according to 
           TLS 1.3 <xref target="RFC8446" /> or any successors 
           which are compatible with that TLS ClientHello, the the CAN_TLS flag
-          within its contanct header SHALL be set to 1.
+          within its contact header SHALL be set to 1.
           This behavior prefers the use of TLS when possible, even if security
           policy does not allow or require authentication.
           This follows the opportunistic security model of <xref target="RFC7435" />.
@@ -1098,20 +1103,19 @@ TCP Connecting
           a response from the passive entity.
           During contact initiation, the active TCPCL node SHALL send the highest TCPCL protocol
           version on a first session attempt for a TCPCL peer.
-          If the active entity receives a Contact Header with a different
+          If the active entity receives a Contact Header with a lower
           protocol version than the one sent earlier on the TCP connection,
           the TCP connection SHALL be closed.
           If the active entity receives a SESS_TERM message with reason of
           "Version Mismatch", that node MAY attempt further TCPCL sessions with the
           peer using earlier protocol version numbers in decreasing order.
           Managing multi-TCPCL-session state such as this is an implementation matter.
-          Only upon response of a Contact Header from the passive entity is
-          the TCPCL protocol version established and parameter negotiation begun.
         </t>
         <t>
           If the passive entity receives a contact header containing a version that is
           not a version of the TCPCL that the node
-          implements, then the node SHALL terminate the session with a reason code
+          implements, then the entity SHALL send its Contact Header and 
+          immediately terminate the session with a reason code
           of "Version mismatch".
           If the passive entity receives a contact header with a
           version that is lower than the latest version of the protocol that the node
@@ -1120,8 +1124,40 @@ TCP Connecting
           conform to the older version of the protocol.
           The decision of version fall-back is an implementation matter.
         </t>
+        <t>
+          The negotiated contact parameters defined by this specification are
+          described in the following paragraphs.
+        </t>
+        <t>
+          <list style="hanging">
+            <t hangText="TCPCL Version:">
+              Both Contact Headers of a successful contact negotiation 
+              have identical TCPCL Version numbers as described above.
+              Only upon response of a Contact Header from the passive entity is
+              the TCPCL protocol version established and session negotiation begun.
+            </t>
+            <t hangText="Enable TLS:">
+              Negotiation of the Enable TLS parameter is performed by taking
+              the logical AND of the two contact headers' CAN_TLS flags.
+              A local security policy is then applied to determine of the negotiated value
+              of Enable TLS is acceptable.
+              It can be a reasonable security policy to require or disallow
+              the use of TLS depending upon the desired network flows.
+              Because this state is negotiated over an unsecured medium,
+              there is a risk of a TLS Stripping as described in <xref target="sec-security" />.
+              If the Enable TLS state is unacceptable, the node SHALL terminate
+              the session with a reason code of &quot;Contact Failure&quot;.
+              Note that this contact failure reason is different than a failure 
+              of TLS handshake or TLS authentication
+              after an agreed-upon and acceptable Enable TLS state.
+              If the negotiated Enable TLS value is true and acceptable then
+              TLS negotiation feature (described in
+              <xref target="sec-session-security" />) begins
+              immediately following the contact header exchange.
+            </t>
+          </list>
+        </t>
       </section>
-
       <section anchor="sec-session-security" title="Session Security">
         <t>
           This version of the TCPCL supports establishing a Transport
@@ -1136,7 +1172,7 @@ TCP Connecting
           Immediately prior to actively ending a TLS session after TCPCL 
           session termination, the peer which sent the original (non-reply)
           SESS_TERM message SHOULD follow the Closure Alert procedure of
-          <xref target="RFC5246" /> to cleanly terminate the TLS session.
+          <xref target="RFC8446" /> to cleanly terminate the TLS session.
           Because each TCPCL message is either fixed-length or self-indicates
           its length, the lack of a TLS Closure Alert will not cause
           data truncation or corruption.
@@ -1318,7 +1354,7 @@ TCP Connecting
             active peer                         passive peer
     
     +-------------------------+         
-    |  Open TCP Connnection   | -&gt;      +-------------------------+
+    |  Open TCP Connection    | -&gt;      +-------------------------+
     +-------------------------+      &lt;- |    Accept Connection    |
                                         +-------------------------+
     +-------------------------+         
@@ -1562,25 +1598,6 @@ TCP Connecting
               SHALL terminate the session with a reason code of
               &quot;Contact Failure&quot;.
             </t>
-            <t hangText="Enable TLS:">
-              Negotiation of the Enable TLS parameter is performed by taking
-              the logical AND of the two contact headers' CAN_TLS flags.
-              A local security policy is then applied to determine of the negotiated value
-              of Enable TLS is acceptable.
-              It can be a reasonable security policy to both require or disallow
-              the use of TLS depending upon the desired network flows.
-              Because this state is negotiated over an unsecured medium,
-              there is a risk of a TLS Stripping as described in <xref target="sec-security" />.
-              If the Enable TLS state is unacceptable, the node SHALL terminate
-              the session with a reason code of &quot;Contact Failure&quot;.
-              Note that this contact failure reason is different than a failure 
-              of TLS handshake or TLS authentication
-              after an agreed-upon and acceptable Enable TLS state.
-              If the negotiated Enable TLS value is true and acceptable then
-              TLS negotiation feature (described in
-              <xref target="sec-session-security" />) begins
-              immediately following the contact header exchange.
-            </t>
           </list>
         </t>
         <t>
@@ -1721,11 +1738,26 @@ TCP Connecting
 
         <section anchor="sec-MSG_REJECT" title="Message Rejection (MSG_REJECT)">
           <t>
-            If a TCPCL node receives a message which is unknown to it (possibly due
-            to an unhandled protocol mismatch) or is inappropriate for the current
-            session state (e.g., a KEEPALIVE message received after contact header
-            negotiation has disabled that feature), there is a protocol-level
-            message to signal this condition in the form of a MSG_REJECT reply.
+            This message type is not expected to be seen in a well-functioning
+            session.
+            Its purpose is to aid in troubleshooting bad entity behavior by
+            allowing the peer to observe why an entity may not be responding
+            as expected to its messages.
+          </t>
+          <t>
+            If a TCPCL entity receives a message type which is unknown to it (possibly due
+            to an unhandled protocol version mismatch or a incorrectly-negotiated session 
+            extension which defines a new message type), the entity SHALL send a MSG_REJECT 
+            message with a Reason Code of "Message Type Unknown" and close the TCP connection.
+            If a TCPCL entity receives a message type which is known but is inappropriate
+            for the negotiated session parameters (possibly due to 
+            incorrectly-negotiated session extension), the entity SHALL send a MSG_REJECT
+            message with a Reason Code of "Message Unsupported".
+            If a TCPCL entity receives a message which is inappropriate for the current
+            session state (e.g., a SESS_INIT after the session has already been established or
+            an XFER_ACK message with an unknown Transfer ID), 
+            the entity SHALL send a MSG_REJECT message
+            with a Reason Code of "Message Unexpected".
           </t>
           <t>
             The format of a MSG_REJECT message is as follows in
@@ -1767,7 +1799,7 @@ TCP Connecting
             <c>Message Unsupported</c>
             <c>0x02</c>
             <c>A message was received but
-              the TCPCL node cannot comply with the message contents.</c>
+              the TCPCL entity cannot comply with the message contents.</c>
             <c>Message Unexpected</c>
             <c>0x03</c>
             <c>A message was received while the
@@ -1910,7 +1942,7 @@ TCP Connecting
           </texttable>
 
           <t>
-            The flags portion of the message contains two optional
+            The flags portion of the message contains two flag
             values in the two low-order bits, denoted 'START' and 'END' in
             <xref target="tab-XFER_SEGMENT-flags" />.
             The 'START' flag SHALL be set to 1 when transmitting the first
@@ -2022,10 +2054,19 @@ TCP Connecting
             is inspected by an agent and determined to be unacceptable.
           </t>
           <t>
-            A receiver MAY send an XFER_REFUSE message as soon as it receives
+            A transfer receiver MAY send an XFER_REFUSE message as soon as it receives
             any XFER_SEGMENT message.
-            The sender MUST be prepared for this and MUST associate the refusal
+            The transfer sender MUST be prepared for this and MUST associate the refusal
             with the correct bundle via the Transfer ID fields.
+          </t>
+          <t>
+            The TCPCL itself does not have any required behavior to respond to an
+            XFER_REFUSE based on its Reason Code; 
+            the refusal is passed up as an indication to the BP agent 
+            that the transfer has been refused.
+            If a transfer refusal has a Reason Code which is undecodable to 
+            the BP agent, the agent SHOULD treat the refusal as having an 
+            Unknown reason.
           </t>
           <t>
             The format of the XFER_REFUSE message is as follows in
@@ -2077,7 +2118,7 @@ TCP Connecting
           </texttable>
           <t>
             The receiver MUST, for each transfer preceding the one to be refused,
-            have either acknowledged all XFER_SEGMENTs or refused the bundle transfer.
+            have either acknowledged all XFER_SEGMENT messages or refused the bundle transfer.
           </t>
           <t>
             The bundle transfer refusal MAY be sent before an entire data segment is
@@ -2260,6 +2301,15 @@ TCP Connecting
           by the TCPCL entity.
         </t>
         <t>
+          The TCPCL itself does not have any required behavior to respond to an
+          SESS_TERM based on its Reason Code;
+          the termination is passed up as an indication to the BP agent 
+          that the session state has changed.
+          If a termination has a Reason Code which is undecodable to 
+          the BP agent, the agent SHOULD treat the termination as having an 
+          Unknown reason.
+        </t>
+        <t>
           The format of the SESS_TERM message is as follows in
           <xref target="fig-msg-SESS_TERM-fields" />.
         </t>
@@ -2319,7 +2369,7 @@ TCP Connecting
           <c>The node is too busy to handle the current session.</c>
           <c>Contact Failure</c>
           <c>0x04</c>
-          <c>The node cannot interpret or negotiate contact header option.</c>
+          <c>The node cannot interpret or negotiate a contact header or SESS_INIT option.</c>
           <c>Resource Exhaustion</c>
           <c>0x05</c>
           <c>The node has run into some resource limit and cannot continue the session.</c>
