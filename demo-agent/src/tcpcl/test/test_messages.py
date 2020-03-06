@@ -149,7 +149,7 @@ class TestRejectMsg(unittest.TestCase):
 class TestTransferRefuse(unittest.TestCase):
     
     def testSerialize(self):
-        pkt = MessageHead()/TransferRefuse(transfer_id=1234, reason=TransferRefuse.Reason.RESOURCES)
+        pkt = MessageHead()/TransferRefuse(transfer_id=1234, reason=TransferRefuse.Reason.NO_RESOURCES)
         self.assertSequenceEqual(binascii.hexlify(bytes(pkt)), b'03' + b'02' + b'00000000000004d2')
 
     def testDeserialize(self):
@@ -157,7 +157,7 @@ class TestTransferRefuse(unittest.TestCase):
         self.assertEqual(pkt.msg_id, 3)
         self.assertIsInstance(pkt.payload, TransferRefuse)
         self.assertEqual(pkt.payload.transfer_id, 1234)
-        self.assertEqual(pkt.payload.reason, TransferRefuse.Reason.RESOURCES)
+        self.assertEqual(pkt.payload.reason, TransferRefuse.Reason.NO_RESOURCES)
 
 class TestTransferSegment(unittest.TestCase):
 
