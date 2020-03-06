@@ -164,10 +164,12 @@ class TransferRefuse(formats.NoPayloadPacket):
     @enum.unique
     class Reason(enum.IntEnum):
         ''' Reason code points. '''
-        UNKNOWN = 0x0
-        COMPLETED = 0x1
-        RESOURCES = 0x2
-        RETRANSMIT = 0x3
+        UNKNOWN = 0x00
+        COMPLETED = 0x01
+        NO_RESOURCES = 0x02
+        RETRANSMIT = 0x03
+        NOT_ACCEPTABLE = 0x04
+        EXT_FAILURE = 0x05
 
     fields_desc = [
         fields.ByteEnumField('reason', default=Reason.UNKNOWN,

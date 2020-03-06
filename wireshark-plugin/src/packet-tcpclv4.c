@@ -77,10 +77,11 @@ static const value_string sess_term_reason_vals[]={
 
 static const value_string xfer_refuse_reason_vals[]={
     {0x00, "Unknown"},
-    {0x01, "Extension Failure"},
-    {0x02, "Completed"},
-    {0x03, "No Resources"},
-    {0x04, "Retransmit"},
+    {0x01, "Completed"},
+    {0x02, "No Resources"},
+    {0x03, "Retransmit"},
+    {0x04, "Not Acceptable"},
+    {0x05, "Extension Failure"},
     {0, NULL},
 };
 
