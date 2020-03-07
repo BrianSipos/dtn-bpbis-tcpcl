@@ -486,7 +486,7 @@ This version of TCPCL also includes security and extensibility mechanisms.
           initiating a TCP connection in accordance with
           <xref target="RFC0793" />.
           After setup of the TCP connection is
-          complete, an initial contact header is exchanged in both directions
+          complete, an initial Contact Header is exchanged in both directions
           to establish a shared TCPCL version and negotiate the use of
           TLS security (as described in <xref target="sec-session-establishment" />).
           Once contact negotiation is complete, TCPCL messaging is available and
@@ -546,7 +546,7 @@ This version of TCPCL also includes security and extensibility mechanisms.
           message-less time intervals.
         </t>
         <t>
-          A SESS_TERM message is used to start the ending of a TCPCL session
+          A SESS_TERM message is used to initiate the ending of a TCPCL session
           (see <xref target="sec-SESS_TERM" />).
           During termination sequencing, in-progress transfers can be completed but no
           new transfers can be initiated.
@@ -749,7 +749,7 @@ TCP Connecting
 </artwork></figure>
         <t>
         Transfers can occur after a session is established and it's not
-        in the ending state.
+        in the Ending state.
         Each transfer occurs within a single logical transfer stream
         between a sender and a receiver, as illustrated in
         <xref target="fig-transfer-tx-states"/> and
@@ -800,7 +800,7 @@ TCP Connecting
           Session termination involves one entity initiating the termination
           of the session and the other entity acknowledging the termination.
           For either entity, it is the sending of the SESS_TERM message which
-          transitions the session to the ending substate.
+          transitions the session to the Ending substate.
           While a session is in the Ending state only in-progress transfers can
           be completed and no new transfers can be started.
         </t>
@@ -996,25 +996,27 @@ TCP Connecting
         </t>
         <t>
           Once a TCP connection is established, the active entity SHALL immediately
-          transmit its contact header.
-          Upon reception of a contact header, the passive entity SHALL transmit
-          its contact header.
+          transmit its Contact Header.
+          Once a TCP connection is established, the passive entity SHALL wait
+          for the peer's Contact Header.
           If the passive entity does not receive a Contact Header after
           some implementation-defined time duration after TCP connection is
           established, the entity SHALL close the TCP connection.
           Entities SHOULD choose a Contact Header reception timeout interval no 
           longer than 10 minutes (600 seconds).
-          The ordering of the contact header exchange allows the passive entity
+          Upon reception of a Contact Header, the passive entity SHALL transmit
+          its Contact Header.
+          The ordering of the Contact Header exchange allows the passive entity
           to avoid allocating resources to a potential TCPCL session until
-          after a valid contact header has been received from the active entity.
+          after a valid Contact Header has been received from the active entity.
           This ordering also allows the passive peer to adapt to alternate
           TCPCL protocol versions.
         </t>
         <t>
-          The format of the contact header is described in
+          The format of the Contact Header is described in
           <xref target="sec-contact-header" />.
           Because the TCPCL protocol version in use is part of the initial 
-          contact header, nodes using TCPCL version 4 can coexist on a network
+          Contact Header, nodes using TCPCL version 4 can coexist on a network
           with nodes using earlier TCPCL versions (with some negotiation needed
           for interoperation as described in 
           <xref target="sec-contact-negotiate" />).
@@ -1022,23 +1024,23 @@ TCP Connecting
       </section>
       <section anchor="sec-contact-header" title="Contact Header">
         <t>
-          This section describes the format of the contact header and
+          This section describes the format of the Contact Header and
           the meaning of its fields.
         </t>
         <t>
           If an entity is capable of exchanging messages according to 
           TLS 1.3 <xref target="RFC8446" /> or any successors 
           which are compatible with that TLS ClientHello, the the CAN_TLS flag
-          within its contact header SHALL be set to 1.
+          within its Contact Header SHALL be set to 1.
           This behavior prefers the use of TLS when possible, even if security
           policy does not allow or require authentication.
           This follows the opportunistic security model of <xref target="RFC7435" />.
         </t>
         <t>
-          Upon receipt of the contact header, both entities perform the validation
+          Upon receipt of the Contact Header, both entities perform the validation
           and negotiation procedures defined in
           <xref target="sec-contact-negotiate" />.
-          After receiving the contact header from the other entity, either entity
+          After receiving the Contact Header from the other entity, either entity
           MAY refuse the session by sending a SESS_TERM message with an appropriate
           reason code.
         </t>
@@ -1060,10 +1062,10 @@ TCP Connecting
           See
           <xref target="sec-contact-negotiate" />
           for details on the use of each
-          of these contact header fields.
+          of these Contact Header fields.
         </t>
         <t>
-          The fields of the contact header are:
+          The fields of the Contact Header are:
           <list style="hanging">
             <t hangText="magic:">
               A four-octet field that always contains the octet sequence 0x64
@@ -1097,18 +1099,20 @@ TCP Connecting
 
       <section anchor="sec-contact-negotiate" title="Contact Validation and Negotiation">
         <t>
-          Upon reception of the contact header, each node follows the following
+          Upon reception of the Contact Header, each node follows the following
           procedures to ensure the validity of the TCPCL session and to
           negotiate values for the session parameters.
         </t>
         <t>
           If the magic string is not present or is not valid, the connection
-          MUST be terminated. The intent of the magic string is to provide
+          MUST be terminated.
+          The intent of the magic string is to provide
           some protection against an inadvertent TCP connection by a different
-          protocol than the one described in this document. To prevent a flood
-          of repeated connections from a misconfigured application, an entity MAY
-          elect to hold an invalid connection open and idle for some time
-          before ending it.
+          protocol than the one described in this document.
+          To prevent a flood of repeated connections from a misconfigured 
+          application, a passive entity MAY deny new TCP connections from a specific
+          peer address for a period of time after one or more connections
+          fail to provide a decodable Contact Header.
         </t>
         <t>
           The first negotiation is on the TCPCL protocol version to use.
@@ -1125,14 +1129,14 @@ TCP Connecting
           Managing multi-TCPCL-session state such as this is an implementation matter.
         </t>
         <t>
-          If the passive entity receives a contact header containing a version that is
-          not a version of the TCPCL that the node
+          If the passive entity receives a Contact Header containing a version that is
+          not a version of the TCPCL that the entity
           implements, then the entity SHALL send its Contact Header and 
           immediately terminate the session with a reason code
           of "Version mismatch".
-          If the passive entity receives a contact header with a
-          version that is lower than the latest version of the protocol that the node
-          implements, the node MAY either terminate the session (with a reason code
+          If the passive entity receives a Contact Header with a
+          version that is lower than the latest version of the protocol that the entity
+          implements, the entity MAY either terminate the session (with a reason code
           of "Version mismatch") or adapt its operation to
           conform to the older version of the protocol.
           The decision of version fall-back is an implementation matter.
@@ -1151,14 +1155,14 @@ TCP Connecting
             </t>
             <t hangText="Enable TLS:">
               Negotiation of the Enable TLS parameter is performed by taking
-              the logical AND of the two contact headers' CAN_TLS flags.
+              the logical AND of the two Contact Headers' CAN_TLS flags.
               A local security policy is then applied to determine of the negotiated value
               of Enable TLS is acceptable.
               It can be a reasonable security policy to require or disallow
               the use of TLS depending upon the desired network flows.
               Because this state is negotiated over an unsecured medium,
               there is a risk of a TLS Stripping as described in <xref target="sec-security" />.
-              If the Enable TLS state is unacceptable, the node SHALL terminate
+              If the Enable TLS state is unacceptable, the entity SHALL terminate
               the session with a reason code of &quot;Contact Failure&quot;.
               Note that this contact failure reason is different than a failure 
               of TLS handshake or TLS authentication
@@ -1166,7 +1170,7 @@ TCP Connecting
               If the negotiated Enable TLS value is true and acceptable then
               TLS negotiation feature (described in
               <xref target="sec-session-security" />) begins
-              immediately following the contact header exchange.
+              immediately following the Contact Header exchange.
             </t>
           </list>
         </t>
@@ -1272,7 +1276,7 @@ TCP Connecting
             After negotiating an Enable TLS parameter of true, and before any other
             TCPCL messages are sent within the session, the session entities SHALL
             begin a TLS handshake in accordance with <xref target="RFC8446" />.
-            By convention, this protocol uses the node which initiated the
+            By convention, this protocol uses the entity which initiated the
             underlying TCP connection (the active peer) as the &quot;client&quot; role
             of the TLS handshake request.
           </t>
@@ -1292,10 +1296,9 @@ TCP Connecting
             <list style="hanging">
               <t hangText="Client Hello:">
                 When a resolved host name was used to establish the TCP connection, 
-                the TLS ClientHello SHOULD include a Server Name Indication (SNI) from
-                the active entity in accordance with <xref target="RFC6066" />.
-                When present, the SNI SHALL contain the same host name used to establish 
-                the TCP connection.
+                the TLS ClientHello SHOULD include a Server Name Indication (SNI)
+                in accordance with <xref target="RFC6066" />
+                containing that host name (of the passive entity) which was resolved.
                 Note: The SNI text is the network-layer name for the passive entity,
                 which is not the Node ID of that entity.
               </t>
@@ -1477,7 +1480,7 @@ TCP Connecting
       
       <section anchor="sec-msg-header" title="Message Header">
         <t>
-          After the initial exchange of a contact header, all messages
+          After the initial exchange of a Contact Header, all messages
           transmitted over the session are identified by a one-octet header
           with the following structure:
         </t>
@@ -1658,22 +1661,22 @@ TCP Connecting
             <t hangText="Transfer MTU and Segment MTU:">
               The maximum transmit unit (MTU) for whole transfers and individual segments
               are identical to the Transfer MRU and Segment MRU, respectively,
-              of the received contact header.
+              of the received Contact Header.
               A transmitting peer can send individual segments with any size smaller
               than the Segment MTU, depending on local policy, dynamic network
               conditions, etc.
               Determining the size of each transmitted segment is an implementation
               matter.
-              If either the Transfer MRU or Segment MRU is unacceptable, the node 
+              If either the Transfer MRU or Segment MRU is unacceptable, the entity 
               SHALL terminate the session with a reason code of
               &quot;Contact Failure&quot;.
             </t>
             <t hangText="Session Keepalive:">
               Negotiation of the Session Keepalive parameter is performed by taking
-              the minimum of the two contact headers' Keepalive Interval values.
+              the minimum of the two Contact Headers' Keepalive Interval values.
               The Session Keepalive interval is a parameter for the behavior described
               in <xref target="sec-KEEPALIVE" />.
-              If the Session Keepalive interval is unacceptable, the node 
+              If the Session Keepalive interval is unacceptable, the entity 
               SHALL terminate the session with a reason code of
               &quot;Contact Failure&quot;.
               Note: a negotated Session Keepalive of zero indicates that
@@ -1809,7 +1812,7 @@ TCP Connecting
           </t>
           <t>
             If no message (KEEPALIVE or other) has been received in a session after some
-            implementation-defined time duration, then the node SHALL terminate the
+            implementation-defined time duration, then the entity SHALL terminate the
             session by transmitting a SESS_TERM message (as described in
             <xref target="sec-SESS_TERM" />) with reason code "Idle Timeout".
             If configurable, the idle timeout duration SHOULD be no shorter 
@@ -2041,7 +2044,7 @@ TCP Connecting
             both the 'START' and 'END' flags SHALL be set to 1.
           </t>
           <t>
-            Once a transfer of a bundle has commenced, the node MUST only
+            Once a transfer of a bundle has commenced, the entity MUST only
             send segments containing sequential portions of that bundle until it
             sends a segment with the 'END' flag set to 1.
             No interleaving of multiple transfers from the same node is possible
@@ -2057,8 +2060,8 @@ TCP Connecting
             to inform a sending application of when the receiving application has
             processed some amount of transmitted data.
             Thus, after transmitting some data, the TCPCL needs an additional mechanism to
-            determine whether the receiving agent has successfully received the
-            segment.
+            determine whether the receiving agent has successfully received 
+            and fully processed the segment.
             To this end, the TCPCL protocol provides feedback messaging whereby a
             receiving node transmits acknowledgments of reception of data
             segments.
@@ -2102,7 +2105,8 @@ TCP Connecting
 
           <t>
             A receiving TCPCL node SHALL send an XFER_ACK message in response to
-            each received XFER_SEGMENT message.
+            each received XFER_SEGMENT message after the segment has been
+            fully processed.
             The flags portion of the XFER_ACK header SHALL be set to match the
             corresponding XFER_SEGMENT message being acknowledged (including
             flags not decodable to the entity).
@@ -2117,8 +2121,8 @@ TCP Connecting
           <t>
             For example, suppose the sending node transmits four segments of
             bundle data with lengths 100, 200, 500, and 1000, respectively.
-            After receiving the first segment, the node sends an acknowledgment
-            of length 100. After the second segment is received, the node sends
+            After receiving the first segment, the entity sends an acknowledgment
+            of length 100. After the second segment is received, the entity sends
             an acknowledgment of length 300. The third and fourth
             acknowledgments are of length 800 and 1800, respectively.
           </t>
@@ -2129,7 +2133,7 @@ TCP Connecting
           <t>
             The TCPCL supports a mechanism by which a receiving node can indicate to
             the sender that it does not want to receive the corresponding bundle.
-            To do so, upon receiving an XFER_SEGMENT message, the node MAY
+            To do so, upon receiving an XFER_SEGMENT message, the entity MAY
             transmit a XFER_REFUSE message. As data segments and
             acknowledgments can cross on the wire, the bundle that is being
             refused SHALL be identified by the Transfer ID of the refusal.
@@ -2252,7 +2256,7 @@ TCP Connecting
                   All reserved header flag bits SHALL be set to 0 by the sender.
                   All reserved header flag bits SHALL be ignored by the receiver.
                   If a TCPCL node receives a Transfer Extension Item with an unknown Item Type
-                  and the CRITICAL flag is 1, the node SHALL refuse the transfer
+                  and the CRITICAL flag is 1, the entity SHALL refuse the transfer
                   with an XFER_REFUSE reason code of &quot;Extension Failure&quot;.
                   If the CRITICAL flag is 0, an entity SHALL skip over and ignore
                   any item with an unknown Item Type.
@@ -2351,9 +2355,14 @@ TCP Connecting
 
     <section anchor="sec-termination" title="Session Termination">
       <t>
-        This section describes the procedures for ending a TCPCL session.
-        The purpose of ending a session is to allow transfers to complete
-        before the session is terminated.
+        This section describes the procedures for terminating a TCPCL session.
+        The purpose of terminating a session is to allow transfers to complete
+        before the session is closed but not allow any new transfers to start.
+        A session state change is necessary for this to happen because transfers
+        can be in-progress in either direction (transfer stream) within a session.
+        Waiting for a transfer to complete in one direction does not control
+        or influence the possibility of a transfer in the other direction.
+        Either peer of a session can terminate an established session at any time.
       </t>
       <section anchor="sec-SESS_TERM" title="Session Termination Message (SESS_TERM)">
         <t>
@@ -2383,7 +2392,8 @@ TCP Connecting
           SESS_TERM message an entity MAY immediately close
           the associated TCP connection.
           When performing an unclean termination, a receiving node SHOULD
-          acknowledge all received data segments before closing the TCP connection.
+          acknowledge all received XFER_SEGMENTs with an XFER_ACK 
+          before closing the TCP connection.
           Not acknowledging received segments can result in unnecessary bundle 
           or bundle fragment retransmission.
           When performing an unclean termination, a transmitting node SHALL treat
@@ -2462,21 +2472,21 @@ TCP Connecting
           <c>The node is too busy to handle the current session.</c>
           <c>Contact Failure</c>
           <c>0x04</c>
-          <c>The node cannot interpret or negotiate a contact header or SESS_INIT option.</c>
+          <c>The node cannot interpret or negotiate a Contact Header or SESS_INIT option.</c>
           <c>Resource Exhaustion</c>
           <c>0x05</c>
           <c>The node has run into some resource limit and cannot continue the session.</c>
         </texttable>
         <t>
           A session termination MAY occur immediately after transmission of a
-          contact header (and prior to any further message transmit).
-          This MAY, for example, be used to notify
-          that the node is currently not able or willing to communicate.
-          However, an entity MUST always send the contact header to its peer
+          Contact Header (and prior to any further message transmit).
+          This can, for example, be used to notify
+          that the entity is currently not able or willing to communicate.
+          However, an entity MUST always send the Contact Header to its peer
           before sending a SESS_TERM message.
         </t>
         <t>
-          If reception of the contact header itself somehow fails (e.g., an invalid
+          If reception of the Contact Header itself somehow fails (e.g., an invalid
           "magic string" is received), an entity SHALL close the TCP connection
           without sending a SESS_TERM message.
           If the content of the Session Extension Items data disagrees with the
@@ -2486,7 +2496,7 @@ TCP Connecting
         </t>
         <t>
           If a session is to be terminated before a protocol message
-          has completed being sent, then the node MUST NOT transmit the SESS_TERM
+          has completed being sent, then the entity MUST NOT transmit the SESS_TERM
           message but still SHALL close the TCP connection.
           Each TCPCL message is contiguous in the octet stream and has no ability
           to be cut short and/or preempted by an other message.
@@ -3220,8 +3230,8 @@ Transfer IDs within a session.
         <xref target="RFC7242" />
         have been made to existing headers and messages are:
         <list style="symbols">
-          <t>Split contact header into pre-TLS protocol negotiation and SESS_INIT parameter negotiation. The contact header is now fixed-length.</t>
-          <t>Changed contact header content to limit number of negotiated options.</t>
+          <t>Split Contact Header into pre-TLS protocol negotiation and SESS_INIT parameter negotiation. The Contact Header is now fixed-length.</t>
+          <t>Changed Contact Header content to limit number of negotiated options.</t>
           <t>Added session option to negotiate maximum segment size (per each direction).</t>
           <t>Renamed "Endpoint ID" to "Node ID" to conform with BPv7 terminology.</t>
           <t>Added session extension capability.</t>
