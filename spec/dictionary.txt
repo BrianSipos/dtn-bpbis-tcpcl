@@ -1,4 +1,5 @@
 acknowledgement
+acknowledgements
 Aalto
 Ack
 ACK
@@ -22,16 +23,20 @@ dtn
 DTN
 encodings
 endian
+extensibility
 FFF
 IANA
 IESG
 IETF
 INIT
+incrementing
 interoperation
+iPAddress
 IPv
 keepalive
 Keepalive
 KEEPALIVE
+KEEPALIVEs
 LLC
 misconfigured
 MRU
@@ -47,6 +52,7 @@ PKI
 plaintext
 polcy
 pre
+PSK
 queueing
 retransmission
 retransmissions
@@ -57,6 +63,7 @@ RTO
 RTT
 SDNV
 Seg
+SEGMENTs
 SESS
 SNI
 SSL

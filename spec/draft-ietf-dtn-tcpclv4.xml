@@ -2,7 +2,7 @@
 <!DOCTYPE rfc SYSTEM "rfc2629.dtd" [
 ]>
 <?rfc toc="yes"?>
-<rfc ipr="trust200902" category="std" docName="draft-ietf-dtn-tcpclv4-18">
+<rfc ipr="trust200902" category="std" docName="draft-ietf-dtn-tcpclv4-19">
   <front>
     <title abbrev="DTN TCPCLv4">
       Delay-Tolerant Networking TCP Convergence Layer Protocol Version 4
@@ -67,10 +67,9 @@
         <email>simon@per.reau.lt</email>
       </address>
     </author>
-    <date year="2020" month="January" day="27" />
+    <date year="2020" month="March" day="7" />
     <area>Transport</area>
     <workgroup>Delay Tolerant Networking</workgroup>
-
     <abstract>
       <t>
 This document describes a TCP-based convergence layer (TCPCL) for 
@@ -279,7 +278,7 @@ This version of TCPCL also includes security and extensibility mechanisms.
               being started over the same transfer stream.
               At the stream layer there is no logical relationship between transfers 
               in that stream; it's only within the BP agent that transfers are
-              fully decoded as budles.
+              fully decoded as bundles.
               Each uni-directional stream has a single sender entity and a single receiver entity.
             </t>
             <t hangText="Transfer:">
@@ -1203,6 +1202,15 @@ TCP Connecting
         </t>
         <section anchor="sec-tls-identification" title="Entity Identification">
           <t>
+            The TCPCL uses the TLS for certificate exchange in both directions
+            to identify each entity and to allow each entity to authenticate 
+            its peer.
+            Each certificate can potentially identify multiple entities and
+            there is no problem using such a certificate as long as the
+            identifiers are sufficient to meet authentication policy 
+            (as described in later sections) for the entity which presents it.
+          </t>
+          <t>
             The public key infrastructure (PKI)
             Certificate Authority (CA) or authorities available
             within a network are likely not controlled by the certificate
@@ -1226,7 +1234,7 @@ TCP Connecting
                 support for wildcard matching.
               </t>
               <t hangText="Network Address:">
-                If no stable host name is avaialble but a stable network address
+                If no stable host name is available but a stable network address
                 is available and CA policy allows a certificate to contain a
                 NETWORK-ID (as defined below)
                 then one or more network addresses can be identified in the
@@ -1244,7 +1252,7 @@ TCP Connecting
             The RECOMMENDED security policy of an entity is to validate a peer
             which authenticates its Node ID regardless of an authenticated 
             host name or address, and only consider the host/address 
-            authentication in the absense of an authenticated Node ID.
+            authentication in the absence of an authenticated Node ID.
           </t>
           <t>
             This specification defines a NODE-ID of a certificate as being 
@@ -1305,7 +1313,7 @@ TCP Connecting
               <t hangText="Server Certificate:">
                 The passive entity SHALL supply a certificate within the 
                 TLS handshake to allow authentication of its side of the session.
-                Unless prohibted by CA policy, 
+                Unless prohibited by CA policy, 
                 the passive entity certificate SHALL contain a NODE-ID 
                 which authenticates the Node ID of the peer.
                 When assigned a stable host name, 
@@ -1324,7 +1332,7 @@ TCP Connecting
               <t hangText="Client Certificate:">
                 The active entity SHALL supply a certificate chain within the 
                 TLS handshake to allow authentication of its side of the session.
-                Unless prohibted by CA policy, 
+                Unless prohibited by CA policy, 
                 the active entity certificate SHALL contain a NODE-ID 
                 which authenticates the Node ID of the peer.
                 When assigned a stable host name, 
@@ -1679,7 +1687,7 @@ TCP Connecting
               If the Session Keepalive interval is unacceptable, the entity 
               SHALL terminate the session with a reason code of
               &quot;Contact Failure&quot;.
-              Note: a negotated Session Keepalive of zero indicates that
+              Note: a negotiated Session Keepalive of zero indicates that
               KEEPALIVEs are disabled.
             </t>
           </list>
@@ -1933,7 +1941,7 @@ TCP Connecting
             Each transfer entails the sending of a sequence of
             some number of XFER_SEGMENT and XFER_ACK messages; all are correlated
             by the same Transfer ID.
-            The sending entity originates a transfer ID and the receving entity
+            The sending entity originates a transfer ID and the receiving entity
             uses that same Transfer ID in acknowledgements.
           </t>
           <t>
@@ -1945,7 +1953,8 @@ TCP Connecting
           </t>
           <t>
             Although there is not a strict requirement for Transfer ID initial 
-            values or ordering, in the absense of any other mechanism for
+            values or ordering (see <xref target="sec-security-xferid" />), 
+            in the absence of any other mechanism for
             generating Transfer IDs an entity SHALL use the following algorithm:
             The initial Transfer ID from each node is zero and 
             subsequent Transfer ID values are incremented from the prior Transfer ID
@@ -2694,7 +2703,7 @@ In circumstances where certificates can only be issued to network
 host names, Node ID validation is not possible but it could be
 reasonable to assume that a trusted host is not going to present an
 invalid Node ID.
-Determininig of when a host name authentication can be trusted to validate
+Determining of when a host name authentication can be trusted to validate
 a Node ID is also a policy matter outside the scope of this document.
         </t>
       </section>
@@ -2776,7 +2785,7 @@ document.
           </t>
         </section>
       </section>
-      <section title="Predictability of Transfer IDs">
+      <section anchor="sec-security-xferid" title="Predictability of Transfer IDs">
         <t>
 The only requirement on Transfer IDs is that they be unique with each session
 from the sending peer only.
