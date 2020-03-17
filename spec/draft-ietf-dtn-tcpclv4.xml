@@ -2628,7 +2628,7 @@ The negotiated use of TLS is identical behavior to STARTTLS use in
 <xref target="RFC2595" /> and <xref target="RFC4511" />.
         </t>
       </section>
-      <section title="Threat: Weak Ciphersuite Downgrade">
+      <section title="Threat: Weak TLS Configurations">
         <t>
 Even when using TLS to secure the TCPCL session, the actual ciphersuite
 negotiated between the TLS peers can be insecure.
@@ -2637,7 +2637,7 @@ It is up to security policies within each TCPCL node to ensure that the
 negotiated TLS ciphersuite meets transport security requirements.
         </t>
       </section>
-      <section title="Threat: Invalid Certificate Use">
+      <section title="Threat: Certificate Validation Vulnerabilities">
         <t>
 Even when TLS itself is operating properly an attacker can attempt to exploit
 vulnerabilities within certificate check algorithms or configuration 
@@ -2657,7 +2657,7 @@ The configuration and use of particular certificate validation methods are
 outside of the scope of this document.
         </t>
       </section>
-      <section title="Threat: Symmetric Key Overuse">
+      <section title="Threat: Symmetric Key Limits">
         <t>
 Even with a secure block cipher and securely-established session keys,
 there are limits to the amount of plaintext which can be safely 
@@ -2770,7 +2770,8 @@ the issuance of certificates (including the contents of certificates),
 it may be possible to make use of TLS in a way which authenticates only the
 passive entity of a TCPCL session or which does not authenticate either entity.
 Using TLS in a way which does not authenticate both peer entities of each
-TCPCL session is outside of the scope of this document.
+TCPCL session is outside of the scope of this document but does have similar
+properties to the opportunistic security model of <xref target="RFC7435" />.
           </t>
         </section>
         <section anchor="sec-security-tlsnopki" title="Non-Certificate TLS Use">
