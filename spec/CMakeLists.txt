@@ -7,7 +7,7 @@ project(
 set(DRAFT_NAME "${PROJECT_NAME}")
 
 find_program(XML2RFC xml2rfc)
-if(XML2RFC_NOTFOUND)
+if(NOT XML2RFC)
     message(FATAL_ERROR "Program xml2rfc not found")
 endif()
 
@@ -26,7 +26,7 @@ add_custom_command(
 )
 
 find_program(ASPELL aspell)
-if(ASPELL_NOTFOUND)
+if(NOT ASPELL)
     message(FATAL_ERROR "Program aspell not found")
 endif()
 
@@ -35,12 +35,15 @@ set(MISSPELLING_TXT "misspelling.txt")
 add_custom_command(
     OUTPUT "dictionary.cwl"
     DEPENDS "${DICTIONARY_TXT}"
-    COMMAND cat "${DICTIONARY_TXT}" | ${ASPELL} --lang=en create master "./dictionary.cwl"
+    COMMAND cat "${DICTIONARY_TXT}" | 
+        ${ASPELL} --lang=en create master "./dictionary.cwl"
 )
 add_custom_command(
     OUTPUT "${MISSPELLING_TXT}"
     DEPENDS "${DRAFT_NAME_XML}" "dictionary.cwl"
-    COMMAND cat "${DRAFT_NAME_XML}" | ${ASPELL} --mode=sgml --lang=EN_US --extra-dicts=./dictionary.cwl list | sort | uniq >misspelling.txt
+    COMMAND cat "${DRAFT_NAME_XML}" | 
+        ${ASPELL} --mode=sgml --lang=EN_US --extra-dicts=./dictionary.cwl list | 
+        sort | uniq > "${MISSPELLING_TXT}"
 )
 
 add_custom_target(
