@@ -2,7 +2,7 @@
 <!DOCTYPE rfc SYSTEM "rfc2629.dtd" [
 ]>
 <?rfc toc="yes"?>
-<rfc ipr="trust200902" category="std" docName="draft-ietf-dtn-tcpclv4-20">
+<rfc ipr="trust200902" category="std" docName="draft-ietf-dtn-tcpclv4-21">
   <front>
     <title abbrev="DTN TCPCLv4">
       Delay-Tolerant Networking TCP Convergence Layer Protocol Version 4
@@ -820,64 +820,62 @@ TCP Connecting
  Receive SESS_TERM  |
       |             |
       +-------------+
-</artwork></figure>
+</artwork>
+        </figure>
+      </section>
+      <section anchor="sec-session-keeping" title="Session Keeping Policies">
+        <t>
+This specification gives requirements about how to initiate, sustain, and terminate a TCPCL session but does not impose any requirements on how sessions need to be managed by a BP agent.
+It is a network administration matter to determine an appropriate session keeping policy, but guidance given here can be used to steer policy toward performance goals.
+          <list style="hanging">
+            <t hangText="Persistent Session:">
+This policy preemptively establishes a single session to known entities in the network and keeps the session active using KEEPALIVEs.
+Benefits of this policy include reducing the total amount of TCP data needing to be exchanged for a set of transfers (assuming KEEPALIVE size is significantly smaller than transfer size), and allowing the session state to indicate peer connectivity.
+Drawbacks include wasted network resources when a session is mostly idle or when the network connectivity is inconsistent (which requires re-establishing failed sessions), and potential queueing issues when multiple transfers are requested simultaneously.
+This policy assumes that there is agreement between pairs of entities as to which of the peers will initiate sessions; if there is no such agreement, there is potential for duplicate sessions to be established between peers.
+            </t>
+            <t hangText="Ephemeral Sessions:">
+This policy only establishes a session when an outgoing transfer is needed to be sent.
+Benefits of this policy include not wasting network resources on sessions which are idle for long periods of time, and avoids queueing issues of a persistent session.
+Drawbacks include the TCP and TLS overhead of establish a new session for each transfer.
+This policy assumes that each entity can function in a passive role to listen for session requests from any peer which needs to send a transfer; when that is not the case the Polling behavior below needs to happen.
+This policy can be augmented to keep the session established as long as any transfers are queued.
+            </t>
+            <t hangText="Active-Only Polling Sessions:">
+When naming and/or addressing of one entity is variable (i.e. dynamically assigned IP address or domain name) or when firewall or routing rules prevent incoming TCP connections, that entity can only function in the active role.
+In these cases, sessions also need to be established when an incoming transfer is expected from a peer or based on a periodic schedule.
+This polling behavior causes inefficiencies compared to as-needed ephemeral sessions.
+            </t>
+          </list>
+Many other policies can be established in a TCPCL network between the two extremes of single persistent sessions and only ephemeral sessions.
+Different policies can be applied to each peer entity and to each bundle as it needs to be transferred (e.g for quality of service).
+Additionally, future session extension types can apply further nuance to session policies and policy negotiation.
+        </t>
       </section>
       <section anchor="sec-transfer-segmentation" title="Transfer Segmentation Policies">
         <t>
-          Each TCPCL session allows a negotiated transfer segmentation polcy
-          to be applied in each transfer direction.
-          A receiving node can set the Segment MRU in its SESS_INIT message to 
-          determine the largest acceptable segment size, and a transmitting
-          node can segment a transfer into any sizes smaller than the
-          receiver's Segment MRU.
-          It is a network administration matter to determine an appropriate
-          segmentation policy for entities operating TCPCL, but guidance given
-          here can be used to steer policy toward performance goals.
-          It is also advised to consider the Segment MRU in relation to 
-          chunking/packetization performed by TLS, TCP, and any intermediate
-          network-layer nodes.
+Each TCPCL session allows a negotiated transfer segmentation polcy to be applied in each transfer direction.
+A receiving node can set the Segment MRU in its SESS_INIT message to determine the largest acceptable segment size, and a transmitting node can segment a transfer into any sizes smaller than the receiver's Segment MRU.
+It is a network administration matter to determine an appropriate segmentation policy for entities operating TCPCL, but guidance given here can be used to steer policy toward performance goals.
+It is also advised to consider the Segment MRU in relation to chunking/packetization performed by TLS, TCP, and any intermediate network-layer nodes.
           <list style="hanging">
             <t hangText="Minimum Overhead:">
-              For a simple network expected to exchange relatively small bundles,
-              the Segment MRU can be set to be identical to the Transfer MRU which
-              indicates that all transfers can be sent with a single data
-              segment (i.e., no actual segmentation).
-              If the network is closed and all transmitters are known to follow
-              a single-segment transfer policy, then receivers can avoid the 
-              necessity of segment reassembly.
-              Because this CL operates over a TCP stream, which suffers from
-              a form of head-of-queue blocking between messages, while one
-              node is transmitting a single XFER_SEGMENT message it is not
-              able to transmit any XFER_ACK or XFER_REFUSE for any associated
-              received transfers.
+For a simple network expected to exchange relatively small bundles, the Segment MRU can be set to be identical to the Transfer MRU which indicates that all transfers can be sent with a single data segment (i.e., no actual segmentation).
+If the network is closed and all transmitters are known to follow a single-segment transfer policy, then receivers can avoid the necessity of segment reassembly.
+Because this CL operates over a TCP stream, which suffers from a form of head-of-queue blocking between messages, while one node is transmitting a single XFER_SEGMENT message it is not able to transmit any XFER_ACK or XFER_REFUSE for any associated received transfers.
             </t>
             <t hangText="Predictable Message Sizing:">
-              In situations where the maximum message size is desired to be 
-              well-controlled, the
-              Segment MRU can be set to the largest acceptable size (the 
-              message size less XFER_SEGMENT header size) and transmitters
-              can always segment a transfer into maximum-size chunks no larger
-              than the Segment MRU.
-              This guarantees that any single XFER_SEGMENT will not monopolize
-              the TCP stream for too long, which would prevent outgoing 
-              XFER_ACK and XFER_REFUSE associated with received transfers.
+In situations where the maximum message size is desired to be well-controlled, the Segment MRU can be set to the largest acceptable size (the message size less XFER_SEGMENT header size) and transmitters can always segment a transfer into maximum-size chunks no larger than the Segment MRU.
+This guarantees that any single XFER_SEGMENT will not monopolize the TCP stream for too long, which would prevent outgoing XFER_ACK and XFER_REFUSE associated with received transfers.
             </t>
             <t hangText="Dynamic Segmentation:">
-              Even after negotiation of a Segment MRU for each receiving node,
-              the actual transfer segmentation only needs to guarantee than
-              any individual segment is no larger than that MRU.
-              In a situation where TCP throughput is dynamic, the transfer
-              segmentation size can also be dynamic in order to control
-              message transmission duration.
+Even after negotiation of a Segment MRU for each receiving node, the actual transfer segmentation only needs to guarantee than any individual segment is no larger than that MRU.
+In a situation where TCP throughput is dynamic, the transfer segmentation size can also be dynamic in order to control message transmission duration.
             </t>
           </list>
-          Many other policies can be established in a TCPCL network between
-          the two extremes of minimum overhead (large MRU, single-segment) and 
-          predictable message sizing (small MRU, highly segmented).
-          Different policies can be applied to each transfer stream to and 
-          from any particular node.
-          Additionally, future header and transfer extension types can apply
-          further nuance to transfer policies and policy negotiation.
+Many other policies can be established in a TCPCL network between the two extremes of minimum overhead (large MRU, single-segment) and predictable message sizing (small MRU, highly segmented).
+Different policies can be applied to each transfer stream to and from any particular node.
+Additionally, future session extension and transfer extension types can apply further nuance to transfer policies and policy negotiation.
         </t>
       </section>
       <section anchor="sec-protocol-example" title="Example Message Exchange">
@@ -1002,7 +1000,7 @@ TCP Connecting
           some implementation-defined time duration after TCP connection is
           established, the entity SHALL close the TCP connection.
           Entities SHOULD choose a Contact Header reception timeout interval no 
-          longer than 10 minutes (600 seconds).
+          longer than one minute (60 seconds).
           Upon reception of a Contact Header, the passive entity SHALL transmit
           its Contact Header.
           The ordering of the Contact Header exchange allows the passive entity
@@ -1650,6 +1648,10 @@ TCP Connecting
               the TCPCL session to follow.
               The order and multiplicity of these Session Extension Items is
               significant, as defined in the associated type specification(s).
+              If the content of the Session Extension Items data disagrees with the
+              Session Extension Length (e.g., the last Item claims to use more octets
+              than are present in the Session Extension Length), the reception of the
+              SESS_INIT is considered to have failed.
             </t>
           </list>
         </t>
@@ -2018,6 +2020,10 @@ TCP Connecting
                 associated single transfer.
                 The order and multiplicity of these transfer extension items is
                 significant, as defined in the associated type specification(s).
+                If the content of the Transfer Extension Items data disagrees with the
+                Transfer Extension Length (e.g., the last Item claims to use more octets
+                than are present in the Transfer Extension Length), the reception of the
+                XFER_SEGMENT is considered to have failed.
               </t>
               <t hangText="Data length:">
                 A 64-bit unsigned integer indicating the number of octets in the
@@ -2487,7 +2493,8 @@ TCP Connecting
           <c>The node has run into some resource limit and cannot continue the session.</c>
         </texttable>
         <t>
-          A session termination MAY occur immediately after transmission of a
+          The earliest a TCPCL session termination MAY occur is immediately 
+          after transmission of a
           Contact Header (and prior to any further message transmit).
           This can, for example, be used to notify
           that the entity is currently not able or willing to communicate.
@@ -2495,13 +2502,11 @@ TCP Connecting
           before sending a SESS_TERM message.
         </t>
         <t>
+          Termination of the TCP connection MAY occur prior to receiving the Contact
+          header as discussed in <xref target="sec-tcp-connection" />.
           If reception of the Contact Header itself somehow fails (e.g., an invalid
           "magic string" is received), an entity SHALL close the TCP connection
           without sending a SESS_TERM message.
-          If the content of the Session Extension Items data disagrees with the
-          Session Extension Length (i.e., the last Item claims to use more octets
-          than are present in the Session Extension Length), the reception of the
-          SESS_INIT is considered to have failed.
         </t>
         <t>
           If a session is to be terminated before a protocol message
