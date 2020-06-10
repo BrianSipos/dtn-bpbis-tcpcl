@@ -69,7 +69,7 @@
     </author>
     <date year="2020" month="May" day="13" />
     <area>Transport</area>
-    <workgroup>Delay Tolerant Networking</workgroup>
+    <workgroup>Delay-Tolerant Networking</workgroup>
     <abstract>
       <t>
 This document describes a TCP-based convergence layer (TCPCL) for 
@@ -169,17 +169,10 @@ This version of TCPCL also includes security and extensibility mechanisms.
               between adjacent nodes in a routing sequence.
             </t>
             <t>
-              Policies or mechanisms for creating X.509 certificates; 
-              provisioning, deploying, or accessing certificates and private keys; 
-              deploying or accessing certificate revocation lists (CRLs); 
-              or configuring security parameters on an individual entity or
-              across a network.
+              Policies or mechanisms for issuing Public Key Infrastructure Using X.509 (PKIX) certificates; provisioning, deploying, or accessing certificates and private keys; deploying or accessing certificate revocation lists (CRLs); or configuring security parameters on an individual entity or across a network.
             </t>
             <t>
-              Uses of TLS which are not based on X.509 certificate 
-              authentication (see <xref target="sec-security-tlsnopki" />)
-              or in which authentication of both entities is not possible
-              (see <xref target="sec-security-tlsnoauth" />).
+              Uses of TLS which are not based on PKIX certificate authentication (see <xref target="sec-security-tlsnopki" />) or in which authentication of both entities is not possible (see <xref target="sec-security-tlsnoauth" />).
             </t>
           </list>
           Any TCPCL implementation requires a BP agent to perform those above 
@@ -823,6 +816,34 @@ TCP Connecting
 </artwork>
         </figure>
       </section>
+      <section anchor="sec-pkix-env" title="PKIX Environments and CA Policy">
+        <t>
+This specification gives requirements about how to use PKIX certificates issued by a Certificate Authority (CA), but does not define any mechanisms for how those certificates come to be.
+The requirements about TCPCL certificate use are broad to support two quite different PKIX environments:
+          <list style="hanging">
+            <t hangText="DTN-Aware CAs:">
+In the ideal case, the CA(s) issuing certificates for TCPCL entities are aware of the end use of the certificate, have a mechanism for verifying ownership of a Node ID, and are issuing certificates directly for that Node ID.
+In this environment, the ability to authenticate a peer entity Node ID directly avoids the need to authenticate a network name or address and then implicitly trust Node ID of the peer.
+The TCPCL authenticates the Node ID whenever possible and this is preferred over lower-level PKIX identifiers.
+            </t>
+            <t hangText="DTN-Ignorant CAs:">
+It is expected that Internet-scale "public" CAs will continue to focus on DNS names as the preferred PKIX identifier.
+There are large infrastructures already in-place for managing network-level authentication and protocols to manage identity verification in those environments <xref target="RFC8555" />.
+The TCPCL allows for this type of environment by authenticating a lower-level identifier for a peer and requiring the entity to trust that the Node ID given by the peer (during session initialization) is valid.
+This situation not ideal, as it allows vulnerabilities described in <xref target="sec-threat-node-impersonation" />, but still provides some amount of mutual authentication to take place for a TCPCL session.
+            </t>
+          </list>
+        </t>
+        <t>
+Even within a single TCPCL session, each entity may operate within different PKI environments and with different identifier limitations.
+The requirements related to identifiers in in a PKIX certificate are in <xref target="sec-tls-identification" />.
+        </t>
+        <t>
+It is important for interoperability that a TCPCL entity have its own security policy tailored to accommodate the peers with which it is expected to operate.
+A strict TLS security policy is appropriate for a private network with a single shared CA.
+Operation on the Internet (such as inter-site BP gateways) could trade more lax TCPCL security with the use of encrypted bundle encapsulation <xref target="I-D.ietf-dtn-bibect" /> to ensure strong bundle security.
+        </t>
+      </section>
       <section anchor="sec-session-keeping" title="Session Keeping Policies">
         <t>
 This specification gives requirements about how to initiate, sustain, and terminate a TCPCL session but does not impose any requirements on how sessions need to be managed by a BP agent.
@@ -1200,7 +1221,7 @@ Additionally, future session extension and transfer extension types can apply fu
         </t>
         <section anchor="sec-tls-identification" title="Entity Identification">
           <t>
-            The TCPCL uses the TLS for certificate exchange in both directions
+            The TCPCL uses TLS for certificate exchange in both directions
             to identify each entity and to allow each entity to authenticate 
             its peer.
             Each certificate can potentially identify multiple entities and
@@ -1209,48 +1230,24 @@ Additionally, future session extension and transfer extension types can apply fu
             (as described in later sections) for the entity which presents it.
           </t>
           <t>
-            The public key infrastructure (PKI)
-            Certificate Authority (CA) or authorities available
-            within a network are likely not controlled by the certificate
-            end users and CA policies vary widely between networks and 
-            PKI management tools.
-            For this reason, the TCPCL defines a prioritized list of what
-            a certificate can identify about a TCPCL entity:
+Because the PKIX environment of each TCPCL entity are likely not controlled by the certificate end users (see <xref target="sec-pkix-env" />), the TCPCL defines a prioritized list of what a certificate can identify about a TCPCL entity:
             <list style="hanging">
               <t hangText="Node ID:">
-                The ideal certificate identity is the Node ID of the entity
-                using the NODE-ID definition below.
-                When the Node ID is identified, there is no need for any
-                lower-level identification to take place.
+The ideal certificate identity is the Node ID of the entity using the NODE-ID definition below.
+When the Node ID is identified, there is no need for any lower-level identification to take place.
               </t>
-              <t hangText="Host Name:">
-                If CA policy forbids a certificate to contain an arbitrary 
-                NODE-ID but allows a DNS-ID to be identified then one or more
-                stable host names can be identified in the certificate.
-                The use of wildcard DNS-ID is discouraged due to the 
-                complex rules for matching and dependence on implementation
-                support for wildcard matching.
+              <t hangText="DNS Name:">
+If CA policy forbids a certificate to contain an arbitrary NODE-ID but allows a DNS-ID to be identified then one or more stable host names can be identified in the certificate.
+The use of wildcard DNS-ID is discouraged due to the complex rules for matching and dependence on implementation support for wildcard matching (see Section 6.4.3 of <xref target="RFC6125" />).
               </t>
               <t hangText="Network Address:">
-                If no stable host name is available but a stable network address
-                is available and CA policy allows a certificate to contain a
-                NETWORK-ID (as defined below)
-                then one or more network addresses can be identified in the
-                certificate.
-                There is no wildcard-type address matching defined, so this
-                is the least robust
+If no stable host name is available but a stable network address is available and CA policy allows a certificate to contain a NETWORK-ID (as defined below) then one or more network addresses can be identified in the certificate.
               </t>
             </list>
-            When only a DNS-ID or NETWORK-ID can be identified by a certificate, it is
-            implied that an entity which authenticates using that certificate
-            is trusted to provide a valid Node ID in its SESS_INIT; the
-            certificate itself does not actually authenticate that Node ID.
+When only a DNS-ID or NETWORK-ID can be identified by a certificate, it is implied that an entity which authenticates using that certificate is trusted to provide a valid Node ID in its SESS_INIT; the certificate itself does not actually authenticate that Node ID.
           </t>
           <t>
-            The RECOMMENDED security policy of an entity is to validate a peer
-            which authenticates its Node ID regardless of an authenticated 
-            host name or address, and only consider the host/address 
-            authentication in the absence of an authenticated Node ID.
+The RECOMMENDED security policy of an entity is to validate a peer which authenticates its Node ID regardless of an authenticated host name or address, and only consider the host/address authentication in the absence of an authenticated Node ID.
           </t>
           <t>
             This specification defines a NODE-ID of a certificate as being 
@@ -1362,7 +1359,7 @@ Additionally, future session extension and transfer extension types can apply fu
         </section>
         <section anchor="sec-tls-authentication" title="TLS Authentication">
           <t>
-            Using X.509 certificates exchanged during the TLS handshake, each
+            Using PKIX certificates exchanged during the TLS handshake, each
             of the entities can attempt to authenticate its peer Node ID directly
             or authenticate the peer host name or network address.
             The Node ID exchanged in the Session Initialization is likely to
@@ -2676,12 +2673,12 @@ establishing new TCPCL/TLS session
 are alternatives to limit session key use.
         </t>
       </section>
-      <section title="Threat: BP Node Impersonation">
+      <section anchor="sec-threat-node-impersonation" title="Threat: BP Node Impersonation">
         <t>
 The certificates exchanged by TLS enable authentication of peer
 host name and Node ID, but it is possible that a peer either not
 provide a valid certificate or that the certificate does not validate
-either the host name or Node ID of the peer.
+either the host name or Node ID of the peer (see <xref target="sec-pkix-env" />).
 Having a CA-validated certificate does not alone guarantee the identity
 of the network host or BP node from which the certificate is provided;
 additional validation procedures in <xref target="sec-tls-handshake" />
@@ -2695,9 +2692,6 @@ an invalid node.
 Especially in DTN environments, network names and addresses of nodes
 can be time-variable so binding a certificate to a Node ID is a more 
 stable identity.
-Trusting an authenticated host name can be feasible on a network
-secured by a private CA but is not advisable on the Internet when
-using a variety of public CAs.
         </t>
         <t>
 Node ID validation ensures that the peer to which a bundle
@@ -2761,11 +2755,8 @@ effectively denying the use of the overlying TCPCL session.
       </section>
       <section anchor="sec-security-tlsalt" title="Alternate Uses of TLS">
         <t>
-This specification makes use of X.509 PKI
-certificate validation and authentication within TLS.
-There are alternate uses of TLS which are not necessarily incompatible with
-the security goals of this specification, but are outside of the scope of this 
-document.
+This specification makes use of PKIX certificate validation and authentication within TLS.
+There are alternate uses of TLS which are not necessarily incompatible with the security goals of this specification, but are outside of the scope of this document.
 The following subsections give examples of alternate TLS uses.
         </t>
         <section anchor="sec-security-tlsnoauth" title="TLS Without Authentication">
@@ -3225,7 +3216,9 @@ Transfer IDs within a session.
       <?rfc include="reference.RFC.7435.xml"?>
       <?rfc include="reference.RFC.7457.xml"?>
       <?rfc include="reference.RFC.7942.xml"?>
+      <?rfc include="reference.RFC.8555.xml"?>
       <?rfc include="reference.I-D.ietf-dtn-bpsec.xml"?>
+      <?rfc include="reference.I-D.ietf-dtn-bibect.xml"?>
       <reference anchor="github-dtn-bpbis-tcpcl" target="https://github.com/BSipos-RKF/dtn-bpbis-tcpcl/">
         <front>
           <title>TCPCL Example Implementation</title>
@@ -3238,12 +3231,9 @@ Transfer IDs within a session.
         </front>
       </reference>
     </references>
-
     <section title="Significant changes from RFC7242">
       <t>
-        The areas in which changes from
-        <xref target="RFC7242" />
-        have been made to existing headers and messages are:
+The areas in which changes from <xref target="RFC7242" /> have been made to existing headers and messages are:
         <list style="symbols">
           <t>Split Contact Header into pre-TLS protocol negotiation and SESS_INIT parameter negotiation. The Contact Header is now fixed-length.</t>
           <t>Changed Contact Header content to limit number of negotiated options.</t>
@@ -3262,9 +3252,7 @@ Transfer IDs within a session.
         </list>
       </t>
       <t>
-        The areas in which extensions from
-        <xref target="RFC7242" />
-        have been made as new messages and codes are:
+The areas in which extensions from <xref target="RFC7242" /> have been made as new messages and codes are:
         <list style="symbols">
           <t>Added contact negotiation failure SESS_TERM reason code.</t>
           <t>Added MSG_REJECT message to indicate an unknown or unhandled message was received.</t>

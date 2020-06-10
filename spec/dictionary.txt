@@ -49,6 +49,7 @@ PCH
 pipelining
 Pipelining
 PKI
+PKIX
 plaintext
 polcy
 pre
