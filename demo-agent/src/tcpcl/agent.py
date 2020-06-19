@@ -172,6 +172,20 @@ class Agent(dbus.service.Object):
         if self._on_stop:
             self._on_stop()
 
+    def exec_loop(self):
+        ''' Run this agent in an event loop.
+        The on_stop callback is replaced to quit the event loop.
+        '''
+        eloop = glib.MainLoop()
+        self.set_on_stop(eloop.quit)
+        self.__logger.info('Starting event loop')
+        try:
+            eloop.run()
+        except KeyboardInterrupt:
+            if not self.shutdown():
+                # wait for graceful shutdown
+                eloop.run()
+
     @dbus.service.method(DBUS_IFACE, in_signature='si')
     def listen(self, address, port):
         ''' Begin listening for incoming connections and defer handling
@@ -245,19 +259,6 @@ class Agent(dbus.service.Object):
         '''
         return self._path_to_handler[path]
 
-    def exec_loop(self):
-        ''' Run this agent in an event loop.
-        The on_stop callback is replaced to quit the event loop.
-        '''
-        eloop = glib.MainLoop()
-        self.set_on_stop(eloop.quit)
-        try:
-            eloop.run()
-        except KeyboardInterrupt:
-            if not self.shutdown():
-                # wait for graceful shutdown
-                eloop.run()
-
 
 def str2bool(val):
     ''' Require an option value to be boolean text.
@@ -288,6 +289,11 @@ def main(*argv):
     parser.add_argument('--log-level', dest='log_level', default='info',
                         metavar='LEVEL',
                         help='Console logging lowest level displayed.')
+    parser.add_argument('--enable-test', type=str, default=[],
+                        action='append', choices=['private_extensions'],
+                        help='Names of test modes enabled')
+    parser.add_argument('--bus-service', type=str,
+                        help='D-Bus service name')
     subp = parser.add_subparsers(dest='action', help='action')
     parser.add_argument('--nodeid', type=uristr,
                         help='This entity\'s Node ID')
@@ -295,8 +301,6 @@ def main(*argv):
                         help='Keepalive time in seconds')
     parser.add_argument('--idle', type=int,
                         help='Idle time in seconds')
-    parser.add_argument('--bus-service', type=str,
-                        help='D-Bus service name')
     parser.add_argument('--tls-disable', dest='tls_enable', default=True, action='store_false',
                         help='Disallow use of TLS on this endpoint')
     parser.add_argument('--tls-version', type=str,
@@ -315,9 +319,6 @@ def main(*argv):
                         help='Allowed TLS cipher filter')
     parser.add_argument('--stop-on-close', default=False, action='store_true',
                         help='Stop the agent when connection is closed')
-    parser.add_argument('--enable-test', type=str, default=[],
-                        action='append', choices=['private_extensions'],
-                        help='Allowed TLS cipher filter')
 
     parser_listen = subp.add_parser('listen',
                                     help='Listen for TCP connections')
@@ -334,7 +335,6 @@ def main(*argv):
                              help='Host TCP port')
 
     args = parser.parse_args(argv[1:])
-
     logging.basicConfig(level=args.log_level.upper())
     logging.debug('command args: %s', args)
 
@@ -344,7 +344,6 @@ def main(*argv):
     config = Config()
 
     config.enable_test = frozenset(args.enable_test)
-    config.stop_on_close = args.stop_on_close
     if args.bus_service:
         bus_serv = dbus.service.BusName(
             bus=config.bus_conn, name=args.bus_service, do_not_queue=True)
@@ -387,6 +386,7 @@ def main(*argv):
 
     config.nodeid = args.nodeid
     config.require_tls = args.tls_require
+    config.stop_on_close = args.stop_on_close
 
     if args.keepalive:
         config.keepalive_time = args.keepalive

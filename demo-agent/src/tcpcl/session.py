@@ -1246,9 +1246,8 @@ class ContactHandler(Messenger, dbus.service.Object):
     def send_bundle_data(self, data):
         ''' Send bundle data directly.
         '''
-
-        # byte array to str
-        data = b''.join([chr(val) for val in data])
+        # byte array to bytes
+        data = b''.join([bytes([val]) for val in data])
 
         item = BundleItem()
         item.file = BytesIO(data)
