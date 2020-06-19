@@ -19,14 +19,14 @@ PYTHONPATH=demo-agent/src
 
 An insecure session on the `localhost` address can be established with commands:
 ```
-python3 -m tcpcl.agent --bus-service=tcpcl.Server --nodeid=dtn:server --tls-disable listen --address=localhost
-python3 -m tcpcl.agent --bus-service=tcpcl.Client --nodeid=dtn:client --tls-disable --stop-on-close connect localhost
+python3 -m tcpcl.agent --bus-service=dtn.tcpcl.Server --nodeid=dtn:server --tls-disable listen --address=localhost
+python3 -m tcpcl.agent --bus-service=dtn.tcpcl.Client --nodeid=dtn:client --tls-disable --stop-on-close connect localhost
 ```
 
 To use local test PKI hierarchy use:
 ```
-python3 -m tcpcl.agent --bus-service=tcpcl.Server --nodeid=dtn:server --tls-ca=testpki/ca.crt --tls-key=testpki/server.key --tls-cert=testpki/server.crt listen --address=localhost
-python3 -m tcpcl.agent --bus-service=tcpcl.Client --nodeid=dtn:client --tls-ca=testpki/ca.crt --tls-key=testpki/client.key --tls-cert=testpki/client.crt --tls-version=1.2 --tls-cipher AES256-GCM-SHA384 --stop-on-close connect localhost
+python3 -m tcpcl.agent --bus-service=dtn.tcpcl.Server --nodeid=dtn:server --tls-ca=testpki/ca.crt --tls-key=testpki/server.key --tls-cert=testpki/server.crt listen --address=localhost
+python3 -m tcpcl.agent --bus-service=dtn.tcpcl.Client --nodeid=dtn:client --tls-ca=testpki/ca.crt --tls-key=testpki/client.key --tls-cert=testpki/client.crt --tls-version=1.2 --tls-cipher AES256-GCM-SHA384 --stop-on-close connect localhost
 ```
 this also forces a ciphersuite with which tools like Wireshark can use the private key to decipher the encrypted data.
 
@@ -106,12 +106,15 @@ MODULE_VERS=$(pkg-config --variable=VERSION_RELEASE wireshark)
 PLUGIN_PATH="${HOME}/.local/lib/wireshark/plugins/${MODULE_VERS}"
 fi
 mkdir -p wireshark-plugin/build
-pushd wireshark-plugin/build/
-cmake .. -DCMAKE_BUILD_TYPE=Debug -DINSTALL_MODULE_PATH=${PLUGIN_PATH}/epan/ -G Ninja
-cmake --build . --target install
-popd
+(cd wireshark-plugin/build/ && cmake .. -DCMAKE_BUILD_TYPE=Debug -DINSTALL_MODULE_PATH=${PLUGIN_PATH}/epan/ -G Ninja)
+cmake --build wireshark-plugin/build --target install
 ```
 
 At this point the two modules "libtcpclv4" and "libbpv7" will be installed in the wireshark plugin path and will be loaded at next wireshark application startup.
 
 The protocol names registered are "tcpclv4" and "bpv7", each of which has some set of parameters and field names.
+
+Running wireshark to immediately start capturing TCPCL data on interface "lo" (local loopback) and TCP port 4556 is the command:
+```
+wireshark -i lo -f 'tcp port 4556' -k
+```

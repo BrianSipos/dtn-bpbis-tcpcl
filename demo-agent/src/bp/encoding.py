@@ -310,10 +310,10 @@ class Bundle(CborArray):
         for blk in self.blocks:
             if isinstance(blk.payload, AdminRecord):
                 self.primary.bundle_flags |= PrimaryBlock.Flag.PAYLOAD_IS_ADMIN
-                blk.type_code = 1
-                blk.data = bytes(blk.payload)
+                blk.overloaded_fields['type_code'] = 1
+                blk.overloaded_fields['data'] = bytes(blk.payload)
 
-        return AbstractBlock.self_build(self, field_pos_list)
+        return CborArray.self_build(self, field_pos_list)
 
     def post_dissect(self, s):
         # Special handling for admin payload
@@ -370,47 +370,5 @@ class AdminRecord(CborArray):
 
     fields_desc = (
         UintField('type_code'),
-        # Type-specific data as scapy payload injected into this array
-        # as a single value, not appended to the array
+        CborField('content')
     )
-
-    def do_build_payload(self):
-        # Guarantee a two-element self array
-        if isinstance(self.payload, scapy.packet.NoPayload):
-            pay = [None]
-        else:
-            pay = [self.payload.build()]
-        return pay
-
-    def do_dissect_payload(self, s):
-        # Remove admin array wrap
-        s = s[0]
-        return CborArray.do_dissect_payload(self, s)
-
-    @staticmethod
-    def bind_type(type_code):
-        ''' Bind a admin record type packet-class handler.
-        :param int type_code: The record type code to bind as.
-        '''
-
-        def func(cls):
-            scapy.packet.bind_layers(AdminRecord, cls, type_code=type_code)
-            return cls
-
-        return func
-
-
-# Special case for some unknown item
-AdminRecord.bind_type(None)(CborItem)
-
-
-@AdminRecord.bind_type(1)
-class StatusReport(CborArray):
-    field_desc = (
-        CborField('status_info'),
-        CborField('reason_code'),
-        EidField('source'),
-        UintField('fragment_offset', default=0),
-        UintField('total_app_data_len', default=0),
-    )
-

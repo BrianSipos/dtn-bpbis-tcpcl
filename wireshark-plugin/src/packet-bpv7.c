@@ -1584,7 +1584,7 @@ static int dissect_bp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void 
     while (TRUE) {
         if (offset >= (gint)buflen) {
             proto_item *item_break = proto_tree_add_item(tree_bundle, hf_bundle_break, tvb, offset, 0, ENC_NA);
-            expert_add_info_format(pinfo, item_break, &ei_cbor_invalid, "Array break missing");
+            expert_add_info_format(pinfo, item_break, &ei_array_wrong_size, "Array break missing");
             break;
         }
         chunk = bp_scan_cbor_chunk(tvb, offset);
