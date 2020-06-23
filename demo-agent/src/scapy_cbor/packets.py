@@ -5,7 +5,7 @@ import logging
 import cbor2
 import scapy.packet
 from scapy.config import conf
-from .fields import (CborField)
+from .fields import (UintField, CborField)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -14,12 +14,16 @@ class AbstractCborStruct(scapy.packet.Packet):
     ''' An abstract data packet, which encodes as a CBOR item
     of arbitrary value.
 
-    Complex inner types mean this packet is always explicit.
+    Complex inner types mean this packet is never iterable for multiple values.
     '''
 
-    def __init__(self, *args, **kwargs):
-        scapy.packet.Packet.__init__(self, *args, **kwargs)
-        self.explicit = True
+    def __iterlen__(self):
+        # no iteration
+        return 1
+
+    def __iter__(self):
+        # no iteration
+        yield self
 
     def __bytes__(self):
         ''' Encode the whole bundle as a bytestring.
@@ -79,7 +83,7 @@ class CborArray(AbstractCborStruct):
             (s, data_val) = defn.getfield(self, s)
             #LOGGER.info('CborArray.do_dissect name=%s, data_val=%s', defn.name, data_val)
             if s != orig_s:
-                self.setfieldval(defn.name, data_val)
+                self.fields[defn.name] = data_val
 
         return s
 
@@ -90,14 +94,22 @@ class CborItem(AbstractCborStruct):
     or padding is allowed.
 
     Only one field is allowed with an arbitrary name.
+    The base class field name is 'item'.
     '''
+
+    fields_desc = [
+        CborField('item', default=None),
+    ]
 
     def self_build(self, field_pos_list=None):
         if len(self.fields_desc) != 1:
             if conf.debug_dissector:
                 raise RuntimeError('CborItem must have exactly one field')
             return None
-        return self.getfieldval(self.fields_desc[0].name)
+
+        defn = self.fields_desc[0]
+        data_val = self.getfieldval(defn.name)
+        return defn.i2m(self, data_val)
 
     def post_build(self, pkt, pay):
         if pay == b'':
@@ -118,4 +130,50 @@ class CborItem(AbstractCborStruct):
             if conf.debug_dissector:
                 raise RuntimeError('CborItem must have exactly one field')
             return
-        self.setfieldval(self.fields_desc[0].name, s)
+
+        defn = self.fields_desc[0]
+        self.fields[defn.name] = defn.m2i(self, s)
+
+
+class TypeValueHead(CborArray):
+    ''' A pattern for an array encoding which contains exactly two values.
+    This is analogous to a type-length-value (TLV) encoding for CBOR.
+    The type is a field and the value is captured in the payload of this
+    packet.
+    The default payload for unknown types is a :py:cls:`CborItem`.
+    '''
+
+    fields_desc = (
+        UintField('type_code'),
+    )
+
+    def do_build_payload(self):
+        # Wrap the payload as an array to append
+        if isinstance(self.payload, scapy.packet.NoPayload):
+            s = None
+        else:
+            s = CborArray.do_build_payload(self)
+        return [s]
+
+    def do_dissect_payload(self, s):
+        # Extract the second item as the payload
+        s = s[0]
+        if not s:
+            self.add_payload(CborItem(item=s))
+        CborArray.do_dissect_payload(self, s)
+
+    def default_payload_class(self, payload):
+        return CborItem
+
+    @classmethod
+    def bind_type(cls, type_code):
+        ''' Bind a block-type-specific packet-class handler.
+
+        :param int type_code: The type to bind to the payload class.
+        '''
+
+        def func(othercls):
+            scapy.packet.bind_layers(cls, othercls, type_code=type_code)
+            return othercls
+
+        return func

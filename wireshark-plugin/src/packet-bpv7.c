@@ -646,7 +646,7 @@ gboolean bp_bundle_ident_equal(gconstpointer a, gconstpointer b) {
     const bp_bundle_ident_t *aobj = a;
     const bp_bundle_ident_t *bobj = b;
     return (
-        g_str_equal(aobj->src->uri, bobj->src->uri)
+        aobj->src->uri && bobj->src->uri && g_str_equal(aobj->src->uri, bobj->src->uri)
         && (aobj->ts->time.dtntime == bobj->ts->time.dtntime)
         && (aobj->ts->seqno == bobj->ts->seqno)
         && optional_uint64_equal(aobj->frag_offset, bobj->frag_offset)
@@ -657,7 +657,7 @@ gboolean bp_bundle_ident_equal(gconstpointer a, gconstpointer b) {
 guint bp_bundle_ident_hash(gconstpointer key) {
     const bp_bundle_ident_t *obj = key;
     return (
-        g_str_hash(obj->src->uri)
+        g_str_hash(obj->src->uri ? obj->src->uri : "")
         ^ g_int64_hash(&(obj->ts->time.dtntime))
         ^ g_int64_hash(&(obj->ts->seqno))
     );
@@ -1721,17 +1721,31 @@ static int dissect_payload_admin(tvbuff_t *tvb, packet_info *pinfo, proto_tree *
         proto_item_append_text(item_rec, ": %s", val64_to_str(*type_code, admin_type_vals, "type %" PRIu64));
         admin_dissect = dissector_get_uint_handle(admin_dissectors, *type_code);
     }
-    if (!admin_dissect) {
-        offset += call_data_dissector(tvb, pinfo, tree_rec);
-    }
-    else {
-        tvbuff_t *tvb_record = tvb_new_subset_remaining(tvb, offset);
-        const gint sublen = call_dissector_with_data(admin_dissect, tvb_record, pinfo, tree_rec, context);
+    tvbuff_t *tvb_record = tvb_new_subset_remaining(tvb, offset);
+    gint sublen = 0;
+    if (admin_dissect) {
+        sublen = call_dissector_with_data(admin_dissect, tvb_record, pinfo, tree_rec, context);
         if ((sublen < 0) || ((guint)sublen < tvb_captured_length(tvb_record))) {
             expert_add_info(pinfo, item_type, &ei_block_partial_decode);
         }
-        offset += sublen;
     }
+    if (sublen == 0) {
+        dissector_table_t dissect_media = find_dissector_table("media_type");
+        if (dissect_media) {
+            sublen = dissector_try_string(
+                dissect_media,
+                "application/cbor",
+                tvb_record,
+                pinfo,
+                tree_rec,
+                NULL
+            );
+        }
+    }
+    if (sublen == 0) {
+        sublen = call_data_dissector(tvb_record, pinfo, tree_rec);
+    }
+    offset += sublen;
 
     proto_item_set_len(item_rec, offset);
     return offset;

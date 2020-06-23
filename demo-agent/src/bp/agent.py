@@ -10,6 +10,7 @@ from gi.repository import GLib as glib
 import cbor2
 #from multiprocessing import Process
 #import tcpcl.agent
+from scapy.packet import fuzz
 from . import encoding
 
 LOGGER = logging.getLogger(__name__)
@@ -170,26 +171,34 @@ class Agent(dbus.service.Object):
         sess_path = agent_obj.connect(address, port)
         sess_obj = self._config.bus_conn.get_object(servname, sess_path)
 
+        cts = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
+
         bdl = BundleContainer()
         bdl.bundle.primary = encoding.PrimaryBlock(
             bundle_flags=encoding.PrimaryBlock.Flag.PAYLOAD_IS_ADMIN,
             destination='dtn:server',
             source='dtn:client',
-            creation_timestamp=[datetime.datetime.utcnow(), 0],
+            create_ts=encoding.Timestamp(time=cts),
             crc_type=2,
         )
         bdl.bundle.blocks = [
             encoding.CanonicalBlock(
                 block_num=2,
-            ) / encoding.HopCountBlockData(limit=5, count=0),
+            ) / encoding.HopCountBlock(limit=5, count=0),
             encoding.CanonicalBlock(
-                type_code=1,
                 block_num=1,
                 crc_type=2,
-                data=cbor2.dumps([
-                    1,
-                    ['hi', 3]
-                ]),
+            ) / encoding.AdminRecord(
+            ) / encoding.StatusReport(
+                status=encoding.StatusInfoArray(
+                    received=encoding.StatusInfo(
+                        status=True,
+                        at=100,
+                    ),
+                ),
+                reason_code=0,
+                subj_source='dtn:none',
+                subj_ts=encoding.Timestamp(),
             ),
         ]
         bdl.bundle.update_all_crc()
@@ -200,11 +209,11 @@ class Agent(dbus.service.Object):
         sess_obj.terminate(0)
 
 
-def main(*argv):
+def main():
     ''' Agent command entry point. '''
     from dbus.mainloop.glib import DBusGMainLoop
 
-    parser = argparse.ArgumentParser(argv[0])
+    parser = argparse.ArgumentParser()
     parser.add_argument('--log-level', dest='log_level', default='info',
                         metavar='LEVEL',
                         help='Console logging lowest level displayed.')
@@ -214,7 +223,7 @@ def main(*argv):
     parser.add_argument('--bus-service', type=str,
                         help='D-Bus service name')
 
-    args = parser.parse_args(argv[1:])
+    args = parser.parse_args()
     logging.basicConfig(level=args.log_level.upper())
     logging.debug('command args: %s', args)
 
@@ -236,4 +245,4 @@ def main(*argv):
 
 
 if __name__ == '__main__':
-    sys.exit(main(*sys.argv))
+    sys.exit(main())

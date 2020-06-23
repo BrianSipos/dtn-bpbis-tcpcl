@@ -2,7 +2,8 @@
 '''
 import logging
 import cbor2
-from scapy import fields, volatile
+import scapy.fields
+from scapy import volatile
 
 LOGGER = logging.getLogger(__name__)
 
@@ -11,7 +12,7 @@ class DecodeError(RuntimeError):
     ''' Signal an error in CBOR decoding. '''
 
 
-class CborField(fields.Field):
+class CborField(scapy.fields.Field):
     ''' Abstract base type.
 
     :param str name: The unique field name.
@@ -19,17 +20,19 @@ class CborField(fields.Field):
     '''
 
     def __init__(self, name, default=None):
-        fields.Field.__init__(self, name, default, '!s')
+        scapy.fields.Field.__init__(self, name, default, '!s')
 
     def addfield(self, pkt, s, val):
         ''' Augmented signature for `s` as CBOR array instead of bytes.
         '''
+        s = list(s)
         s.append(self.i2m(pkt, val))
         return s
 
     def getfield(self, pkt, s):
         ''' Augmented signature for `s` as CBOR array instead of bytes.
         '''
+        s = list(s)
         item = s.pop(0)
         val = self.m2i(pkt, item)
         return (s, val)
@@ -55,7 +58,109 @@ class CborField(fields.Field):
         return val
 
 
-ConditionalField = fields.ConditionalField
+ConditionalField = scapy.fields.ConditionalField
+
+
+class OptionalField(object):
+    ''' Optional based on the contents of the source data.
+
+    :param missing: Values which will be treated as non-values and omitted.
+        The default is None and cbor2.undefined.
+    '''
+    __slots__ = (
+        'fld',
+        'missing',
+    )
+
+    def __init__(self, fld, missing=None):
+        self.fld = fld
+        if missing is None:
+            missing = (None, cbor2.undefined)
+        self.missing = frozenset(missing)
+
+    def getfield(self, pkt, s):
+        if s:
+            return self.fld.getfield(pkt, s)
+        else:
+            return s, None
+
+    def addfield(self, pkt, s, val):
+        if val not in self.missing:
+            return self.fld.addfield(pkt, s, val)
+        else:
+            return s
+
+    def __getattr__(self, attr):
+        return getattr(self.fld, attr)
+
+
+class ArrayWrapField(CborField):
+    ''' Wrap a field with an array container.
+    '''
+    __slots__ = (
+        'fld',
+    )
+
+    def __init__(self, fld):
+        CborField.__init__(self, fld.name, fld.default)
+        self.fld = fld
+
+    def getfield(self, pkt, s):
+        (s, lst) = CborField.getfield(self, pkt, s)
+        (rem, val) = self.fld.getfield(pkt, lst)
+        if rem:
+            pass
+        return s, val
+
+    def addfield(self, pkt, s, val):
+        lst = self.fld.addfield(pkt, [], val)
+        s = CborField.addfield(self, pkt, s, lst)
+        return s
+
+    def __getattr__(self, attr):
+        return getattr(self.fld, attr)
+
+
+class FieldListField(CborField):
+    ''' Similar to :py:cls:`scapy.fields.FieldListField`.
+    '''
+    __slots__ = (
+        'fld',
+    )
+    islist = 1
+
+    def __init__(self, name, default, fld):
+        if default is None:
+            default = []  # Create a new list for each instance
+        CborField.__init__(self, name, default)
+        self.fld = fld
+
+    def i2m(self, pkt, val):
+        if val is None:
+            val = []
+        return val
+
+    def any2i(self, pkt, x):
+        if not isinstance(x, list):
+            return [self.fld.any2i(pkt, x)]
+        else:
+            return [self.fld.any2i(pkt, e) for e in x]
+
+    def i2repr(self, pkt, x):
+        return "[%s]" % ", ".join(self.fld.i2repr(pkt, v) for v in x)
+
+    def addfield(self, pkt, s, val):
+        val = self.i2m(pkt, val)
+        for v in val:
+            s = self.fld.addfield(pkt, s, v)
+        return s
+
+    def getfield(self, pkt, s):
+        val = []
+        while s:
+            (s, v) = self.fld.getfield(pkt, s)
+            val.append(v)
+        return s, val
 
 
 class PacketField(CborField):
@@ -107,6 +212,26 @@ class PacketListField(PacketField):
             subitem = self.i2m(pkt, obj)
             s.append(subitem)
         return s
+
+
+class BoolField(CborField):
+    ''' A field which must be 'bool' type.
+    '''
+
+    def i2m(self, pkt, val):
+        try:
+            return bool(val)
+        except TypeError:
+            return None
+
+    def m2i(self, pkt, val):
+        try:
+            return bool(val)
+        except TypeError:
+            return None
+
+    def randval(self):
+        return volatile.RandChoice(False, True)
 
 
 class UintField(CborField):
@@ -189,6 +314,12 @@ class BstrField(CborField):
 
     def __init__(self, name, default=None):
         CborField.__init__(self, name, default)
+
+    def i2repr(self, pkt, x):
+        if x is None:
+            return None
+        from scapy.utils import repr_hex
+        return "h'{}'".format(repr_hex(x))
 
     def i2m(self, pkt, val):
         try:

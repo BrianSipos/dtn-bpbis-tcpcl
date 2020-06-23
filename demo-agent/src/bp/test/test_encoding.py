@@ -5,6 +5,7 @@ import cbor2
 import scapy.packet
 from scapy.config import conf
 from bp.encoding import *
+from binascii import (hexlify, unhexlify)
 
 #: Encoded "dtn:none" URI
 DTN_NONE = [int(EidField.TypeCode.dtn), 0]
@@ -39,43 +40,51 @@ class TestEidField(unittest.TestCase):
         )
 
 
-class TestTimestampField(unittest.TestCase):
+class TestDtnTimeField(unittest.TestCase):
 
     def testEncode(self):
-        fld = TimestampField('field')
+        fld = DtnTimeField('field')
 
-        item = [
-            1000,
-            5
-        ]
         self.assertEqual(
-            fld.i2m(None, item),
-            item
+            fld.i2m(None, 1000),
+            1000
         )
 
         lst = []
-        lst = fld.addfield(None, lst, item)
+        lst = fld.addfield(None, lst, 1000)
         self.assertEqual(
             lst,
-            [item]
+            [1000]
         )
 
     def testDecode(self):
-        fld = TimestampField('field')
+        fld = DtnTimeField('field')
 
-        item = [
-            1000,
-            5
-        ]
         self.assertEqual(
-            fld.m2i(None, item),
-            item
+            fld.m2i(None, 1000),
+            1000
         )
 
-        lst = [item]
+        lst = [1000]
         (lst, val) = fld.getfield(None, lst)
         self.assertEqual(lst, [])
-        self.assertEqual(val, item)
+        self.assertEqual(val, 1000)
+
+    def testHumanEncode(self):
+        fld = DtnTimeField('field')
+
+        self.assertEqual(
+            fld.i2h(None, 1000),
+            '2000-01-01T00:16:40+00:00',
+        )
+
+    def testHumanDecode(self):
+        fld = DtnTimeField('field')
+
+        self.assertEqual(
+            fld.h2i(None, '2000-01-01T00:16:40+00:00'),
+            1000,
+        )
 
 
 class BaseTestPacket(unittest.TestCase):
@@ -92,23 +101,67 @@ class BaseTestPacket(unittest.TestCase):
         return pkt
 
 
+class TestTimestamp(BaseTestPacket):
+
+    def testEncodeDefault(self):
+        pkt = Timestamp()
+        item = [
+            0,
+            0,
+        ]
+        self.assertEqual(self._encode(pkt), item)
+
+    def testDecodeDefault(self):
+        item = [
+            0,
+            0,
+        ]
+        blk = self._decode(Timestamp, item)
+        fields = dict(
+            time=0,
+            seqno=0,
+        )
+        self.assertEqual(blk.fields, fields)
+
+    def testEncodeValue(self):
+        pkt = Timestamp(
+            time='2000-01-01T00:16:40+00:00',
+            seqno=3,
+        )
+        item = [
+            1000,
+            3,
+        ]
+        self.assertEqual(self._encode(pkt), item)
+
+    def testDecodeValue(self):
+        item = [
+            1000,
+            3,
+        ]
+        blk = self._decode(Timestamp, item)
+        fields = dict(
+            time=1000,
+            seqno=3,
+        )
+        self.assertEqual(blk.fields, fields)
+
+
 class TestPrimaryBlock(BaseTestPacket):
 
     def testEncodeDefault(self):
         blk = PrimaryBlock()
-        self.assertEqual(
-            self._encode(blk),
-            [
-                7,
-                0,
-                0,
-                DTN_NONE,
-                DTN_NONE,
-                DTN_NONE,
-                [0, 0],
-                0,
-            ]
-        )
+        item = [
+            7,
+            0,
+            0,
+            DTN_NONE,
+            DTN_NONE,
+            DTN_NONE,
+            [0, 0],
+            0,
+        ]
+        self.assertEqual(self._encode(blk), item)
 
     def testEncodeNofragment(self):
         blk = PrimaryBlock(
@@ -116,7 +169,7 @@ class TestPrimaryBlock(BaseTestPacket):
             destination='dtn://dst/',
             source='dtn://src/',
             report_to='dtn://rpt/',
-            creation_timestamp=[1000, 3],
+            create_ts=Timestamp(time=1000, seqno=5),
             lifetime=300,
         )
         self.assertEqual(
@@ -128,7 +181,7 @@ class TestPrimaryBlock(BaseTestPacket):
                 [EidField.TypeCode.dtn, '//dst/'],
                 [EidField.TypeCode.dtn, '//src/'],
                 [EidField.TypeCode.dtn, '//rpt/'],
-                [1000, 3],
+                [1000, 5],
                 300,
                 None,
             ]
@@ -142,17 +195,23 @@ class TestPrimaryBlock(BaseTestPacket):
             [EidField.TypeCode.dtn, '//dst/'],
             [EidField.TypeCode.dtn, '//src/'],
             [EidField.TypeCode.dtn, '//rpt/'],
-            [1000, 3],
+            [1000, 5],
             300,
             None,
         ]
         blk = self._decode(PrimaryBlock, item)
-        self.assertEqual(2, blk.crc_type)
-        self.assertEqual('dtn://dst/', blk.destination)
-        self.assertEqual('dtn://src/', blk.source)
-        self.assertEqual('dtn://rpt/', blk.report_to)
-        self.assertEqual(['2000-01-01T00:16:40+00:00', 3], blk.creation_timestamp)
-        self.assertEqual(300, blk.lifetime)
+        fields = dict(
+            bp_version=7,
+            bundle_flags=0,
+            crc_type=2,
+            destination='dtn://dst/',
+            source='dtn://src/',
+            report_to='dtn://rpt/',
+            create_ts=Timestamp(time=1000, seqno=5),
+            lifetime=300,
+            crc_value=None,
+        )
+        self.assertEqual(blk.fields, fields)
 
     def testEncodeFragment(self):
         blk = PrimaryBlock(
@@ -161,7 +220,10 @@ class TestPrimaryBlock(BaseTestPacket):
             destination='dtn://dst/',
             source='dtn://src/',
             report_to='dtn://rpt/',
-            creation_timestamp=['2000-01-01T00:16:40+00:00', 3],
+            create_ts=Timestamp(
+                time='2000-01-01T00:16:40+00:00',
+                seqno=3,
+            ),
             lifetime=300,
             fragment_offset=1000,
             total_app_data_len=2000,
@@ -198,12 +260,20 @@ class TestPrimaryBlock(BaseTestPacket):
             None
         ]
         blk = self._decode(PrimaryBlock, item)
-        self.assertEqual(2, blk.crc_type)
-        self.assertEqual('dtn://dst/', blk.destination)
-        self.assertEqual('dtn://src/', blk.source)
-        self.assertEqual('dtn://rpt/', blk.report_to)
-        self.assertEqual(['2000-01-01T00:16:40+00:00', 3], blk.creation_timestamp)
-        self.assertEqual(300, blk.lifetime)
+        fields = dict(
+            bp_version=7,
+            bundle_flags=1,
+            crc_type=2,
+            destination='dtn://dst/',
+            source='dtn://src/',
+            report_to='dtn://rpt/',
+            create_ts=Timestamp(time=1000, seqno=3),
+            lifetime=300,
+            fragment_offset=1000,
+            total_app_data_len=2000,
+            crc_value=None,
+        )
+        self.assertEqual(blk.fields, fields)
 
 
 class TestCanonicalBlock(BaseTestPacket):
@@ -268,7 +338,8 @@ class TestBundle(BaseTestPacket):
 
     def testEncodeOnlyPrimary(self):
         bdl = Bundle(
-            primary=PrimaryBlock(),
+            primary=PrimaryBlock(
+            ),
         )
         self.assertEqual(
             self._encode(bdl),
@@ -295,7 +366,7 @@ class TestBundle(BaseTestPacket):
                 DTN_NONE,
                 DTN_NONE,
                 DTN_NONE,
-                [0, 0],
+                [1000, 5],
                 0,
             ],
         ]
@@ -303,9 +374,17 @@ class TestBundle(BaseTestPacket):
 
         self.assertIsNotNone(bdl.primary)
         blk = bdl.primary
-        self.assertEqual(blk.bp_version, 7)
-        self.assertEqual(blk.bundle_flags, 0)
-        self.assertEqual(blk.crc_type, 0)
+        fields = dict(
+            bp_version=7,
+            bundle_flags=0,
+            crc_type=0,
+            destination='dtn:none',
+            source='dtn:none',
+            report_to='dtn:none',
+            create_ts=Timestamp(time=1000, seqno=5),
+            lifetime=0,
+        )
+        self.assertEqual(blk.fields, fields)
 
         self.assertEqual(len(bdl.blocks), 0)
 
@@ -366,19 +445,84 @@ class TestBundle(BaseTestPacket):
         ]
         bdl = self._decode(Bundle, item)
 
-        self.assertIsNotNone(bdl.primary)
+        blk = bdl.primary
+        self.assertIsNotNone(blk)
+        fields = dict(
+            bp_version=7,
+            bundle_flags=0,
+            crc_type=0,
+            destination='dtn:none',
+            source='dtn:none',
+            report_to='dtn:none',
+            create_ts=Timestamp(time=0, seqno=0),
+            lifetime=0,
+        )
+        self.assertEqual(blk.fields, fields)
 
         self.assertEqual(len(bdl.blocks), 1)
         blk = bdl.blocks[0]
-        self.assertEqual(blk.type_code, 1)
-        self.assertEqual(blk.block_num, 8)
-        self.assertEqual(blk.data, pyld_data)
+        fields = dict(
+            type_code=1,
+            block_num=8,
+            block_flags=0,
+            crc_type=0,
+            data=pyld_data
+        )
+        self.assertEqual(blk.fields, fields)
 
 
-class TestBundleAgeBlockData(BaseTestPacket):
+class TestPreviousNodeBlock(BaseTestPacket):
 
     def testEncode(self):
-        blk = CanonicalBlock() / BundleAgeBlockData(age=10)
+        blk = CanonicalBlock() / PreviousNodeBlock(node='dtn://node/serv')
+
+        item = [
+            6,
+            None,
+            0,
+            0,
+            cbor2.dumps([
+                EidField.TypeCode.dtn,
+                '//node/serv',
+            ]),
+        ]
+        self.assertEqual(
+            self._encode(blk),
+            item
+        )
+
+    def testDecode(self):
+        item = [
+            6,
+            None,
+            0,
+            0,
+            cbor2.dumps([
+                EidField.TypeCode.dtn,
+                '//node/serv',
+            ]),
+        ]
+        blk = self._decode(CanonicalBlock, item)
+        fields = dict(
+            type_code=6,
+            block_num=None,
+            block_flags=0,
+            crc_type=0,
+            data=unhexlify('82016b2f2f6e6f64652f73657276')
+        )
+        self.assertEqual(blk.fields, fields)
+
+        self.assertEqual(type(blk.payload), PreviousNodeBlock)
+        fields = dict(
+            node='dtn://node/serv',
+        )
+        self.assertEqual(blk.payload.fields, fields)
+
+
+class TestBundleAgeBlock(BaseTestPacket):
+
+    def testEncode(self):
+        blk = CanonicalBlock() / BundleAgeBlock(age=10)
 
         self.assertEqual(
             self._encode(blk),
@@ -400,11 +544,66 @@ class TestBundleAgeBlockData(BaseTestPacket):
             cbor2.dumps(10),
         ]
         blk = self._decode(CanonicalBlock, item)
-        self.assertEqual(blk.type_code, 7)
-        self.assertEqual(blk.block_num, None)
+        fields = dict(
+            type_code=7,
+            block_num=None,
+            block_flags=0,
+            crc_type=0,
+            data=unhexlify('0a')
+        )
+        self.assertEqual(blk.fields, fields)
 
-        self.assertEqual(type(blk.payload), BundleAgeBlockData)
-        self.assertEqual(blk.payload.age, 10)
+        self.assertEqual(type(blk.payload), BundleAgeBlock)
+        fields = dict(
+            age=10,
+        )
+        self.assertEqual(blk.payload.fields, fields)
+
+
+class TestHopCountBlock(BaseTestPacket):
+
+    def testEncode(self):
+        blk = CanonicalBlock() / HopCountBlock(
+            limit=10,
+            count=5,
+        )
+
+        item = [
+            10,
+            None,
+            0,
+            0,
+            cbor2.dumps([10, 5]),
+        ]
+        self.assertEqual(
+            self._encode(blk),
+            item
+        )
+
+    def testDecode(self):
+        item = [
+            10,
+            None,
+            0,
+            0,
+            cbor2.dumps([10, 5]),
+        ]
+        blk = self._decode(CanonicalBlock, item)
+        fields = dict(
+            type_code=10,
+            block_num=None,
+            block_flags=0,
+            crc_type=0,
+            data=unhexlify('820a05')
+        )
+        self.assertEqual(blk.fields, fields)
+
+        self.assertEqual(type(blk.payload), HopCountBlock)
+        fields = dict(
+            limit=10,
+            count=5,
+        )
+        self.assertEqual(blk.payload.fields, fields)
 
 
 class TestAdminRecord(BaseTestPacket):
@@ -426,30 +625,83 @@ class TestAdminRecord(BaseTestPacket):
             None,
         ]
         pkt = self._decode(AdminRecord, item)
-        self.assertEqual(pkt.type_code, None)
+        fields = dict(
+            type_code=None,
+        )
+        self.assertEqual(pkt.fields, fields)
 
-        self.assertEqual(type(pkt.payload), scapy.packet.NoPayload)
+        self.assertTrue(isinstance(pkt.payload, CborItem), type(pkt.payload))
 
-class TestAdminRecord(BaseTestPacket):
 
-    def testEncodeEmpy(self):
-        pkt = AdminRecord()
+class TestStatusInfo(BaseTestPacket):
 
+    def testEncode(self):
+        pkt = StatusInfo(
+            status=True,
+            at=1000,
+        )
         self.assertEqual(
             self._encode(pkt),
             [
-                None,
-                None
+                True,
+                1000
             ]
         )
 
-    def testDecodeEmpty(self):
+    def testDecode(self):
         item = [
-            None,
-            None,
+            True,
+            1000,
         ]
-        pkt = self._decode(AdminRecord, item)
-        self.assertEqual(pkt.type_code, None)
+        pkt = self._decode(StatusInfo, item)
+        fields = dict(
+            status=True,
+            at=1000,
+        )
+        self.assertEqual(pkt.fields, fields)
 
-        self.assertEqual(type(pkt.payload), scapy.packet.NoPayload)
- 
+
+class TestBlockIntegrityBlock(BaseTestPacket):
+
+    def testEncode(self):
+        pkt = BlockIntegrityBlock(
+            targets=[1, 2],
+            context_id=3,
+            context_flags=0,
+            results=[
+                SecurityResult(type_code=1) / CborItem(item='hi'),
+                SecurityResult(type_code=2) / CborItem(item=False),
+            ]
+        )
+        item = [
+            [1, 2],
+            3,
+            0,
+            [
+                [1, 'hi'],
+                [2, False],
+            ],
+        ]
+        self.assertEqual(self._encode(pkt), item)
+
+    def testDecode(self):
+        item = [
+            [1, 2],
+            3,
+            0,
+            [
+                [1, 'hi'],
+                [2, False],
+            ],
+        ]
+        pkt = self._decode(BlockIntegrityBlock, item)
+        fields = dict(
+            targets=[1, 2],
+            context_id=3,
+            context_flags=0,
+            results=[
+                SecurityResult(type_code=1) / CborItem(item='hi'),
+                SecurityResult(type_code=2) / CborItem(item=False),
+            ]
+        )
+        self.assertEqual(pkt.fields, fields)
