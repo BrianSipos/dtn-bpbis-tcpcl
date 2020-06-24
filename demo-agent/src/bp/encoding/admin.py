@@ -16,6 +16,8 @@ class AdminRecord(TypeValueHead):
 
 
 class StatusInfo(CborArray):
+    ''' Each Status assertion of BPbis Section 6.1.1.
+    '''
     fields_desc = (
         BoolField('status', default=False),
         OptionalField(
@@ -25,6 +27,8 @@ class StatusInfo(CborArray):
 
 
 class StatusInfoArray(CborArray):
+    ''' The Status assertions of BPbis Section 6.1.1.
+    '''
     fields_desc = (
         PacketField('received', default=StatusInfo(), cls=StatusInfo),
         PacketField('forwarded', default=StatusInfo(), cls=StatusInfo),
@@ -35,7 +39,7 @@ class StatusInfoArray(CborArray):
 
 @AdminRecord.bind_type(1)
 class StatusReport(CborArray):
-    ''' The Status Report of BPbis Section 6.1.1
+    ''' The Status Report of BPbis Section 6.1.1.
     '''
     fields_desc = (
         PacketField('status', default=StatusInfoArray(), cls=StatusInfoArray),

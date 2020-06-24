@@ -9,7 +9,7 @@ from scapy.config import conf
 import scapy.packet
 from scapy_cbor.packets import (CborArray, CborItem)
 from scapy_cbor.fields import (
-    BstrField, ConditionalField, FlagsField, UintField, PacketField
+    BstrField, ConditionalField, EnumField, FlagsField, UintField, PacketField
 )
 from .fields import (EidField, DtnTimeField)
 
@@ -38,8 +38,8 @@ class AbstractBlock(CborArray):
     '''
 
     @enum.unique
-    class CrcType(enum.IntFlag):
-        ''' CRC types.
+    class CrcType(enum.IntEnum):
+        ''' CRC type values.
         '''
         NONE = 0
         CRC16 = 1
@@ -82,6 +82,29 @@ class AbstractBlock(CborArray):
 
         self.fields[self.crc_value_name] = crc_value
 
+    def check_crc(self):
+        ''' Check the current CRC value, if enabled.
+        :return: True if the CRC is disabled or it is valid.
+        '''
+        if self.crc_type_name is None or self.crc_value_name is None:
+            return True
+
+        crc_type = self.getfieldval(self.crc_type_name)
+        crc_value = self.fields.get(self.crc_value_name)
+        if crc_type == 0:
+            valid = crc_value is None
+        else:
+            defn = AbstractBlock.CRC_DEFN[crc_type]
+            # Encode with a zero-valued CRC field
+            self.fields[self.crc_value_name] = defn['encode'](0)
+            pre_crc = cbor2.dumps(self.build())
+            crc_int = defn['func'](pre_crc)
+            valid = crc_value == defn['encode'](crc_int)
+            # Restore old value
+            self.fields[self.crc_value_name] = crc_value
+
+        return valid
+
 
 class PrimaryBlock(AbstractBlock):
     ''' The primary block definition '''
@@ -89,18 +112,31 @@ class PrimaryBlock(AbstractBlock):
     @enum.unique
     class Flag(enum.IntFlag):
         ''' Bundle flags.
-        Flags must be in LSbit-first order.
         '''
-        BUNDLE_IS_FRAGMENT = 2 ** 0
-        PAYLOAD_IS_ADMIN = 2 ** 1
-        BUNDLE_MUST_NOT_BE_FRAGMENTED = 2 ** 2
-        USER_APP_ACK_REQUESTED = 2 ** 5
-        STATUS_TIME_REQUESTED = 2 ** 6
+        NONE = 0
+        #: bundle deletion status reports are requested.
+        REQ_DELETION_REPORT = 0x040000
+        #: bundle delivery status reports are requested.
+        REQ_DELIVERY_REPORT = 0x020000
+        #: bundle forwarding status reports are requested.
+        REQ_FORWARDING_REPORT = 0x010000
+        #: bundle reception status reports are requested.
+        REQ_RECEPTION_REPORT = 0x004000
+        #: status time is requested in all status reports.
+        REQ_STATUS_TIME = 0x000040
+        #: user application acknowledgement is requested.
+        USER_APP_ACK = 0x000020
+        #: bundle must not be fragmented.
+        NO_FRAGMENT = 0x000004
+        #: payload is an administrative record.
+        PAYLOAD_ADMIN = 0x000002
+        #: bundle is a fragment.
+        IS_FRAGMENT = 0x000001
 
     fields_desc = (
         UintField('bp_version', default=7),
-        FlagsField('bundle_flags', default=0, flags=Flag),
-        UintField('crc_type', default=AbstractBlock.CrcType.NONE),
+        FlagsField('bundle_flags', default=Flag.NONE, flags=Flag),
+        EnumField('crc_type', default=AbstractBlock.CrcType.NONE, enum=AbstractBlock.CrcType),
         EidField('destination'),
         EidField('source'),
         EidField('report_to'),
@@ -108,11 +144,11 @@ class PrimaryBlock(AbstractBlock):
         UintField('lifetime', default=0),
         ConditionalField(
             UintField('fragment_offset', default=0),
-            lambda block: block.bundle_flags & PrimaryBlock.Flag.BUNDLE_IS_FRAGMENT
+            lambda block: block.bundle_flags & PrimaryBlock.Flag.IS_FRAGMENT
         ),
         ConditionalField(
             UintField('total_app_data_len', default=0),
-            lambda block: block.bundle_flags & PrimaryBlock.Flag.BUNDLE_IS_FRAGMENT
+            lambda block: block.bundle_flags & PrimaryBlock.Flag.IS_FRAGMENT
         ),
         ConditionalField(
             BstrField('crc_value'),
@@ -133,12 +169,21 @@ class CanonicalBlock(AbstractBlock):
         ''' Block flags.
         Flags must be in LSbit-first order.
         '''
+        NONE = 0
+        #: block must be removed from bundle if it can't be processed.
+        REMOVE_IF_NO_PROCESS = 0x10
+        #: bundle must be deleted if block can't be processed.
+        DELETE_IF_NO_PROCESS = 0x04
+        #: transmission of a status report is requested if block can't be processed.
+        STATUS_IF_NO_PROCESS = 0x02
+        #: block must be replicated in every fragment.
+        REPLICATE_IN_FRAGMENT = 0x01
 
     fields_desc = (
         UintField('type_code', default=None),
         UintField('block_num', default=None),
-        FlagsField('block_flags', default=0, flags=Flag),
-        UintField('crc_type', default=AbstractBlock.CrcType.NONE),
+        FlagsField('block_flags', default=Flag.NONE, flags=Flag),
+        EnumField('crc_type', default=AbstractBlock.CrcType.NONE, enum=AbstractBlock.CrcType),
         BstrField('data', default=None),  # block-type-specific data here
         ConditionalField(
             BstrField('crc_value'),
@@ -155,7 +200,7 @@ class CanonicalBlock(AbstractBlock):
             self.overloaded_fields['data'] = pay_data
 
     def do_build_payload(self):
-        # Payload is handled by self_build
+        # Payload is handled by add_payload()
         return b''
 
     def post_dissect(self, s):
@@ -165,7 +210,7 @@ class CanonicalBlock(AbstractBlock):
         if (pay_data is not None and pay_type is not None):
             try:
                 cls = self.guess_payload_class(None)
-                #print('post_dissect', cls, cbor2.loads(pay_data))
+                LOGGER.debug('CanonicalBlock.post_dissect with %s: %s', cls, cbor2.loads(pay_data))
             except KeyError:
                 cls = None
 
@@ -176,7 +221,7 @@ class CanonicalBlock(AbstractBlock):
                 except Exception as err:
                     if conf.debug_dissector:
                         raise
-                    LOGGER.warning('Failed to dissect payload: {}'.format(err))
+                    LOGGER.warning('CanonicalBlock failed to dissect payload: %s', err)
 
         return AbstractBlock.post_dissect(self, s)
 

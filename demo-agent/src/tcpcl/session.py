@@ -13,6 +13,7 @@ import dbus.service
 from gi.repository import GLib as glib
 
 from . import formats, contact, messages, extend
+from builtins import isinstance
 
 
 class Connection(object):
@@ -29,6 +30,7 @@ class Connection(object):
 
     def __init__(self, sock, as_passive, peer_name):
         self.__logger = logging.getLogger(self.__class__.__name__)
+
         self._on_close = None
         self._as_passive = as_passive
         self._peer_name = peer_name
@@ -58,6 +60,13 @@ class Connection(object):
         :return: True if operating with TLS.
         '''
         return self.__s_tls is not None
+
+    def get_base_socket(self):
+        ''' Get the base (insecure) socket object if available.
+
+        :return: The socket object or None.
+        '''
+        return self.__s_notls
 
     def get_secure_socket(self):
         ''' Get the secure socket object if available.
@@ -387,6 +396,9 @@ class Messenger(Connection):
         self.__logger = logging.getLogger(self.__class__.__name__)
         self._config = config
 
+        self._on_state_change = None
+        self._state = None
+
         # agent-configured parmeters
         self._do_send_ack_inter = True
         self._do_send_ack_final = True
@@ -412,6 +424,7 @@ class Messenger(Connection):
         self._sessinit_peer = None
         self._sessinit_this = None
         #: Set after SESS_INIT negotiation
+        self._sess_parameters = {}
         self._in_sess = False
         self._in_sess_func = None
         #: Set after SESS_TERM sent
@@ -437,6 +450,24 @@ class Messenger(Connection):
             as_passive = False
             peer_name = toaddr[0]
         Connection.__init__(self, sock, as_passive, peer_name)
+        self._update_state('connecting')
+
+    def _update_state(self, state):
+        ''' Derive the aggregate state from internal substates.
+        '''
+        if self._state == state:
+            return
+        self._state = str(state)
+
+        if self._on_state_change:
+            self._on_state_change(self._state)
+
+    def set_on_state_change(self, func):
+        ''' Set a callback to be run when this session state changes.
+
+        :param func: The callback, which takes argument of the new state name.
+        '''
+        self._on_state_change = func
 
     def is_passive(self):
         ''' Determine if this is the passive side of the session. '''
@@ -589,6 +620,7 @@ class Messenger(Connection):
             self._conhead_peer = pkt.payload
             self.merge_contact_params()
             self._in_conn = True
+            self._update_state('session-negotiating')
 
             # Check policy before attempt
             if self._config.require_tls is not None:
@@ -634,8 +666,9 @@ class Messenger(Connection):
                         self._sessinit_this = self.send_sess_init().payload
 
                     self._sessinit_peer = pkt.payload
-                    self._in_sess = True
                     self.merge_session_params()
+                    self._in_sess = True
+                    self._update_state('established')
                     if self._in_sess_func:
                         self._in_sess_func()
 
@@ -722,55 +755,55 @@ class Messenger(Connection):
 
     def merge_session_params(self):
         ''' Combine local and peer SESS_INIT parameters.
+        The result is kept in :ivar:`_sess_parameters`.
 
         :raise TerminateError: If there is some failure to negotiate.
         '''
         self.__logger.debug('Session negotiation')
 
-        if self.get_secure_socket():
+        peer_nodeid = str(self._sessinit_peer.nodeid_data)
+        peer_dns = self._peer_name if not self._as_passive else None
+        peer_addr = self.get_base_socket().getpeername()[0]
+
+        authn_nodeid = None  # authenticated Node ID
+        authn_dns = None  # authenticated DNS name
+        authn_addr = None
+
+        sock_tls = self.get_secure_socket()
+        if sock_tls:
             # Verify TLS name bindings
-            cert = self.get_secure_socket().getpeercert()
+            cert = sock_tls.getpeercert()
 
             # DNS/IP matching with standard function to handle wildcards
-            if self._as_passive:
-                (hostname, aliaslist, _) = socket.gethostbyaddr(self._peer_name)
-                peer_names = [self._peer_name, hostname] + list(aliaslist)
-            else:
-                peer_names = [self._peer_name]
-            host_authn = None
-            if cert and peer_names:
+            if cert and peer_dns:
                 self.__logger.debug('Authenticating TLS host "%s" with subjectAltName: %s',
-                                    peer_names, cert.get('subjectAltName'))
-                for peer_name in peer_names:
-                    try:
-                        ssl.match_hostname(cert, peer_name)
-                        host_authn = peer_name
-                        break
-                    except ssl.CertificateError:
-                        pass
+                                    peer_dns, cert.get('subjectAltName'))
+                try:
+                    ssl.match_hostname(cert, peer_dns)
+                    authn_dns = peer_dns
+                except ssl.CertificateError:
+                    pass
             # host authentication result
-            if host_authn:
-                self.__logger.debug('Certificate matched host name "%s"', host_authn)
+            if authn_dns:
+                self.__logger.debug('Certificate matched host name "%s"', authn_dns)
             else:
                 self.__logger.warning('Peer host name not authenticated')
                 if self._config.require_host_authn:
                     raise TerminateError(messages.SessionTerm.Reason.CONTACT_FAILURE)
 
             # Exact Node ID URI matching
-            node_id = self._sessinit_peer.nodeid_data
-            node_authn = None
-            if cert and node_id:
+            if cert and peer_nodeid:
                 self.__logger.debug('Authenticating Node ID "%s" with subjectAltName: %s',
-                                    node_id, cert.get('subjectAltName'))
+                                    peer_nodeid, cert.get('subjectAltName'))
                 uri_names = set()
                 for (name_type, name_data) in cert.get('subjectAltName', []):
                     if name_type == 'URI':
                         uri_names.add(name_data)
-                if node_id in uri_names:
-                    node_authn = node_id
+                if peer_nodeid in uri_names:
+                    authn_nodeid = peer_nodeid
             # node authentication result
-            if node_authn:
-                self.__logger.debug('Certificate matched Node ID "%s"', node_authn)
+            if authn_nodeid:
+                self.__logger.debug('Certificate matched Node ID "%s"', authn_nodeid)
             else:
                 self.__logger.warning('Peer Node ID not authenticated')
                 if self._config.require_node_authn:
@@ -792,6 +825,19 @@ class Messenger(Connection):
         self._segment_last_ack_len = 0
         self._segment_pid_err_last = None
         self._segment_pid_err_accum = 0
+
+        # Record the negotiated parameters
+        self._sess_parameters = dict(
+            peer_nodeid=peer_nodeid,
+            peer_dns=peer_dns,
+            peer_addr=peer_addr,
+            authn_nodeid=authn_nodeid,
+            authn_dns=authn_dns,
+            authn_addr=authn_addr,
+            keepalive=self._keepalive_time,
+            peer_transfer_mru=self._sessinit_peer.transfer_mru,
+            peer_segment_mru=self._sessinit_peer.segment_mru,
+        )
 
     def _modulate_tx_seg_size(self, delta_b, delta_t):
         ''' Scale the TX segment size to achieve a round-trip ACK timing goal.
@@ -883,6 +929,7 @@ class Messenger(Connection):
             raise RuntimeError('Already in terminating state')
 
         self._in_term = True
+        self._update_state('ending')
         if self._in_term_func:
             self._in_term_func()
 
@@ -910,6 +957,8 @@ class Messenger(Connection):
         if not self._as_passive:
             # Passive side listens first
             self._conhead_this = self.send_contact_header().payload
+
+        self._update_state('contact-negotiating')
 
     def recv_sess_term(self, reason):
         ''' Handle reception of SESS_TERM message.
@@ -1023,6 +1072,8 @@ class Messenger(Connection):
         self.send_message(messages.MessageHead() /
                           messages.TransferRefuse(transfer_id=transfer_id,
                                                   flags=reason))
+
+
 class BundleItem(object):
     ''' State for RX and TX full bundles.
 
@@ -1078,6 +1129,29 @@ class ContactHandler(Messenger, dbus.service.Object):
         self._rx_bundles = []
         #: Names of pending RX bundles
         self._rx_map = {}
+
+        # Bind to parent class
+        self.set_on_state_change(self.session_state_changed)
+
+    @dbus.service.method(DBUS_IFACE, in_signature='', out_signature='s')
+    def get_session_state(self):
+        return dbus.String(self._state)
+
+    @dbus.service.signal(DBUS_IFACE, signature='s')
+    def session_state_changed(self, state):
+        pass
+
+    @dbus.service.method(DBUS_IFACE, in_signature='', out_signature='a{sv}')
+    def get_session_parameters(self):
+        # DBus cannot handle None value
+        params = {}
+        for (key, val) in self._sess_parameters.items():
+            if val is None:
+                continue
+            if isinstance(val, int):
+                val = min(2 ** 31 - 1, val)
+            params[key] = val
+        return dbus.Dictionary(params)
 
     def next_id(self):
         ''' Get the next available bundle ID number.

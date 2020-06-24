@@ -5,6 +5,7 @@ from scapy_cbor.packets import (CborArray)
 from .blocks import (PrimaryBlock, CanonicalBlock)
 from .admin import AdminRecord
 
+
 class Bundle(CborArray):
     ''' An entire decoded bundle contents.
 
@@ -21,7 +22,7 @@ class Bundle(CborArray):
     def _update_from_admin(self):
         for blk in self.blocks:
             if isinstance(blk.payload, AdminRecord):
-                self.primary.bundle_flags |= PrimaryBlock.Flag.PAYLOAD_IS_ADMIN
+                self.primary.bundle_flags |= PrimaryBlock.Flag.PAYLOAD_ADMIN
                 blk.overloaded_fields['type_code'] = 1
                 blk.overloaded_fields['data'] = bytes(blk.payload)
 
@@ -33,10 +34,11 @@ class Bundle(CborArray):
 
     def post_dissect(self, s):
         # Special handling for admin payload
-        if self.primary and self.primary.bundle_flags & PrimaryBlock.Flag.PAYLOAD_IS_ADMIN:
+        if self.primary and self.primary.bundle_flags & PrimaryBlock.Flag.PAYLOAD_ADMIN:
             for blk in self.blocks:
                 if blk.type_code == 1 and blk.data is not None:
                     pay = AdminRecord(blk.data)
+                    blk.remove_payload()
                     blk.add_payload(pay)
 
         return CborArray.post_dissect(self, s)
@@ -49,3 +51,15 @@ class Bundle(CborArray):
             self.primary.update_crc()
         for blk in self.blocks:
             blk.update_crc()
+
+    def check_all_crc(self):
+        ''' Check for CRC failures.
+        '''
+        fail = set()
+        if self.primary:
+            if not self.primary.check_crc():
+                fail.add(0)
+        for blk in self.blocks:
+            if not blk.check_crc():
+                fail.add(blk.block_num)
+        return fail

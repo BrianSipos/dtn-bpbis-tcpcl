@@ -128,6 +128,13 @@ class Agent(dbus.service.Object):
         '''
         self._on_stop = func
 
+    @dbus.service.method(DBUS_IFACE, in_signature='', out_signature='ao')
+    def get_connections(self):
+        ''' Get all connections for this agent.
+        :return: List of object paths.
+        '''
+        return self._path_to_handler.keys()
+
     @dbus.service.signal(DBUS_IFACE, signature='o')
     def connection_opened(self, objpath):
         ''' Emitted when a connection is opened. '''
@@ -294,7 +301,6 @@ def main(*argv):
                         help='Names of test modes enabled')
     parser.add_argument('--bus-service', type=str,
                         help='D-Bus service name')
-    subp = parser.add_subparsers(dest='action', help='action')
     parser.add_argument('--nodeid', type=uristr,
                         help='This entity\'s Node ID')
     parser.add_argument('--keepalive', type=int,
@@ -319,6 +325,7 @@ def main(*argv):
                         help='Allowed TLS cipher filter')
     parser.add_argument('--stop-on-close', default=False, action='store_true',
                         help='Stop the agent when connection is closed')
+    subp = parser.add_subparsers(dest='action', help='action')
 
     parser_listen = subp.add_parser('listen',
                                     help='Listen for TCP connections')

@@ -29,6 +29,7 @@ class AbstractSecurityBlock(CborArray):
         ''' Security flags.
         Flags must be in LSbit-first order.
         '''
+        NONE = 0
         PARAMETERS_PRESENT = 2 ** 0
         SOURCE_PRESENT = 2 ** 1
 
@@ -37,7 +38,7 @@ class AbstractSecurityBlock(CborArray):
             FieldListField('targets', default=[], fld=UintField('block_num'))
         ),
         UintField('context_id'),
-        FlagsField('context_flags', default=0, flags=Flag),
+        FlagsField('context_flags', default=Flag.NONE, flags=Flag),
         ConditionalField(
             EidField('source', default=None),
             lambda block: block.context_flags & AbstractSecurityBlock.Flag.SOURCE_PRESENT

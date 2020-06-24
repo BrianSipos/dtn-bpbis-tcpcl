@@ -31,11 +31,11 @@ class EidField(CborField):
         '''
         none = 0
 
-    def i2m(self, pkt, val):
-        if val is None or val == 'dtn:none':
+    def i2m(self, pkt, x):
+        if x is None or x == 'dtn:none':
             return [EidField.TypeCode.dtn, EidField.WellKnownSsp.none]
 
-        parts = urllib.parse.urlparse(val)
+        parts = urllib.parse.urlparse(x)
         try:
             scheme_type = EidField.TypeCode[parts[0]]
         except KeyError:
@@ -43,12 +43,14 @@ class EidField(CborField):
         ssp = '//{0}{1}'.format(parts[1], parts[2])
         return [scheme_type, ssp]
 
-    def m2i(self, pkt, val):
-        if val is None:
+    def m2i(self, pkt, x):
+        if x is None:
             return None
+        if isinstance(x, str):
+            return x 
 
-        scheme_type = val[0]
-        ssp = val[1]
+        scheme_type = x[0]
+        ssp = x[1]
         if isinstance(ssp, int):
             ssp = EidField.WellKnownSsp(ssp).name
 

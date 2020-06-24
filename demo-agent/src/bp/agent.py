@@ -10,8 +10,11 @@ from gi.repository import GLib as glib
 import cbor2
 #from multiprocessing import Process
 #import tcpcl.agent
-from scapy.packet import fuzz
-from . import encoding
+from .encoding import (
+    DtnTimeField, Timestamp,
+    Bundle, AbstractBlock, PrimaryBlock, CanonicalBlock, AdminRecord,
+    StatusReport, StatusInfoArray, StatusInfo
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -24,7 +27,7 @@ class BundleContainer(object):
 
     def __init__(self, bundle=None):
         if bundle is None:
-            bundle = encoding.Bundle()
+            bundle = Bundle()
         self.bundle = bundle
         # Map from block number to single Block
         self._block_num = {}
@@ -49,25 +52,74 @@ class BundleContainer(object):
         block_type = {}
         if self.bundle.payload is not None:
             block_num[0] = self.bundle.payload
-        for blk in enumerate(self.bundle.blocks):
-            blk_num = blk.block_num
-            if blk_num in block_num:
-                raise RuntimeError('Duplicate block_num value')
-            block_num[blk_num] = blk
+        for blk in self.bundle.blocks:
+            blk_num = blk.getfieldval('block_num')
+            if blk_num is not None:
+                if blk_num in block_num:
+                    raise RuntimeError('Duplicate block_num value')
+                block_num[blk_num] = blk
 
-            blk_type = blk.type_code
+            blk_type = blk.getfieldval('type_code')
             if blk_type not in block_type:
                 block_type[blk_type] = []
             block_type[blk_type].append(blk)
 
-#        pyld = block_type.get(1, [])
-#        if len(pyld) != 1:
-#            raise RuntimeError('Not exactly one payload block')
-#        if pyld[0].block_num != 1:
-#            raise RuntimeError('Payload is not block number 1')
-
         self._block_num = block_num
         self._block_type = block_type
+
+    def fix_block_num(self):
+        ''' Assign unique block numbers where needed.
+        '''
+        last_num = 1
+        for blk in self.bundle.blocks:
+            if blk.getfieldval('block_num') is None:
+                if blk.getfieldval('type_code') == 1:
+                    set_num = 1
+                else:
+                    while True:
+                        last_num += 1
+                        if last_num not in self._block_num:
+                            set_num = last_num
+                            break
+                blk.overloaded_fields['block_num'] = set_num
+
+    def do_report_reception(self):
+        return (
+            self.bundle.primary.report_to != 'dtn:none'
+            and self.bundle.primary.bundle_flags & PrimaryBlock.Flag.REQ_RECEPTION_REPORT
+        )
+
+    def create_report_reception(self, timestamp):
+        status_ts = bool(self.bundle.primary.bundle_flags & PrimaryBlock.Flag.REQ_STATUS_TIME)
+
+        report = StatusReport(
+            status=StatusInfoArray(
+                received=StatusInfo(
+                    status=True,
+                    at=(timestamp.time if status_ts else None),
+                ),
+            ),
+            reason_code=0,
+            subj_source=self.bundle.primary.source,
+            subj_ts=self.bundle.primary.create_ts,
+        )
+
+        reply = BundleContainer()
+        reply.bundle.primary = PrimaryBlock(
+            bundle_flags=PrimaryBlock.Flag.PAYLOAD_ADMIN,
+            destination=self.bundle.primary.report_to,
+            source=self.bundle.primary.destination,
+            create_ts=timestamp,
+            crc_type=AbstractBlock.CrcType.CRC32,
+        )
+        reply.bundle.blocks = [
+            CanonicalBlock(
+                type_code=1,
+                crc_type=AbstractBlock.CrcType.CRC32,
+            ) / AdminRecord(
+            ) / report,
+        ]
+        return reply
 
 
 class Config(object):
@@ -90,6 +142,48 @@ class Config(object):
         self.route_table = {}
 
 
+class ClSession(object):
+    ''' Convergence layer session keeping.
+    '''
+
+    def __init__(self):
+        self.serv_name = None
+        self.obj_path = None
+
+        self.sess_params = None
+        self.nodeid = None
+        self.sess_obj = None
+
+
+class Timestamper(object):
+    ''' Generate a unique Timestamp with sequence state.
+    '''
+
+    def __init__(self):
+        self._time = None
+        self._seqno = 0
+
+    def __call__(self):
+        ''' Generate the next timestamp.
+        '''
+        now_time = DtnTimeField.datetime_to_dtntime(
+            datetime.datetime.utcnow().replace(
+                microsecond=0,
+                tzinfo=datetime.timezone.utc,
+            )
+        )
+        if self._time is not None and now_time == self._time:
+            self._seqno += 1
+        else:
+            self._time = now_time
+            self._seqno = 0
+
+        return Timestamp(
+            time=self._time,
+            seqno=self._seqno
+        )
+
+
 class Agent(dbus.service.Object):
     ''' Overall agent behavior.
 
@@ -108,6 +202,20 @@ class Agent(dbus.service.Object):
         self._on_stop = None
         #: Set when shutdown() is called and waiting on sessions
         self._in_shutdown = False
+
+        self.route_table = {
+            'dtn://client/': ('localhost', 4556),
+            'dtn://server/': ('localhost', 4556),
+        }
+
+        self.timestamp = Timestamper()
+
+        self._cl_agent_obj = None
+        # Map for CL connection DBus objects
+        # Map from (serv_name, obj_path) to ClSession
+        self._cl_sess_objs = {}
+        # Map from peer Node ID to ClSession
+        self._cl_peer_nodeids = {}
 
         if bus_kwargs is None:
             bus_kwargs = dict(
@@ -160,53 +268,172 @@ class Agent(dbus.service.Object):
                 # wait for graceful shutdown
                 eloop.run()
 
-    @dbus.service.method(DBUS_IFACE, in_signature='ssi', out_signature='')
-    def ping(self, servname, address, port):
-        ''' Ping via TCPCL and an admin record.
-
+    def _cl_conn_attach(self, servname):
+        ''' Get a function to attach to new connection object.
         '''
+
+        def func(conn_path):
+            conn_obj = self._config.bus_conn.get_object(servname, conn_path)
+            LOGGER.debug('Attaching to CL object %s', conn_path)
+            cl_sess = ClSession()
+            cl_sess.serv_name = servname
+            cl_sess.obj_path = conn_path
+            cl_sess.sess_obj = conn_obj
+            self._cl_sess_objs[(servname, conn_path)] = cl_sess
+
+            def handle_recv_bundle_finish(bid, _length, result):
+                if result != 'success':
+                    return
+                data = conn_obj.recv_bundle_pop_data(bid)
+                data = dbus.ByteArray(data)
+                print('data', cbor2.loads(data))
+                self._cl_recv_bundle_finish(data)
+
+            conn_obj.connect_to_signal('recv_bundle_finished', handle_recv_bundle_finish)
+
+            def handle_state_change(state):
+                if state == 'established':
+                    params = conn_obj.get_session_parameters()
+                    cl_sess = self._cl_sess_objs[(servname, conn_path)]
+                    cl_sess.nodeid = str(params['peer_nodeid'])
+                    cl_sess.sess_params = params
+                    LOGGER.debug('Session established with %s', cl_sess.nodeid)
+                    self._cl_peer_nodeids[cl_sess.nodeid] = cl_sess
+
+            state = conn_obj.get_session_state()
+            if state != 'established':
+                conn_obj.connect_to_signal('session_state_changed', handle_state_change)
+            handle_state_change(state)
+
+        return func
+
+    def _cl_conn_detach(self, servname):
+        ''' Get a function to detach from a removed connection object.
+        '''
+
+        def func(conn_path):
+            cl_sess = self._cl_sess_objs[(servname, conn_path)]
+            del self._cl_sess_objs[(cl_sess.serv_name, cl_sess.obj_path)]
+            del self._cl_peer_nodeids[cl_sess.nodeid]
+
+        return func
+
+    def _cl_recv_bundle_finish(self, data):
+        ''' Handle a new received bundle from a CL.
+        '''
+        print('Saw bundle data len {}'.format(len(data)))
+        ctr = BundleContainer(Bundle(data))
+        self.recv_bundle(ctr)
+
+    def _add_cl_session(self, cl_sess):
+        self._cl_sess_objs[(cl_sess.serv_name, cl_sess.obj_path)] = cl_sess
+        self._cl_peer_nodeids[cl_sess.nodeid] = cl_sess
+
+    def _get_session_for(self, nodeid):
+        self.__logger.info('Getting session for: %s', nodeid)
+        if nodeid in self._cl_peer_nodeids:
+            self.__logger.info('Existing to %s', nodeid)
+            cl_sess = self._cl_peer_nodeids[nodeid]
+        else:
+            (address, port) = self.route_table[nodeid]
+            self.__logger.info('Connecting new session to %s:%d', address, port)
+            serv_name = self._cl_agent_obj.bus_name
+            sess_path = self._cl_agent_obj.connect(address, port)
+            sess_obj = self._config.bus_conn.get_object(serv_name, sess_path)
+
+            cl_sess = ClSession()
+            cl_sess.serv_name = serv_name
+            cl_sess.obj_path = sess_path
+            cl_sess.nodeid = nodeid
+            cl_sess.sess_obj = sess_obj
+            self._add_cl_session(cl_sess)
+        return cl_sess
+
+    def recv_bundle(self, ctr):
+        ''' Perform agent handling of a received bundle.
+
+        :param ctr: The bundle container just recieved.
+        :type ctr: :py:cls:`BundleContainer`
+        '''
+        LOGGER.info('Received bundle\n%s', ctr.bundle.show(dump=True))
+        LOGGER.debug('CRC invalid %s', ctr.bundle.check_all_crc())
+
+        if ctr.do_report_reception():
+            self.send_bundle(ctr.create_report_reception(self.timestamp()))
+
+    def send_bundle(self, ctr):
+        ''' Perform agent handling to send a bundle.
+        Part of this is to update final CRCs on all blocks and
+        assign block numbers.
+
+        :param ctr: The bundle container to send.
+        :type ctr: :py:cls:`BundleContainer`
+        '''
+        dest_eid = str(ctr.bundle.primary.destination)
+        cl_sess = self._get_session_for(dest_eid)
+
+        ctr.fix_block_num()
+        ctr.bundle.update_all_crc()
+        LOGGER.info('Sending bundle\n%s', ctr.bundle.show(dump=True))
+
+        cl_sess.sess_obj.send_bundle_data(dbus.ByteArray(bytes(ctr.bundle)))
+
+    @dbus.service.method(DBUS_IFACE, in_signature='s', out_signature='')
+    def cl_attach(self, servname):
+        ''' Listen to sessions and bundles from a CL agent.
+
+        :param str servname: The DBus service name to listen from.
+        '''
+        LOGGER.debug('Attaching to CL service {}'.format(servname))
         agent_path = '/org/ietf/dtn/tcpcl/Agent'
         agent_obj = self._config.bus_conn.get_object(servname, agent_path)
-        self.__logger.info('Connecting')
-        sess_path = agent_obj.connect(address, port)
-        sess_obj = self._config.bus_conn.get_object(servname, sess_path)
+        self._cl_agent_obj = agent_obj
 
-        cts = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
+        attach_func = self._cl_conn_attach(servname)
+        detach_func = self._cl_conn_detach(servname)
+        agent_obj.connect_to_signal('connection_opened', attach_func)
+        agent_obj.connect_to_signal('connection_closed', detach_func)
+        for conn_path in agent_obj.get_connections():
+            attach_func(conn_path)
 
-        bdl = BundleContainer()
-        bdl.bundle.primary = encoding.PrimaryBlock(
-            bundle_flags=encoding.PrimaryBlock.Flag.PAYLOAD_IS_ADMIN,
-            destination='dtn:server',
-            source='dtn:client',
-            create_ts=encoding.Timestamp(time=cts),
-            crc_type=2,
+    @dbus.service.method(DBUS_IFACE, in_signature='s', out_signature='')
+    def ping(self, nodeid):
+        ''' Ping via TCPCL and an admin record.
+
+        :param str servname: The DBus service name to listen from.
+        '''
+
+        cts = self.timestamp()
+
+        ctr = BundleContainer()
+        ctr.bundle.primary = PrimaryBlock(
+            bundle_flags=(PrimaryBlock.Flag.REQ_RECEPTION_REPORT | PrimaryBlock.Flag.REQ_STATUS_TIME),
+            destination=nodeid,
+            source='dtn://client/',
+            report_to='dtn://client/',
+            create_ts=cts,
+            crc_type=AbstractBlock.CrcType.CRC32,
         )
-        bdl.bundle.blocks = [
-            encoding.CanonicalBlock(
-                block_num=2,
-            ) / encoding.HopCountBlock(limit=5, count=0),
-            encoding.CanonicalBlock(
-                block_num=1,
-                crc_type=2,
-            ) / encoding.AdminRecord(
-            ) / encoding.StatusReport(
-                status=encoding.StatusInfoArray(
-                    received=encoding.StatusInfo(
-                        status=True,
-                        at=100,
-                    ),
-                ),
-                reason_code=0,
-                subj_source='dtn:none',
-                subj_ts=encoding.Timestamp(),
+        ctr.bundle.blocks = [
+            CanonicalBlock(
+                type_code=1,
+                crc_type=AbstractBlock.CrcType.CRC32,
+            ) / AdminRecord(
+                type_code=3
             ),
         ]
-        bdl.bundle.update_all_crc()
-        bdl.bundle.show()
-        print('CBOR', bdl.bundle.build())
 
-        sess_obj.send_bundle_data(dbus.ByteArray(bytes(bdl.bundle)))
-        sess_obj.terminate(0)
+        self.send_bundle(ctr)
+
+
+def str2bool(val):
+    ''' Require an option value to be boolean text.
+    '''
+    if val.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    if val.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    raise argparse.ArgumentTypeError('Boolean value expected')
 
 
 def main():
@@ -222,6 +449,15 @@ def main():
                         help='Names of test modes enabled')
     parser.add_argument('--bus-service', type=str,
                         help='D-Bus service name')
+    parser.add_argument('--cl-service', type=str,
+                        help='DBus service name')
+    parser.add_argument('--eloop', type=str2bool, default=True,
+                        help='If enabled, waits in an event loop.')
+    subp = parser.add_subparsers(dest='action', help='action')
+
+    parser_ping = subp.add_parser('ping',
+                                  help='Send an admin record')
+    parser_ping.add_argument('nodeid', type=str)
 
     args = parser.parse_args()
     logging.basicConfig(level=args.log_level.upper())
@@ -239,9 +475,13 @@ def main():
         logging.info('Registered as "%s"', bus_serv.get_name())
 
     agent = Agent(config)
-    agent.ping('dtn.tcpcl.Client', 'localhost', 4556)
+    if args.cl_service:
+        agent.cl_attach(args.cl_service)
+    if args.action == 'ping':
+        agent.ping(args.nodeid)
 
-    agent.exec_loop()
+    if args.eloop:
+        agent.exec_loop()
 
 
 if __name__ == '__main__':

@@ -37,25 +37,29 @@ class CborField(scapy.fields.Field):
         val = self.m2i(pkt, item)
         return (s, val)
 
-    def i2m(self, pkt, val):
+    def i2m(self, pkt, x):
         ''' Encode this field to a CBOR item.
 
         :param pkt: The packet (container) context.
-        :param val: The internal data value.
+        :param x: The internal data value.
         :return: The CBOR item.
         :rtype: A value or :py:obj:`IGNORE`.
         '''
-        return val
+        return x
 
-    def m2i(self, pkt, val):
+    def m2i(self, pkt, x):
         ''' Decode this field from a CBOR item.
 
         :param pkt: The packet (container) context.
-        :param val: The CBOR item value.
+        :param x: The CBOR item value.
         :return: The internal data value.
         :rtype: A value or :py:obj:`IGNORE`.
         '''
-        return val
+        return x
+
+    def any2i(self, pkt, x):
+        # Coerce all values to internal type
+        return self.m2i(pkt, x)
 
 
 ConditionalField = scapy.fields.ConditionalField
@@ -135,10 +139,10 @@ class FieldListField(CborField):
         CborField.__init__(self, name, default)
         self.fld = fld
 
-    def i2m(self, pkt, val):
-        if val is None:
-            val = []
-        return val
+    def i2m(self, pkt, x):
+        if x is None:
+            x = []
+        return x
 
     def any2i(self, pkt, x):
         if not isinstance(x, list):
@@ -171,20 +175,23 @@ class PacketField(CborField):
     holds_packets = 1
 
     def __init__(self, name, default, cls):
-        CborField.__init__(self, name, default)
         self.cls = cls
+        CborField.__init__(self, name, default)
 
-    def i2m(self, pkt, val):
-        if val is None:
+    def i2m(self, pkt, x):
+        if x is None:
             return None
-        return val.build()
+        return x.build()
 
-    def m2i(self, pkt, val):
-        if val is None:
+    def m2i(self, pkt, x):
+        if x is None:
             return None
         obj = self.cls()
-        obj.dissect(val)
+        obj.dissect(x)
         return obj
+
+    def any2i(self, pkt, x):
+        return x
 
 
 class PacketListField(PacketField):
@@ -250,15 +257,15 @@ class UintField(CborField):
             maxval = 2 ** 64 - 1
         self.maxval = maxval
 
-    def i2m(self, pkt, val):
+    def i2m(self, pkt, x):
         try:
-            return int(val)
+            return int(x)
         except TypeError:
             return None
 
-    def m2i(self, pkt, val):
+    def m2i(self, pkt, x):
         try:
-            return int(val)
+            return int(x)
         except TypeError:
             return None
 
@@ -266,11 +273,36 @@ class UintField(CborField):
         return volatile.RandNum(0, self.maxval)
 
 
+class EnumField(UintField):
+    ''' An integer containing an enumerated value.
+
+    :param enum: Available values for the field.
+    :type enum: :py:cls:`enum.IntEnum`
+    '''
+    __slots__ = (
+        'enum',
+    )
+
+    def __init__(self, name, default, enum):
+        maxval = 0
+        for val in enum:
+            maxval = max(maxval, int(val))
+        self.enum = enum
+
+        UintField.__init__(self, name, default, maxval)
+
+    def m2i(self, pkt, val):
+        val = UintField.m2i(self, pkt, val)
+        if val is not None:
+            val = self.enum(val)
+        return val
+
+
 class FlagsField(UintField):
     ''' An integer containing enumerated flags.
 
     :param flags: Available flags for the field.
-    :type flags: enum.IntFlag -like
+    :type flags: :py:cls:`enum.IntFlag`
     '''
     __slots__ = (
         'flags',
@@ -284,6 +316,12 @@ class FlagsField(UintField):
 
         UintField.__init__(self, name, default, maxval)
 
+    def m2i(self, pkt, x):
+        x = UintField.m2i(self, pkt, x)
+        if x is not None:
+            x = self.flags(x)
+        return x
+
 
 class TstrField(CborField):
     ''' Allow only CBOR 'tstr' value.
@@ -292,15 +330,15 @@ class TstrField(CborField):
     def __init__(self, name, default=None):
         CborField.__init__(self, name, default)
 
-    def i2m(self, pkt, val):
+    def i2m(self, pkt, x):
         try:
-            return str(val)
+            return str(x)
         except TypeError:
             return None
 
-    def m2i(self, pkt, val):
+    def m2i(self, pkt, x):
         try:
-            return str(val)
+            return str(x)
         except TypeError:
             return None
 
@@ -321,15 +359,15 @@ class BstrField(CborField):
         from scapy.utils import repr_hex
         return "h'{}'".format(repr_hex(x))
 
-    def i2m(self, pkt, val):
+    def i2m(self, pkt, x):
         try:
-            return bytes(val)
+            return bytes(x)
         except TypeError:
             return None
 
-    def m2i(self, pkt, val):
+    def m2i(self, pkt, x):
         try:
-            return bytes(val)
+            return bytes(x)
         except TypeError:
             return None
 

@@ -215,7 +215,7 @@ class TestPrimaryBlock(BaseTestPacket):
 
     def testEncodeFragment(self):
         blk = PrimaryBlock(
-            bundle_flags=PrimaryBlock.Flag.BUNDLE_IS_FRAGMENT,
+            bundle_flags=PrimaryBlock.Flag.IS_FRAGMENT,
             crc_type=2,
             destination='dtn://dst/',
             source='dtn://src/',
