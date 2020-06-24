@@ -89,7 +89,7 @@ class BundleContainer(object):
             and self.bundle.primary.bundle_flags & PrimaryBlock.Flag.REQ_RECEPTION_REPORT
         )
 
-    def create_report_reception(self, timestamp):
+    def create_report_reception(self, timestamp, own_nodeid):
         status_ts = bool(self.bundle.primary.bundle_flags & PrimaryBlock.Flag.REQ_STATUS_TIME)
 
         report = StatusReport(
@@ -108,7 +108,7 @@ class BundleContainer(object):
         reply.bundle.primary = PrimaryBlock(
             bundle_flags=PrimaryBlock.Flag.PAYLOAD_ADMIN,
             destination=self.bundle.primary.report_to,
-            source=self.bundle.primary.destination,
+            source=own_nodeid,
             create_ts=timestamp,
             crc_type=AbstractBlock.CrcType.CRC32,
         )
@@ -129,7 +129,7 @@ class Config(object):
         A set of test-mode behaviors to enable.
     .. py:attribute:: bus_conn
         The D-Bus connection object to register handlers on.
-    .. py:attribute:: own_eid
+    .. py:attribute:: own_nodeid
         This agent's EID to respond to.
     .. py:attribute:: route_table
         A map from destination EID to next-hop Node ID.
@@ -138,21 +138,140 @@ class Config(object):
     def __init__(self):
         self.enable_test = set()
         self.bus_conn = dbus.bus.BusConnection(dbus.bus.BUS_SESSION)
-        self.own_eid = u''
+        self.own_nodeid = None
         self.route_table = {}
 
 
-class ClSession(object):
-    ''' Convergence layer session keeping.
+class ClAgent(object):
+    ''' Convergence layer connectivity.
+
+    :ivar agent_obj: The bus proxy object when it is valid.
+    :ivar conns: List of connections on this agent.
+    :ivar recv_bundle_finish: A callback to handle received bundle data.
     '''
 
     def __init__(self):
         self.serv_name = None
         self.obj_path = None
 
+        self.bus_conn = None
+        self.agent_obj = None
+
+        self.recv_bundle_finish = None
+
+        self.conns = set()
+        # Map from obj_path to ClConnection
+        self._cl_conn_path = {}
+        # Map from peer Node ID to ClConnection
+        self._cl_conn_nodeid = {}
+        # Waiting for sessions
+        self._sess_wait = {}
+
+    def bind(self, bus_conn):
+        if self.agent_obj:
+            return
+        LOGGER.debug('Binding to CL service %s', self.serv_name)
+        self.bus_conn = bus_conn
+        self.agent_obj = bus_conn.get_object(self.serv_name, self.obj_path)
+
+        self.agent_obj.connect_to_signal('connection_opened', self._conn_attach)
+        self.agent_obj.connect_to_signal('connection_closed', self._conn_detach)
+        for conn_path in self.agent_obj.get_connections():
+            self._conn_attach(conn_path)
+
+    def unbind(self):
+        if not self.agent_obj:
+            return
+        LOGGER.debug('Unbinding from CL service %s', self.serv_name)
+        self.agent_obj = None
+        self.bus_conn = None
+
+    def _conn_attach(self, conn_path):
+        ''' Attach to new connection object.
+        '''
+        LOGGER.debug('Attaching to CL object %s', conn_path)
+        conn_obj = self.bus_conn.get_object(self.serv_name, conn_path)
+
+        cl_conn = ClConnection()
+        cl_conn.serv_name = self.serv_name
+        cl_conn.obj_path = conn_path
+        cl_conn.conn_obj = conn_obj
+        self.conns.add(cl_conn)
+        self._cl_conn_path[cl_conn.obj_path] = cl_conn
+
+        def handle_recv_bundle_finish(bid, _length, result):
+            if result != 'success':
+                return
+            data = conn_obj.recv_bundle_pop_data(bid)
+            data = dbus.ByteArray(data)
+            LOGGER.debug('handle_recv_bundle_finish data %s', cbor2.loads(data))
+            if callable(self.recv_bundle_finish):
+                self.recv_bundle_finish(data)
+
+        conn_obj.connect_to_signal('recv_bundle_finished', handle_recv_bundle_finish)
+
+        def handle_state_change(state):
+            if state == 'established':
+                params = conn_obj.get_session_parameters()
+                cl_conn = self._cl_conn_path[conn_path]
+                cl_conn.nodeid = str(params['peer_nodeid'])
+                cl_conn.sess_params = params
+                LOGGER.debug('Session established with %s', cl_conn.nodeid)
+                self._cl_conn_nodeid[cl_conn.nodeid] = cl_conn
+                self._conn_ready(cl_conn.nodeid)
+
+        state = conn_obj.get_session_state()
+        if state != 'established':
+            conn_obj.connect_to_signal('session_state_changed', handle_state_change)
+        handle_state_change(state)
+
+    def _conn_detach(self, conn_path):
+        ''' Detach from a removed connection object.
+        '''
+        cl_conn = self._cl_conn_path[conn_path]
+        LOGGER.debug('Detaching from CL object %s (node %s)', conn_path, cl_conn.nodeid)
+        del self._cl_conn_path[cl_conn.obj_path]
+        del self._cl_conn_nodeid[cl_conn.nodeid]
+
+    def _conn_ready(self, nodeid):
+        cb = self._sess_wait.get(nodeid)
+        if callable(cb):
+            cb()
+
+    def get_session(self, nodeid, address, port):
+        ''' Get an active session or create one if needed.
+        '''
+
+        if nodeid in self._cl_conn_nodeid:
+            LOGGER.info('Existing to %s', nodeid)
+        else:
+            LOGGER.info('Connecting to %s:%d', address, port)
+            self.agent_obj.connect(address, port)
+
+            # Wait in loop until self._conn_ready() is called
+            eloop = glib.MainLoop()
+            self._sess_wait[nodeid] = eloop.quit
+            eloop.run()
+
+        cl_conn = self._cl_conn_nodeid[nodeid]
+        return cl_conn
+
+
+class ClConnection(object):
+    ''' Convergence layer session keeping.
+
+    :ivar conn_obj: The bus proxy object when it is valid.
+    '''
+
+    def __init__(self):
+        self.serv_name = None
+        self.obj_path = None
+
+        self.conn_obj = None
+
+        # set after session negotiated
         self.sess_params = None
         self.nodeid = None
-        self.sess_obj = None
 
 
 class Timestamper(object):
@@ -210,12 +329,11 @@ class Agent(dbus.service.Object):
 
         self.timestamp = Timestamper()
 
-        self._cl_agent_obj = None
-        # Map for CL connection DBus objects
-        # Map from (serv_name, obj_path) to ClSession
-        self._cl_sess_objs = {}
-        # Map from peer Node ID to ClSession
-        self._cl_peer_nodeids = {}
+        self._bus_obj = self._config.bus_conn.get_object('org.freedesktop.DBus', '/org/freedesktop/DBus')
+        self._bus_obj.connect_to_signal('NameOwnerChanged', self._bus_name_changed)
+
+        # Bound-to CL agent
+        self._cl_agent = None
 
         if bus_kwargs is None:
             bus_kwargs = dict(
@@ -268,86 +386,27 @@ class Agent(dbus.service.Object):
                 # wait for graceful shutdown
                 eloop.run()
 
-    def _cl_conn_attach(self, servname):
-        ''' Get a function to attach to new connection object.
-        '''
+    def _bus_name_changed(self, servname, old_owner, new_owner):
+        if self._cl_agent and self._cl_agent.serv_name == servname:
+            if old_owner:
+                self._cl_agent.unbind()
+            if new_owner:
+                self._cl_agent.bind(self._config.bus_conn)
 
-        def func(conn_path):
-            conn_obj = self._config.bus_conn.get_object(servname, conn_path)
-            LOGGER.debug('Attaching to CL object %s', conn_path)
-            cl_sess = ClSession()
-            cl_sess.serv_name = servname
-            cl_sess.obj_path = conn_path
-            cl_sess.sess_obj = conn_obj
-            self._cl_sess_objs[(servname, conn_path)] = cl_sess
-
-            def handle_recv_bundle_finish(bid, _length, result):
-                if result != 'success':
-                    return
-                data = conn_obj.recv_bundle_pop_data(bid)
-                data = dbus.ByteArray(data)
-                print('data', cbor2.loads(data))
-                self._cl_recv_bundle_finish(data)
-
-            conn_obj.connect_to_signal('recv_bundle_finished', handle_recv_bundle_finish)
-
-            def handle_state_change(state):
-                if state == 'established':
-                    params = conn_obj.get_session_parameters()
-                    cl_sess = self._cl_sess_objs[(servname, conn_path)]
-                    cl_sess.nodeid = str(params['peer_nodeid'])
-                    cl_sess.sess_params = params
-                    LOGGER.debug('Session established with %s', cl_sess.nodeid)
-                    self._cl_peer_nodeids[cl_sess.nodeid] = cl_sess
-
-            state = conn_obj.get_session_state()
-            if state != 'established':
-                conn_obj.connect_to_signal('session_state_changed', handle_state_change)
-            handle_state_change(state)
-
-        return func
-
-    def _cl_conn_detach(self, servname):
-        ''' Get a function to detach from a removed connection object.
-        '''
-
-        def func(conn_path):
-            cl_sess = self._cl_sess_objs[(servname, conn_path)]
-            del self._cl_sess_objs[(cl_sess.serv_name, cl_sess.obj_path)]
-            del self._cl_peer_nodeids[cl_sess.nodeid]
-
-        return func
-
-    def _cl_recv_bundle_finish(self, data):
+    def _cl_recv_bundle(self, data):
         ''' Handle a new received bundle from a CL.
         '''
         print('Saw bundle data len {}'.format(len(data)))
         ctr = BundleContainer(Bundle(data))
         self.recv_bundle(ctr)
 
-    def _add_cl_session(self, cl_sess):
-        self._cl_sess_objs[(cl_sess.serv_name, cl_sess.obj_path)] = cl_sess
-        self._cl_peer_nodeids[cl_sess.nodeid] = cl_sess
-
     def _get_session_for(self, nodeid):
         self.__logger.info('Getting session for: %s', nodeid)
-        if nodeid in self._cl_peer_nodeids:
-            self.__logger.info('Existing to %s', nodeid)
-            cl_sess = self._cl_peer_nodeids[nodeid]
-        else:
-            (address, port) = self.route_table[nodeid]
-            self.__logger.info('Connecting new session to %s:%d', address, port)
-            serv_name = self._cl_agent_obj.bus_name
-            sess_path = self._cl_agent_obj.connect(address, port)
-            sess_obj = self._config.bus_conn.get_object(serv_name, sess_path)
+        if not self._cl_agent:
+            raise RuntimeError('No CL bound')
 
-            cl_sess = ClSession()
-            cl_sess.serv_name = serv_name
-            cl_sess.obj_path = sess_path
-            cl_sess.nodeid = nodeid
-            cl_sess.sess_obj = sess_obj
-            self._add_cl_session(cl_sess)
-        return cl_sess
+        (address, port) = self.route_table[nodeid]
+        return self._cl_agent.get_session(nodeid, address, port)
 
     def recv_bundle(self, ctr):
         ''' Perform agent handling of a received bundle.
@@ -359,7 +418,7 @@ class Agent(dbus.service.Object):
         LOGGER.debug('CRC invalid %s', ctr.bundle.check_all_crc())
 
         if ctr.do_report_reception():
-            self.send_bundle(ctr.create_report_reception(self.timestamp()))
+            self.send_bundle(ctr.create_report_reception(self.timestamp(), self._config.own_nodeid))
 
     def send_bundle(self, ctr):
         ''' Perform agent handling to send a bundle.
@@ -370,13 +429,13 @@ class Agent(dbus.service.Object):
         :type ctr: :py:cls:`BundleContainer`
         '''
         dest_eid = str(ctr.bundle.primary.destination)
-        cl_sess = self._get_session_for(dest_eid)
+        cl_conn = self._get_session_for(dest_eid)
 
         ctr.fix_block_num()
         ctr.bundle.update_all_crc()
         LOGGER.info('Sending bundle\n%s', ctr.bundle.show(dump=True))
 
-        cl_sess.sess_obj.send_bundle_data(dbus.ByteArray(bytes(ctr.bundle)))
+        cl_conn.conn_obj.send_bundle_data(dbus.ByteArray(bytes(ctr.bundle)))
 
     @dbus.service.method(DBUS_IFACE, in_signature='s', out_signature='')
     def cl_attach(self, servname):
@@ -384,17 +443,16 @@ class Agent(dbus.service.Object):
 
         :param str servname: The DBus service name to listen from.
         '''
-        LOGGER.debug('Attaching to CL service {}'.format(servname))
-        agent_path = '/org/ietf/dtn/tcpcl/Agent'
-        agent_obj = self._config.bus_conn.get_object(servname, agent_path)
-        self._cl_agent_obj = agent_obj
+        LOGGER.debug('Attaching to CL service %s', servname)
 
-        attach_func = self._cl_conn_attach(servname)
-        detach_func = self._cl_conn_detach(servname)
-        agent_obj.connect_to_signal('connection_opened', attach_func)
-        agent_obj.connect_to_signal('connection_closed', detach_func)
-        for conn_path in agent_obj.get_connections():
-            attach_func(conn_path)
+        agent = ClAgent()
+        agent.serv_name = servname
+        agent.obj_path = '/org/ietf/dtn/tcpcl/Agent'
+        agent.recv_bundle_finish = self._cl_recv_bundle
+        self._cl_agent = agent
+
+        if self._bus_obj.NameHasOwner(servname):
+            agent.bind(self._config.bus_conn)
 
     @dbus.service.method(DBUS_IFACE, in_signature='s', out_signature='')
     def ping(self, nodeid):
@@ -409,8 +467,8 @@ class Agent(dbus.service.Object):
         ctr.bundle.primary = PrimaryBlock(
             bundle_flags=(PrimaryBlock.Flag.REQ_RECEPTION_REPORT | PrimaryBlock.Flag.REQ_STATUS_TIME),
             destination=nodeid,
-            source='dtn://client/',
-            report_to='dtn://client/',
+            source=self._config.own_nodeid,
+            report_to=self._config.own_nodeid,
             create_ts=cts,
             crc_type=AbstractBlock.CrcType.CRC32,
         )
@@ -436,6 +494,17 @@ def str2bool(val):
     raise argparse.ArgumentTypeError('Boolean value expected')
 
 
+def uristr(val):
+    ''' Require an option value to be a URI.
+    '''
+    from urllib.parse import urlparse
+
+    nodeid_uri = urlparse(val)
+    if not nodeid_uri.scheme:
+        raise argparse.ArgumentTypeError('URI value expected')
+    return val
+
+
 def main():
     ''' Agent command entry point. '''
     from dbus.mainloop.glib import DBusGMainLoop
@@ -449,6 +518,8 @@ def main():
                         help='Names of test modes enabled')
     parser.add_argument('--bus-service', type=str,
                         help='D-Bus service name')
+    parser.add_argument('--nodeid', type=uristr,
+                        help='This entity\'s Node ID')
     parser.add_argument('--cl-service', type=str,
                         help='DBus service name')
     parser.add_argument('--eloop', type=str2bool, default=True,
@@ -457,7 +528,7 @@ def main():
 
     parser_ping = subp.add_parser('ping',
                                   help='Send an admin record')
-    parser_ping.add_argument('nodeid', type=str)
+    parser_ping.add_argument('destination', type=uristr)
 
     args = parser.parse_args()
     logging.basicConfig(level=args.log_level.upper())
@@ -474,11 +545,13 @@ def main():
             bus=config.bus_conn, name=args.bus_service, do_not_queue=True)
         logging.info('Registered as "%s"', bus_serv.get_name())
 
+    config.own_nodeid = args.nodeid
+
     agent = Agent(config)
     if args.cl_service:
         agent.cl_attach(args.cl_service)
     if args.action == 'ping':
-        agent.ping(args.nodeid)
+        agent.ping(args.destination)
 
     if args.eloop:
         agent.exec_loop()
