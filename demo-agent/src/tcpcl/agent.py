@@ -90,9 +90,6 @@ class Agent(dbus.service.Object):
             )
         dbus.service.Object.__init__(self, **bus_kwargs)
 
-    def __del__(self):
-        self.stop()
-
     def _get_obj_path(self):
         hdl_id = self._obj_id
         self._obj_id += 1
@@ -118,7 +115,7 @@ class Agent(dbus.service.Object):
         self._path_to_handler.pop(path)
         self._handlers.remove(hdl)
 
-        if not self._handlers and self._config.stop_on_close:
+        if not self._handlers and (self._in_shutdown or self._config.stop_on_close):
             self.stop()
 
     def set_on_stop(self, func):
@@ -167,6 +164,7 @@ class Agent(dbus.service.Object):
     @dbus.service.method(DBUS_IFACE, in_signature='')
     def stop(self):
         ''' Immediately stop the agent and disconnect any sessions. '''
+        self.__logger.info('Stopping agent')
         for spec in tuple(self._bindsocks.keys()):
             self.listen_stop(*spec)
 
