@@ -875,7 +875,7 @@ Additionally, future session extension types can apply further nuance to session
       </section>
       <section anchor="sec-transfer-segmentation" title="Transfer Segmentation Policies">
         <t>
-Each TCPCL session allows a negotiated transfer segmentation polcy to be applied in each transfer direction.
+Each TCPCL session allows a negotiated transfer segmentation policy to be applied in each transfer direction.
 A receiving node can set the Segment MRU in its SESS_INIT message to determine the largest acceptable segment size, and a transmitting node can segment a transfer into any sizes smaller than the receiver's Segment MRU.
 It is a network administration matter to determine an appropriate segmentation policy for entities operating TCPCL, but guidance given here can be used to steer policy toward performance goals.
 It is also advised to consider the Segment MRU in relation to chunking/packetization performed by TLS, TCP, and any intermediate network-layer nodes.

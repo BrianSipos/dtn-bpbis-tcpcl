@@ -51,7 +51,6 @@ Pipelining
 PKI
 PKIX
 plaintext
-polcy
 pre
 PSK
 queueing
