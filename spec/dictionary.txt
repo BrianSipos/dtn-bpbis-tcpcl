@@ -25,12 +25,14 @@ encodings
 endian
 extensibility
 FFF
+HostName
 IANA
 IESG
 IETF
 INIT
 incrementing
 interoperation
+IPADDR
 iPAddress
 IPv
 keepalive

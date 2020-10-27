@@ -2,7 +2,7 @@
 <!DOCTYPE rfc SYSTEM "rfc2629.dtd" [
 ]>
 <?rfc toc="yes"?>
-<rfc ipr="trust200902" category="std" consensus="true" docName="draft-ietf-dtn-tcpclv4-22">
+<rfc ipr="trust200902" category="std" docName="draft-ietf-dtn-tcpclv4-22">
   <front>
     <title abbrev="DTN TCPCLv4">
       Delay-Tolerant Networking TCP Convergence Layer Protocol Version 4
@@ -1388,7 +1388,7 @@ If the address authentication result is Failure or if the result is Absent and s
           </t>
           <t>
 Immediately before Session Parameter Negotiation, each side of the session SHALL authenticate the Node ID of the peer's SESS_INIT message using any NODE-ID of the peer certificate.
-If the Node ID authentication result is Failure or if the result is Absent and security policy requries an authenticated Node ID, the entity SHALL terminate the session (with a reason code of "Contact Failure").
+If the Node ID authentication result is Failure or if the result is Absent and security policy requires an authenticated Node ID, the entity SHALL terminate the session (with a reason code of "Contact Failure").
           </t>
         </section>
         <section title="Example TLS Initiation">
