@@ -2,7 +2,7 @@
 <!DOCTYPE rfc SYSTEM "rfc2629.dtd" [
 ]>
 <?rfc toc="yes"?>
-<rfc ipr="trust200902" category="std" docName="draft-ietf-dtn-tcpclv4-21">
+<rfc ipr="trust200902" category="std" consensus="true" docName="draft-ietf-dtn-tcpclv4-22">
   <front>
     <title abbrev="DTN TCPCLv4">
       Delay-Tolerant Networking TCP Convergence Layer Protocol Version 4
@@ -67,18 +67,14 @@
         <email>simon@per.reau.lt</email>
       </address>
     </author>
-    <date year="2020" month="June" day="9" />
+    <date year="2020" month="October" day="26" />
     <area>Transport</area>
     <workgroup>Delay-Tolerant Networking</workgroup>
     <abstract>
       <t>
-This document describes a TCP-based convergence layer (TCPCL) for 
-Delay-Tolerant Networking (DTN).
-This version of the TCPCL protocol resolves implementation issues in the
-earlier TCPCL Version 3 of RFC7242 and updates to the Bundle Protocol (BP) 
-contents, encodings, and convergence layer requirements in BP Version 7.
-Specifically, the TCPCLv4 uses CBOR-encoded BPv7 bundles as its service data
-unit being transported and provides a reliable transport of such bundles.
+This document describes a TCP-based convergence layer (TCPCL) for Delay-Tolerant Networking (DTN).
+This version of the TCPCL protocol resolves implementation issues in the earlier TCPCL Version 3 of RFC7242 and updates to the Bundle Protocol (BP) contents, encodings, and convergence layer requirements in BP Version 7.
+Specifically, the TCPCLv4 uses CBOR-encoded BPv7 bundles as its service data unit being transported and provides a reliable transport of such bundles.
 This version of TCPCL also includes security and extensibility mechanisms.
       </t>
     </abstract>
@@ -1046,13 +1042,9 @@ Additionally, future session extension and transfer extension types can apply fu
           the meaning of its fields.
         </t>
         <t>
-          If an entity is capable of exchanging messages according to 
-          TLS 1.3 <xref target="RFC8446" /> or any successors 
-          which are compatible with that TLS ClientHello, the the CAN_TLS flag
-          within its Contact Header SHALL be set to 1.
-          This behavior prefers the use of TLS when possible, even if security
-          policy does not allow or require authentication.
-          This follows the opportunistic security model of <xref target="RFC7435" />.
+If an entity is capable of exchanging messages according to TLS 1.3 <xref target="RFC8446" /> or any successors which are compatible with that TLS ClientHello, the the CAN_TLS flag within its Contact Header SHALL be set to 1.
+This behavior prefers the use of TLS when possible, even if security policy does not allow or require authentication.
+This follows the opportunistic security model of <xref target="RFC7435" />, though an active attacker could interfere with the exchange in such cases.
         </t>
         <t>
           Upon receipt of the Contact Header, both entities perform the validation
@@ -1112,6 +1104,7 @@ Additionally, future session extension and transfer extension types can apply fu
           <c>If bit is set, indicates that the sending peer is capable of TLS security.</c>
           <c>Reserved</c>
           <c>others</c>
+          <c></c>
         </texttable>
       </section>
 
@@ -1237,17 +1230,17 @@ The ideal certificate identity is the Node ID of the entity using the NODE-ID de
 When the Node ID is identified, there is no need for any lower-level identification to take place.
               </t>
               <t hangText="DNS Name:">
-If CA policy forbids a certificate to contain an arbitrary NODE-ID but allows a DNS-ID to be identified then one or more stable host names can be identified in the certificate.
+If CA policy forbids a certificate to contain an arbitrary NODE-ID but allows a DNS-ID to be identified then one or more stable DNS names can be identified in the certificate.
 The use of wildcard DNS-ID is discouraged due to the complex rules for matching and dependence on implementation support for wildcard matching (see Section 6.4.3 of <xref target="RFC6125" />).
               </t>
               <t hangText="Network Address:">
-If no stable host name is available but a stable network address is available and CA policy allows a certificate to contain a NETWORK-ID (as defined below) then one or more network addresses can be identified in the certificate.
+If no stable DNS name is available but a stable network address is available and CA policy allows a certificate to contain a IPADDR-ID (as defined below) then one or more network addresses can be identified in the certificate.
               </t>
             </list>
-When only a DNS-ID or NETWORK-ID can be identified by a certificate, it is implied that an entity which authenticates using that certificate is trusted to provide a valid Node ID in its SESS_INIT; the certificate itself does not actually authenticate that Node ID.
+When only a DNS-ID or IPADDR-ID can be identified by a certificate, it is implied that an entity which authenticates using that certificate is trusted to provide a valid Node ID in its SESS_INIT; the certificate itself does not actually authenticate that Node ID.
           </t>
           <t>
-The RECOMMENDED security policy of an entity is to validate a peer which authenticates its Node ID regardless of an authenticated host name or address, and only consider the host/address authentication in the absence of an authenticated Node ID.
+The RECOMMENDED security policy of an entity is to validate a peer which authenticates its Node ID regardless of an authenticated DNS name or address, and only consider the host/address authentication in the absence of an authenticated Node ID.
           </t>
           <t>
             This specification defines a NODE-ID of a certificate as being 
@@ -1267,7 +1260,7 @@ The RECOMMENDED security policy of an entity is to validate a peer which authent
             the certificate-authenticated NODE-ID.
           </t>
           <t>
-            This specification defines a NETWORK-ID of a certificate as
+            This specification defines a IPADDR-ID of a certificate as
             being the subjectAltName entry of type iPAddress whose value is encoded
             according to <xref target="RFC5280" />.
           </t>
@@ -1298,12 +1291,9 @@ The RECOMMENDED security policy of an entity is to validate a peer which authent
             (using the rough order in which they occur):
             <list style="hanging">
               <t hangText="Client Hello:">
-                When a resolved host name was used to establish the TCP connection, 
-                the TLS ClientHello SHOULD include a Server Name Indication (SNI)
-                in accordance with <xref target="RFC6066" />
-                containing that host name (of the passive entity) which was resolved.
-                Note: The SNI text is the network-layer name for the passive entity,
-                which is not the Node ID of that entity.
+When a resolved DNS name was used to establish the TCP connection, the TLS ClientHello SHOULD include a Server Name Indication (SNI) in accordance with <xref target="RFC6066" />.
+When present, the "server_name" extension SHALL contain a "HostName" value taken from the DNS name (of the passive entity) which was resolved.
+Note: The 'HostName in the "server_name" extension is the network name for the passive entity, not the Node ID of that entity.
               </t>
               <t hangText="Server Certificate:">
                 The passive entity SHALL supply a certificate within the 
@@ -1311,14 +1301,14 @@ The RECOMMENDED security policy of an entity is to validate a peer which authent
                 Unless prohibited by CA policy, 
                 the passive entity certificate SHALL contain a NODE-ID 
                 which authenticates the Node ID of the peer.
-                When assigned a stable host name, 
+                When assigned a stable DNS name, 
                 the passive entity certificate SHOULD contain a DNS-ID
                 which authenticates that (fully qualified) name.
                 When assigned a stable network address, 
-                the passive entity certificate MAY contain a NETWORK-ID
+                the passive entity certificate MAY contain a IPADDR-ID
                 which authenticates that address.
-                The passive entity MAY use the SNI host name to choose an appropriate
-                server-side certificate which authenticates that host name.
+                The passive entity MAY use the SNI DNS name to choose an appropriate
+                server-side certificate which authenticates that DNS name.
               </t>
               <t hangText="Certificate Request:">
                 During TLS handshake, the passive entity SHALL request a 
@@ -1330,11 +1320,11 @@ The RECOMMENDED security policy of an entity is to validate a peer which authent
                 Unless prohibited by CA policy, 
                 the active entity certificate SHALL contain a NODE-ID 
                 which authenticates the Node ID of the peer.
-                When assigned a stable host name, 
+                When assigned a stable DNS name, 
                 the active entity certificate SHOULD contain a DNS-ID
                 which authenticates that (fully qualified) name.
                 When assigned a stable network address, 
-                the active entity certificate MAY contain a NETWORK-ID
+                the active entity certificate MAY contain a IPADDR-ID
                 which authenticates that address.
               </t>
             </list>
@@ -1359,73 +1349,46 @@ The RECOMMENDED security policy of an entity is to validate a peer which authent
         </section>
         <section anchor="sec-tls-authentication" title="TLS Authentication">
           <t>
-            Using PKIX certificates exchanged during the TLS handshake, each
-            of the entities can attempt to authenticate its peer Node ID directly
-            or authenticate the peer host name or network address.
-            The Node ID exchanged in the Session Initialization is likely to
-            be used by the BP agent for making transfer and routing decisions,
-            so attempting Node ID validation is required 
-            while attempting host name validation is optional.
-            The logic for attempting validation is separate from the
-            logic for handling the result of validation, which is based on
-            local security policy.
+Using PKIX certificates exchanged during the TLS handshake, each of the entities can authenticate a peer Node ID directly or authenticate the peer DNS name or network address.
+The logic for attempting authentication is separate from the logic for handling the result of authentication, which is based on local security policy.
           </t>
           <t>
-            By using the SNI host name (see <xref target="sec-tls-handshake" />) a single
-            passive entity can act as a convergence layer for
-            multiple BP agents with distinct Node IDs.
-            When this &quot;virtual host&quot; behavior is used, the host name
-            is used as the indication of which BP Node the active entity
-            is attempting to communicate with.
-            A virtual host CL entity can be authenticated by a certificate containing
-            all of the host names and/or Node IDs being hosted or by several
-            certificates each authenticating a single host name and/or Node ID,
-            using the SNI value from the peer to select which certificate to use.
+By using the SNI DNS name (see <xref target="sec-tls-handshake" />) a single passive entity can act as a convergence layer for
+multiple BP agents with distinct Node IDs.
+When this &quot;virtual host&quot; behavior is used, the DNS name is used as the indication of which BP Node the active entity is attempting to communicate with.
+A virtual host CL entity can be authenticated by a certificate containing all of the DNS names and/or Node IDs being hosted or by several certificates each authenticating a single DNS name and/or Node ID, using the SNI value from the peer to select which certificate to use.
           </t>
           <t>
-            Any certificate received during TLS handshake SHALL be validated
-            up to one or more trusted CA certificates.
-            If certificate validation fails or if security policy disallows
-            a certificate for any reason, the entity SHALL terminate the session
-            (with a reason code of "Contact Failure").
+Any certificate received during TLS handshake SHALL be validated up to one or more trusted CA certificates.
+If certificate validation fails or if security policy disallows a certificate for any reason, the entity SHALL terminate the session (with a reason code of "Contact Failure").
           </t>
           <t>
-            Either during or immediately after the TLS handshake, 
-            the active entity SHALL attempt to authenticate the host name 
-            (of the passive entity) used to initiate the TCP connection
-            using any DNS-ID of the peer certificate.
-            If host name validation fails (including failure
-            because the certificate does not contain any DNS-ID) and 
-            security policy disallows an unauthenticated host, 
-            the entity SHALL terminate the session
-            (with a reason code of "Contact Failure").
+The result of authenticating a peer value against a certificate claim is one of:
+            <list style="hanging">
+              <t hangText="Absent:">
+Indicating that the claim type is not present in the certificate and cannot be authenticated.
+              </t>
+              <t hangText="Success:">
+Indicating the claim type is present and matches the peer (Node ID / DNS name / address) value.
+              </t>
+              <t hangText="Failure:">
+Indicating the claim type is present but did not match the peer value.
+              </t>
+            </list>
           </t>
           <t>
-            Either during or immediately after the TLS handshake, 
-            the active entity SHALL attempt to authenticate the IP address 
-            of the other side of the TCP connection using any NETWORK-ID of
-            the peer certificate.
-            Either during or immediately after the TLS handshake, 
-            the passive entity SHALL attempt to authenticate the IP address of 
-            the other side of the TCP connection using any NETWORK-ID of
-            the peer certificate.
-            If host address validation fails (including failure
-            because the certificate does not contain any NETWORK-ID) and 
-            security policy disallows an unauthenticated host, 
-            the entity SHALL terminate the session
-            (with a reason code of "Contact Failure").
+Either during or immediately after the TLS handshake, the active entity SHALL authenticate the DNS name (of the passive entity) used to initiate the TCP connection using any DNS-ID of the peer certificate.
+If the DNS name authentication result is Failure or if the result is Absent and security policy requires an authenticated DNS name, the entity SHALL terminate the session (with a reason code of "Contact Failure").
           </t>
           <t>
-            Immediately before Session Parameter Negotiation, each side of
-            the session SHALL perform Node ID validation of its peer as
-            described below.
-            Node ID validation SHALL succeed if the associated certificate
-            includes a NODE-ID whose value matches the Node ID of the TCPCL entity.
-            If Node ID validation fails (including failure because
-            the certificate does not contain any NODE-ID) and
-            security policy disallows an unauthenticated Node ID,
-            the entity SHALL terminate the session
-            (with a reason code of "Contact Failure").
+Either during or immediately after the TLS handshake, the active entity SHALL authenticate the IP address 
+of the other side of the TCP connection using any IPADDR-ID of the peer certificate.
+Either during or immediately after the TLS handshake, the passive entity SHALL authenticate the IP address of the other side of the TCP connection using any IPADDR-ID of the peer certificate.
+If the address authentication result is Failure or if the result is Absent and security policy requires an authenticated network address, the entity SHALL terminate the session (with a reason code of "Contact Failure").
+          </t>
+          <t>
+Immediately before Session Parameter Negotiation, each side of the session SHALL authenticate the Node ID of the peer's SESS_INIT message using any NODE-ID of the peer certificate.
+If the Node ID authentication result is Failure or if the result is Absent and security policy requries an authenticated Node ID, the entity SHALL terminate the session (with a reason code of "Contact Failure").
           </t>
         </section>
         <section title="Example TLS Initiation">
@@ -1454,7 +1417,7 @@ The RECOMMENDED security policy of an entity is to validate a peer which authent
     |       (as client)       |         |       (as server)       |
     +-------------------------+         +-------------------------+
     
-                      Host name validation occurs.
+                      DNS name validation occurs.
                    Secured TCPCL messaging can begin.
     
     +-------------------------+         
@@ -1515,44 +1478,37 @@ The RECOMMENDED security policy of an entity is to validate a peer which authent
           <c>SESS_INIT</c>
           <c>0x07</c>
           <c>
-            Contains the session parameter inputs from one of the entities,
-            as described in <xref target="sec-SESS_INIT" />.
+Contains the session parameter inputs from one of the entities, as described in <xref target="sec-SESS_INIT" />.
           </c>
           <c>SESS_TERM</c>
           <c>0x05</c>
           <c>
-            Indicates that one of the entities participating in the session wishes to cleanly terminate the session, as described in
-            <xref target="sec-SESS_TERM" />.
+Indicates that one of the entities participating in the session wishes to cleanly terminate the session, as described in <xref target="sec-SESS_TERM" />.
           </c>
           <c>XFER_SEGMENT</c>
           <c>0x01</c>
           <c>
-            Indicates the transmission of a segment of bundle data, as described in
-            <xref target="sec-XFER_SEGMENT" />.
+Indicates the transmission of a segment of bundle data, as described in <xref target="sec-XFER_SEGMENT" />.
           </c>
           <c>XFER_ACK</c>
           <c>0x02</c>
           <c>
-            Acknowledges reception of a data segment, as described in
-            <xref target="sec-XFER_ACK" />.
+Acknowledges reception of a data segment, as described in <xref target="sec-XFER_ACK" />.
           </c>
           <c>XFER_REFUSE</c>
           <c>0x03</c>
           <c>
-            Indicates that the transmission of the current bundle SHALL be stopped, as described in
-            <xref target="sec-XFER_REFUSE" />.
+Indicates that the transmission of the current bundle SHALL be stopped, as described in <xref target="sec-XFER_REFUSE" />.
           </c>
           <c>KEEPALIVE</c>
           <c>0x04</c>
           <c>
-            Used to keep TCPCL session active, as described in
-            <xref target="sec-KEEPALIVE" />.
+Used to keep TCPCL session active, as described in <xref target="sec-KEEPALIVE" />.
           </c>
           <c>MSG_REJECT</c>
           <c>0x06</c>
           <c>
-            Contains a TCPCL message rejection, as described in
-            <xref target="sec-MSG_REJECT" />.
+Contains a TCPCL message rejection, as described in <xref target="sec-MSG_REJECT" />.
           </c>
         </texttable>
       </section>
@@ -1597,7 +1553,7 @@ The RECOMMENDED security policy of an entity is to validate a peer which authent
           <list style="hanging">
             <t hangText="Keepalive Interval:">
               A 16-bit unsigned integer indicating the minimum interval, in seconds, 
-              to negotiate the Session Keepalive using the
+              to negotiate as the Session Keepalive using the
               method of <xref target="sec-session-negotiate" />.
             </t>
             <t hangText="Segment MRU:">
@@ -1651,6 +1607,9 @@ The RECOMMENDED security policy of an entity is to validate a peer which authent
               SESS_INIT is considered to have failed.
             </t>
           </list>
+When the active entity initiates a TCPCL session, it is likely based on routing information which binds a Node ID to CL parameters.
+If the active entity receives a SESS_INIT with different Node ID than was intended for the TCPCL session, the session MAY be allowed to be established.
+If allowed, such a session SHALL be associated with the Node ID provided in the SESS_INIT message rather than any intended value.
         </t>
       </section>
       
@@ -1666,28 +1625,16 @@ The RECOMMENDED security policy of an entity is to validate a peer which authent
         <t>
           <list style="hanging">
             <t hangText="Transfer MTU and Segment MTU:">
-              The maximum transmit unit (MTU) for whole transfers and individual segments
-              are identical to the Transfer MRU and Segment MRU, respectively,
-              of the received Contact Header.
-              A transmitting peer can send individual segments with any size smaller
-              than the Segment MTU, depending on local policy, dynamic network
-              conditions, etc.
-              Determining the size of each transmitted segment is an implementation
-              matter.
-              If either the Transfer MRU or Segment MRU is unacceptable, the entity 
-              SHALL terminate the session with a reason code of
-              &quot;Contact Failure&quot;.
+The maximum transmit unit (MTU) for whole transfers and individual segments are identical to the Transfer MRU and Segment MRU, respectively, of the received SESS_INIT message.
+A transmitting peer can send individual segments with any size smaller than the Segment MTU, depending on local policy, dynamic network conditions, etc.
+Determining the size of each transmitted segment is an implementation matter.
+If either the Transfer MRU or Segment MRU is unacceptable, the entity SHALL terminate the session with a reason code of &quot;Contact Failure&quot;.
             </t>
             <t hangText="Session Keepalive:">
-              Negotiation of the Session Keepalive parameter is performed by taking
-              the minimum of the two Contact Headers' Keepalive Interval values.
-              The Session Keepalive interval is a parameter for the behavior described
-              in <xref target="sec-KEEPALIVE" />.
-              If the Session Keepalive interval is unacceptable, the entity 
-              SHALL terminate the session with a reason code of
-              &quot;Contact Failure&quot;.
-              Note: a negotiated Session Keepalive of zero indicates that
-              KEEPALIVEs are disabled.
+Negotiation of the Session Keepalive parameter is performed by taking the minimum of the two Keepalive Interval values from the two SESS_INIT messages.
+The Session Keepalive interval is a parameter for the behavior described in <xref target="sec-KEEPALIVE" />.
+If the Session Keepalive interval is unacceptable, the entity SHALL terminate the session with a reason code of &quot;Contact Failure&quot;.
+Note: a negotiated Session Keepalive of zero indicates that KEEPALIVEs are disabled.
             </t>
           </list>
         </t>
@@ -1763,6 +1710,7 @@ The RECOMMENDED security policy of an entity is to validate a peer which authent
           <c>If bit is set, indicates that the receiving peer must handle the extension item.</c>
           <c>Reserved</c>
           <c>others</c>
+          <c></c>
         </texttable>
       </section>
     </section>
@@ -2043,6 +1991,7 @@ The RECOMMENDED security policy of an entity is to validate a peer which authent
             <c>If bit is set, indicates that this is the first segment of the transfer.</c>
             <c>Reserved</c>
             <c>others</c>
+            <c></c>
           </texttable>
 
           <t>
@@ -2305,7 +2254,7 @@ The RECOMMENDED security policy of an entity is to validate a peer which authent
 +---------------+---------------+---------------+---------------+
 </artwork>
             </figure>
-  
+
             <texttable anchor="tab-transfer-extension-flags" title="Transfer Extension Item Flags">
               <ttcol>Name</ttcol>
               <ttcol>Code</ttcol>
@@ -2315,8 +2264,9 @@ The RECOMMENDED security policy of an entity is to validate a peer which authent
               <c>If bit is set, indicates that the receiving peer must handle the extension item.</c>
               <c>Reserved</c>
               <c>others</c>
+              <c></c>
             </texttable>
-  
+
             <section anchor="sec-transfer-extension-transfer-length" title="Transfer Length Extension">
               <t>
                 The purpose of the Transfer Length extension is to allow entities to preemptively refuse
@@ -2465,6 +2415,7 @@ The RECOMMENDED security policy of an entity is to validate a peer which authent
           <c>If bit is set, indicates that this message is an acknowledgement of an earlier SESS_TERM message.</c>
           <c>Reserved</c>
           <c>others</c>
+          <c></c>
         </texttable>
         <texttable anchor="tab-SESS_TERM-reasons" title="SESS_TERM Reason Codes">
           <ttcol>Name</ttcol>
@@ -2668,25 +2619,22 @@ encrypted with a given set of keys as described in
 When permitted by the negotiated TLS version 
 (see <xref target="RFC8446" />), it is advisable to take
 advantage of session key updates to avoid those limits.
-When key updates are not possible, renegotiation of the TLS connection or
-establishing new TCPCL/TLS session
-are alternatives to limit session key use.
         </t>
       </section>
       <section anchor="sec-threat-node-impersonation" title="Threat: BP Node Impersonation">
         <t>
 The certificates exchanged by TLS enable authentication of peer
-host name and Node ID, but it is possible that a peer either not
+DNS name and Node ID, but it is possible that a peer either not
 provide a valid certificate or that the certificate does not validate
-either the host name or Node ID of the peer (see <xref target="sec-pkix-env" />).
+either the DNS name or Node ID of the peer (see <xref target="sec-pkix-env" />).
 Having a CA-validated certificate does not alone guarantee the identity
 of the network host or BP node from which the certificate is provided;
 additional validation procedures in <xref target="sec-tls-handshake" />
-bind the host name or node ID based on the contents of the certificate.
+bind the DNS name or node ID based on the contents of the certificate.
         </t>
         <t>
-The host name validation is a weaker form of authentication, because 
-even if a peer is operating on an authenticated network host name it
+The DNS name validation is a weaker form of authentication, because 
+even if a peer is operating on an authenticated network DNS name it
 can provide an invalid Node ID and cause bundles to be "leaked" to
 an invalid node.
 Especially in DTN environments, network names and addresses of nodes
@@ -2696,13 +2644,13 @@ stable identity.
         <t>
 Node ID validation ensures that the peer to which a bundle
 is transferred is in fact the node which the BP Agent expects it to be.
-It is a reasonable policy to skip host name validation if certificates
+It is a reasonable policy to skip DNS name validation if certificates
 can be guaranteed to validate the peer's Node ID.
-In circumstances where certificates can only be issued to network
-host names, Node ID validation is not possible but it could be
+In circumstances where certificates can only be issued to
+DNS names, Node ID validation is not possible but it could be
 reasonable to assume that a trusted host is not going to present an
 invalid Node ID.
-Determining of when a host name authentication can be trusted to validate
+Determining of when a DNS name authentication can be trusted to validate
 a Node ID is also a policy matter outside the scope of this document.
         </t>
       </section>
@@ -2761,13 +2709,8 @@ The following subsections give examples of alternate TLS uses.
         </t>
         <section anchor="sec-security-tlsnoauth" title="TLS Without Authentication">
           <t>
-In environments where PKI is available but there are restrictions on
-the issuance of certificates (including the contents of certificates),
-it may be possible to make use of TLS in a way which authenticates only the
-passive entity of a TCPCL session or which does not authenticate either entity.
-Using TLS in a way which does not authenticate both peer entities of each
-TCPCL session is outside of the scope of this document but does have similar
-properties to the opportunistic security model of <xref target="RFC7435" />.
+In environments where PKI is available but there are restrictions on the issuance of certificates (including the contents of certificates), it may be possible to make use of TLS in a way which authenticates only the passive entity of a TCPCL session or which does not authenticate either entity.
+Using TLS in a way which does not successfully authenticate some claim of both peer entities of a TCPCL session is outside of the scope of this document but does have similar properties to the opportunistic security model of <xref target="RFC7435" />.
           </t>
         </section>
         <section anchor="sec-security-tlsnopki" title="Non-Certificate TLS Use">
@@ -2876,6 +2819,7 @@ Transfer IDs within a session.
           <c>This specification.</c>
           <c>5-255</c>
           <c>Unassigned</c>
+          <c></c>
         </texttable>
       </section>
 
