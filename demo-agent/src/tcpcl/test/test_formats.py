@@ -35,7 +35,7 @@ class TestUInt16Field(unittest.TestCase):
     
     def testDeserialize(self):
         testval = 0x40
-        data = '\0\x40'
+        data = binascii.unhexlify(b'0040')
         pkt = self.DummyPacket(data)
         self.assertEqual(len(pkt), 2)
         self.assertEqual(pkt.getfieldval('attr'), testval)
