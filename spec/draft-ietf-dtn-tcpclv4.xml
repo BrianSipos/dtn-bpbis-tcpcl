@@ -100,7 +100,7 @@ In particular, when BP is using TCP as its bearer with TCPCL as its convergence 
       </t>
       <figure anchor="fig-tcpcl-ip-stack">
         <name>The Locations of the Bundle Protocol and the TCP Convergence-Layer Protocol above the Internet Protocol Stack</name>
-        <artwork align="left" type="ascii-art">
+        <artwork align="center" type="ascii-art">
 +-------------------------+
 |     DTN Application     | -\
 +-------------------------|   |
@@ -247,7 +247,7 @@ The relationship between connections, sessions, and streams is shown in <xref ta
         </t>
         <figure anchor="fig-entity-session-relations">
           <name>The relationships between TCPCL entities</name>
-          <artwork align="left" type="ascii-art">
+          <artwork align="center" type="ascii-art">
 +--------------------------------------------+
 |                 TCPCL Entity               |
 |                                            |      +----------------+
@@ -278,7 +278,7 @@ The relationship between connections, sessions, and streams is shown in <xref ta
         </figure>
         <figure anchor="fig-session-stream">
           <name>The relationship within a TCPCL Session of its two streams</name>
-          <artwork align="left" type="ascii-art">
+          <artwork align="center" type="ascii-art">
 +---------------------------+              +---------------------------+
 |    "Own" TCPCL Session    |              |   "Other" TCPCL Session   |
 |                           |              |                           |
@@ -460,7 +460,7 @@ The states of a normal TCPCL session (i.e., without session failures) are indica
         </t>
         <figure anchor="fig-session-states">
           <name>Top-level states of a TCPCL session</name>
-          <artwork align="left" type="ascii-art">
+          <artwork align="center" type="ascii-art">
   +-------+
   | START |
   +-------+
@@ -515,7 +515,7 @@ To avoid data loss, a Session Termination "[ST]" exchange allows cleanly finishi
         </t>
         <figure anchor="fig-contact-init-active">
           <name>Contact Initiation as Active Entity</name>
-          <artwork align="left" type="ascii-art">
+          <artwork align="center" type="ascii-art">
 +-------+
 | START |
 +-------+
@@ -534,7 +534,7 @@ TCP Connecting
         </figure>
         <figure anchor="fig-contact-init-passive">
           <name>Contact Initiation as Passive Entity</name>
-          <artwork align="left" type="ascii-art">
+          <artwork align="center" type="ascii-art">
 +-----------+             +---------+
 |   TCP     |--Wait for--&gt;| Waiting |--Timeout--&gt;[TCPCLOSE]
 | Connected |     CH      +---------+
@@ -548,7 +548,7 @@ TCP Connecting
         </figure>
         <figure anchor="fig-contact-init-process">
           <name>Processing of Contact Header [PCH]</name>
-          <artwork align="left" type="ascii-art">
+          <artwork align="center" type="ascii-art">
 +-----------+
 |  Peer CH  |
 | available |
@@ -558,14 +558,15 @@ TCP Connecting
   Negotiate
       V
  +------------+
- | Negotiated |----Failure----&gt;[TCPCLOSE]
- +------------+                      ^
-    |       |                        |
-  No TLS    +----Negotiate---+       |
-    V               TLS      |    Failure
+ | Negotiated |--Failure--&gt;[TCPCLOSE]
+ +------------+                      
+    |       |                        
+  No TLS    +----Negotiate---+      [ST]
+    |               TLS      |       ^
+    V                        |    Failure
   +-----------+              V       |
   |   TCPCL   |            +---------------+
-  | Messaging |&lt;--Success--| TLS Finished |
+  | Messaging |&lt;--Success--| TLS Handshake |
   | Available |            +---------------+
   +-----------+
 </artwork>
@@ -577,7 +578,7 @@ The validation here includes certificate validation and authentication when TLS 
         </t>
         <figure anchor="fig-sess-init-active">
           <name>Session Initiation [SI] as Active Entity</name>
-          <artwork align="left" type="ascii-art">
+          <artwork align="center" type="ascii-art">
 +-----------+
 |   TCPCL   |                   +---------+
 | Messaging |--Send SESS_INIT--&gt;| Waiting |--Timeout--&gt;[ST]
@@ -591,7 +592,7 @@ The validation here includes certificate validation and authentication when TLS 
         </figure>
         <figure anchor="fig-sess-init-passive">
           <name>Session Initiation [SI] as Passive Entity</name>
-          <artwork align="left" type="ascii-art">
+          <artwork align="center" type="ascii-art">
 +-----------+
 |   TCPCL   |                  +---------+
 | Messaging |----Wait for ----&gt;| Waiting |--Timeout--&gt;[ST]
@@ -606,7 +607,7 @@ The validation here includes certificate validation and authentication when TLS 
         </figure>
         <figure anchor="fig-sess-init-process">
           <name>Processing of Session Initiation [PSI]</name>
-          <artwork align="left" type="ascii-art">
+          <artwork align="center" type="ascii-art">
 +----------------+
 | Peer SESS_INIT |
 |   available    |
@@ -633,7 +634,7 @@ Each transfer occurs within a single logical transfer stream between a sender an
         </t>
         <figure anchor="fig-transfer-tx-states">
           <name>Transfer sender states</name>
-          <artwork align="left" type="ascii-art">
+          <artwork align="center" type="ascii-art">
                                        +--Send XFER_SEGMENT--+
 +--------+                             |                     |
 | Stream |                       +-------------+             |
@@ -659,7 +660,7 @@ Pipelining of transfers can occur when the sending entity begins a new transfer 
         </ul>
         <figure anchor="fig-transfer-rx-states">
           <name>Transfer receiver states</name>
-          <artwork align="left" type="ascii-art">
+          <artwork align="center" type="ascii-art">
                                          +-Receive XFER_SEGMENT-+
 +--------+                               |    Send XFER_ACK     |
 | Stream |                         +-------------+              |
@@ -682,7 +683,7 @@ While a session is in the Ending state only in-progress transfers can be complet
         </t>
         <figure anchor="fig-sessterm-init">
           <name>Session Termination [ST] from the Initiator</name>
-          <artwork align="left" type="ascii-art">
+          <artwork align="center" type="ascii-art">
 +-----------+                   +---------+
 |  Session  |--Send SESS_TERM--&gt;| Session |
 | Live/Idle |                   | Ending  |
@@ -691,7 +692,7 @@ While a session is in the Ending state only in-progress transfers can be complet
         </figure>
         <figure anchor="fig-sessterm-respond">
           <name>Session Termination [ST] from the Responder</name>
-          <artwork align="left" type="ascii-art">
+          <artwork align="center" type="ascii-art">
 +-----------+                   +---------+
 |  Session  |--Send SESS_TERM--&gt;| Session |
 | Live/Idle |                   | Ending  |
@@ -817,7 +818,7 @@ No errors or rejections are shown in this example.
         </t>
         <figure anchor="fig-contact-example">
           <name>An example of the flow of protocol messages on a single TCP Session between two entities</name>
-          <artwork align="left" type="ascii-art">
+          <artwork align="center" type="ascii-art">
              Entity A                             Entity B
              ========                             ========
     +-------------------------+         
@@ -1196,7 +1197,7 @@ In this example the active peer terminates the session but termination can be in
           </t>
           <figure anchor="fig-tls-example">
             <name>A simple visual example of TCPCL TLS Establishment between two entities</name>
-            <artwork align="left" type="ascii-art">
+            <artwork align="center" type="ascii-art">
              Entity A                             Entity B
             active peer                         passive peer
     
