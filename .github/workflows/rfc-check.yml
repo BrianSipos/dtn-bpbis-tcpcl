@@ -11,12 +11,14 @@ jobs:
     - uses: actions/checkout@v1
     - name: dependencies
       run: |
-        sudo apt-get install cmake libxml2-utils xml2rfc
+        sudo apt-get install cmake xmlstarlet python3 python3-pip python3-setuptools python3-wheel
+        sudo pip3 install xml2rfc
+        which xml2rfc
     - name: xml2rfc
       run: |
         mkdir -p spec/build
         (cd spec/build && cmake ..)
-        cmake --build spec/build
+        cmake --build spec/build -v
     - uses: actions/upload-artifact@v2
       with:
         name: spec
@@ -24,3 +26,4 @@ jobs:
           spec/build/draft-*.html
           spec/build/draft-*.txt
           spec/build/misspelling.txt
+          spec/build/*errors.txt
