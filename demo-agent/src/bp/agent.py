@@ -12,7 +12,8 @@ import cbor2
 #import tcpcl.agent
 from .encoding import (
     DtnTimeField, Timestamp,
-    Bundle, AbstractBlock, PrimaryBlock, CanonicalBlock, AdminRecord,
+    Bundle, AbstractBlock, PrimaryBlock, CanonicalBlock, 
+    AdminRecord, BundleAgeBlock,
     StatusReport, StatusInfoArray, StatusInfo
 )
 
@@ -474,10 +475,8 @@ class Agent(dbus.service.Object):
         )
         ctr.bundle.blocks = [
             CanonicalBlock(
-                type_code=1,
-                crc_type=AbstractBlock.CrcType.CRC32,
-            ) / AdminRecord(
-                type_code=3
+            ) / BundleAgeBlock(
+                age=300,
             ),
         ]
 

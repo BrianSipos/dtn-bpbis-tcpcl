@@ -433,7 +433,8 @@ The rationale behind these acknowledgments is to enable the transmitting entity 
 In addition, there is no explicit flow control on the TCPCL layer.
         </t>
         <t>
-A TCPCL receiver can interrupt the transmission of a bundle at any point in time by replying with a XFER_REFUSE message, which causes the sender to stop transmission of the associated bundle (if it hasn't already finished transmission) Note: This enables a cross-layer optimization in that it allows a receiver that detects that it already has received a certain bundle to interrupt transmission as early as possible and thus save transmission capacity for other bundles.
+A TCPCL receiver can interrupt the transmission of a bundle at any point in time by replying with a XFER_REFUSE message, which causes the sender to stop transmission of the associated bundle (if it hasn't already finished transmission).
+Note: This enables a cross-layer optimization in that it allows a receiver that detects that it already has received a certain bundle to interrupt transmission as early as possible and thus save transmission capacity for other bundles.
         </t>
         <t>
 For sessions that are idle, a KEEPALIVE message is sent at a negotiated interval.
@@ -1059,26 +1060,26 @@ Because the PKIX environment of each TCPCL entity are likely not controlled by t
             <dt>Node ID:</dt>
             <dd>
 The ideal certificate identity is the Node ID of the entity using the NODE-ID definition below.
-When the Node ID is identified, there is no need for any lower-level identification to take place.
-              </dd>
+When the Node ID is identified, there is no need for any lower-level identification to be present (though it can still be present, and if so it is also validated).
+            </dd>
             <dt>DNS Name:</dt>
             <dd>
 If CA policy forbids a certificate to contain an arbitrary NODE-ID but allows a DNS-ID to be identified then one or more stable DNS names can be identified in the certificate.
 The use of wildcard DNS-ID is discouraged due to the complex rules for matching and dependence on implementation support for wildcard matching (see Section 6.4.3 of <xref target="RFC6125"/>).
-              </dd>
+            </dd>
             <dt>Network Address:</dt>
             <dd>
 If no stable DNS name is available but a stable network address is available and CA policy allows a certificate to contain a IPADDR-ID (as defined below) then one or more network addresses can be identified in the certificate.
-              </dd>
+            </dd>
           </dl>
           <t>
 When only a DNS-ID or IPADDR-ID can be identified by a certificate, it is implied that an entity which authenticates using that certificate is trusted to provide a valid Node ID in its SESS_INIT; the certificate itself does not actually authenticate that Node ID.
           </t>
           <t>
-The RECOMMENDED security policy of an entity is to validate a peer which authenticates its Node ID regardless of an authenticated DNS name or address, and only consider the host/address authentication in the absence of an authenticated Node ID.
+The RECOMMENDED security policy of an entity is to validate a NODE-ID when present, and only require DNS-ID/IPADDR-ID authentication in the absence of a NODE-ID.
           </t>
           <t>
-This specification defines a NODE-ID of a certificate as being the subjectAltName entry of type uniformResourceIdentifier whose value is a URI consistent with the requirements of <xref target="RFC3986"/> and the URI schemes of the IANA "Bundle Protocol URI Scheme Type" registry.
+This specification defines a NODE-ID of a certificate as being the subjectAltName entry of type uniformResourceIdentifier whose value is a URI consistent with the requirements of <xref target="RFC3986"/> and the URI schemes of the IANA "Bundle Protocol URI Scheme Type" registry <xref target="IANA-BUNDLE"/>.
 This is similar to the URI-ID of <xref target="RFC6125"/> but does not require any structure to the scheme-specific-part of the URI.
 Unless specified otherwise by the definition of the URI scheme being authenticated, URI matching of a NODE-ID SHALL use the URI comparison logic of <xref target="RFC3986"/> and scheme-based normalization of those schemes specified in <xref target="I-D.ietf-dtn-bpbis"/>.
 A URI scheme can refine this "exact match" logic with rules about how Node IDs within that scheme are to be compared with the certificate-authenticated NODE-ID.
@@ -1146,42 +1147,46 @@ This session negotiation and all subsequent messaging are secured.
           <name>TLS Authentication</name>
           <t>
 Using PKIX certificates exchanged during the TLS handshake, each of the entities can authenticate a peer Node ID directly or authenticate the peer DNS name or network address.
-The logic for attempting authentication is separate from the logic for handling the result of authentication, which is based on local security policy.
+The logic for handling certificates and certificate data is separated into three phases:
           </t>
+          <ol>
+            <li>Validating the certification path from the end-entity certificiate up to a trusted root CA.</li>
+            <li>Authenticating identities from a valid end-entity certificate.</li>
+            <li>Applying security policy to the result of each identity type authentication.</li>
+          </ol>
           <t>
 By using the SNI DNS name (see <xref target="sec-tls-handshake"/>) a single passive entity can act as a convergence layer for multiple BP agents with distinct Node IDs.
 When this "virtual host" behavior is used, the DNS name is used as the indication of which BP Node the active entity is attempting to communicate with.
 A virtual host CL entity can be authenticated by a certificate containing all of the DNS names and/or Node IDs being hosted or by several certificates each authenticating a single DNS name and/or Node ID, using the SNI value from the peer to select which certificate to use.
           </t>
           <t>
-Any certificate received during TLS handshake SHALL be validated up to one or more trusted CA certificates.
-If certificate validation fails or if security policy disallows a certificate for any reason, the entity SHALL terminate the session (with a reason code of "Contact Failure").
+For any peer certificate received during TLS handshake, the entity SHALL perform the certification path validation of <xref target="RFC5280"/> up to one of the entity's trusted CA certificates.
+If certificate validation fails or if security policy disallows a certificate for any reason, the entity SHALL fail the TLS handshake with a bad certificate error.
+Leaving out part of the certification chain can cause the entity to fail to validate a certificate if the left-out certificates are unknown to the entity (see <xref target="sec-threat-untrust-cert"/>).
           </t>
           <t>
-The result of authenticating a peer value against a certificate claim is one of:
+The result of authenticating a peer identity (i.e., Node ID, DNS name, or IP address) against one type of certificate claim is one of:
           </t>
           <dl newline="false" spacing="normal">
             <dt>Absent:</dt>
             <dd>
-Indicating that the claim type is not present in the certificate and cannot be authenticated.
-              </dd>
+Indicating that no claims of that type are present in the certificate and the identity cannot be authenticated.
+            </dd>
             <dt>Success:</dt>
             <dd>
-Indicating the claim type is present and matches the peer (Node ID / DNS name / address) value.
+Indicating that one or more claims of that type are present and one matches the peer identity value.
               </dd>
             <dt>Failure:</dt>
             <dd>
-Indicating the claim type is present but did not match the peer value.
+Indicating that one or more claims of that type are present and none match the peer identity.
               </dd>
           </dl>
           <t>
-Either during or immediately after the TLS handshake if the active entity resolved a DNS name (of the passive entity) in order to 
-initiate the TCP connection, the active entity SHALL authenticate that DNS name using any DNS-ID of the peer certificate.
+Either during or immediately after the TLS handshake if the active entity resolved a DNS name (of the passive entity) in order to initiate the TCP connection, the active entity SHALL authenticate that DNS name using any DNS-ID of the peer certificate.
 If the DNS name authentication result is Failure or if the result is Absent and security policy requires an authenticated DNS name, the entity SHALL terminate the session (with a reason code of "Contact Failure").
           </t>
           <t>
-Either during or immediately after the TLS handshake, the active entity SHALL authenticate the IP address of the other side of the TCP connection using any IPADDR-ID of the peer certificate.
-Either during or immediately after the TLS handshake, the passive entity SHALL authenticate the IP address of the other side of the TCP connection using any IPADDR-ID of the peer certificate.
+Either during or immediately after the TLS handshake, each side of the session SHALL authenticate the IP address of the other side of the TCP connection using any IPADDR-ID of the peer certificate.
 If the address authentication result is Failure or if the result is Absent and security policy requires an authenticated network address, the entity SHALL terminate the session (with a reason code of "Contact Failure").
           </t>
           <t>
@@ -1198,45 +1203,45 @@ In this example the active peer terminates the session but termination can be in
           <figure anchor="fig-tls-example">
             <name>A simple visual example of TCPCL TLS Establishment between two entities</name>
             <artwork align="center" type="ascii-art">
-             Entity A                             Entity B
-            active peer                         passive peer
-    
-    +-------------------------+         
-    |  Open TCP Connection    | -&gt;      +-------------------------+
-    +-------------------------+      &lt;- |    Accept Connection    |
-                                        +-------------------------+
-    +-------------------------+         
-    |     Contact Header      | -&gt;      +-------------------------+
-    +-------------------------+      &lt;- |     Contact Header      |
-                                        +-------------------------+
-    
-    +-------------------------+         +-------------------------+
-    |     TLS Negotiation     | -&gt;   &lt;- |     TLS Negotiation     |
-    |       (as client)       |         |       (as server)       |
-    +-------------------------+         +-------------------------+
-    
-                      DNS name validation occurs.
-                   Secured TCPCL messaging can begin.
-    
-    +-------------------------+         
-    |        SESS_INIT        | -&gt;      +-------------------------+
-    +-------------------------+      &lt;- |        SESS_INIT        |
-                                        +-------------------------+
-    
-                       Node ID validation occurs.
-               Session is established, transfers can begin.
-    
-    +-------------------------+         
-    |       SESS_TERM         | -&gt;      +-------------------------+
-    +-------------------------+      &lt;- |        SESS_TERM        |
-                                        +-------------------------+
-    +-------------------------+         
-    |    TLS Closure Alert    | -&gt;      +-------------------------+
-    +-------------------------+      &lt;- |    TLS Closure Alert    |
-                                        +-------------------------+
-    +-------------------------+         +-------------------------+
-    |        TCP Close        | -&gt;   &lt;- |        TCP Close        |
-    +-------------------------+         +-------------------------+
+         Entity A                             Entity B
+        active peer                         passive peer
+
++-------------------------+         
+|  Open TCP Connection    | -&gt;      +-------------------------+
++-------------------------+      &lt;- |    Accept Connection    |
+                                    +-------------------------+
++-------------------------+         
+|     Contact Header      | -&gt;      +-------------------------+
++-------------------------+      &lt;- |     Contact Header      |
+                                    +-------------------------+
+
++-------------------------+         +-------------------------+
+|     TLS Negotiation     | -&gt;   &lt;- |     TLS Negotiation     |
+|       (as client)       |         |       (as server)       |
++-------------------------+         +-------------------------+
+
+           DNS-ID and IPADDR-ID authentication occurs.
+               Secured TCPCL messaging can begin.
+
++-------------------------+         
+|        SESS_INIT        | -&gt;      +-------------------------+
++-------------------------+      &lt;- |        SESS_INIT        |
+                                    +-------------------------+
+
+                  NODE-ID authentication occurs.
+           Session is established, transfers can begin.
+
++-------------------------+         
+|       SESS_TERM         | -&gt;      +-------------------------+
++-------------------------+      &lt;- |        SESS_TERM        |
+                                    +-------------------------+
++-------------------------+         
+|    TLS Closure Alert    | -&gt;      +-------------------------+
++-------------------------+      &lt;- |    TLS Closure Alert    |
+                                    +-------------------------+
++-------------------------+         +-------------------------+
+|        TCP Close        | -&gt;   &lt;- |        TCP Close        |
++-------------------------+         +-------------------------+
 </artwork>
           </figure>
         </section>
@@ -1389,7 +1394,7 @@ The Node ID Length is a 16-bit unsigned integer indicating the number of octets 
 A zero-length Node ID SHALL be used to indicate the lack of Node ID rather than a truly empty Node ID.
 This case allows an entity to avoid exposing Node ID information on an untrusted network.
 A non-zero-length Node ID Data SHALL contain the UTF-8 encoded Node ID of the Entity which sent the SESS_INIT message.
-Every Node ID SHALL be a URI consistent with the requirements of <xref target="RFC3986"/> and the URI schemes of the IANA "Bundle Protocol URI Scheme Type" registry.
+Every Node ID SHALL be a URI consistent with the requirements of <xref target="RFC3986"/> and the URI schemes of the IANA "Bundle Protocol URI Scheme Type" registry <xref target="IANA-BUNDLE"/>.
 The Node ID itself can be authenticated as described in <xref target="sec-tls-authentication"/>.
             </dd>
           <dt>Session Extension Length and Session Extension Items:</dt>
@@ -1890,6 +1895,11 @@ A 64-bit unsigned integer identifying the transfer being refused.
                 <td>0x05</td>
                 <td>A failure processing the Transfer Extension Items has occurred.</td>
               </tr>
+              <tr>
+                <td>Session Terminating</td>
+                <td>0x06</td>
+                <td>The receiving entity is in the process of terminating the session. The sender MAY retry the same bundle at a later time in a different session.</td>
+              </tr>
             </tbody>
           </table>
           <t>
@@ -2036,13 +2046,15 @@ Once a SESS_TERM message is sent the state of that TCPCL session changes to Endi
 While the session is in the Ending state, an entity MAY finish an in-progress transfer in either direction.
 While the session is in the Ending state, an entity SHALL NOT begin any new outgoing transfer for the remainder of the session.
 While the session is in the Ending state, an entity SHALL NOT accept any new incoming transfer for the remainder of the session.
+If a new incoming transfer is attempted while in the Ending state, the receiving entity SHALL send an XFER_REFUSE with a Reason Code of "Session Terminating".
         </t>
         <t>
+There are circumstances where an entity has an urgent need to close a TCP connection associated with a TCPCL session, without waiting for transfers to complete but also in a way which doesn't force timeouts to occur; for example, due to impending shutdown of the underlying data link layer.
 Instead of following a clean termination sequence, after transmitting a SESS_TERM message an entity MAY perform an unclean termination by immediately closing the associated TCP connection.
 When performing an unclean termination, an entity SHOULD acknowledge all received XFER_SEGMENTs with an XFER_ACK before closing the TCP connection.
 Not acknowledging received segments can result in unnecessary bundle or bundle fragment retransmission.
 Any delay between request to close the TCP connection and actual closing of the connection (a "half-closed" state) MAY be ignored by the TCPCL entity.
-If the underlying TCP connection is closed during a transmission (in either transfer stream), the transfer SHALL be indicated to the BP agent as failed.
+If the underlying TCP connection is closed during a transmission (in either transfer stream), the transfer SHALL be indicated to the BP agent as failed (see the transmission failure and reception failure indications of <xref target="sec-cl-services"/>).
         </t>
         <t>
 The TCPCL itself does not have any required behavior to respond to an SESS_TERM based on its Reason Code; the termination is passed up as an indication to the BP agent that the session state has changed.
@@ -2233,6 +2245,11 @@ When TLS is available on an entity, it is strongly encouraged that the security 
 This requires that the TLS handshake occurs, regardless of the policy-driven parameters of the handshake and policy-driven handling of the handshake outcome.
         </t>
         <t>
+One mechanism to mitigate the possibility of TLS stripping is the presence of a TLSA record <xref target="RFC6698"/> for the passive peer.
+This mechanism relies on DNS and is unidirectional, so it doesn't help with applying policy toward the active peer.
+It can be useful in an evironment using opportunistic security.
+        </t>
+        <t>
 The negotiated use of TLS is identical behavior to STARTTLS use in <xref target="RFC2595"/> and <xref target="RFC4511"/>.
         </t>
       </section>
@@ -2242,6 +2259,14 @@ The negotiated use of TLS is identical behavior to STARTTLS use in <xref target=
 Even when using TLS to secure the TCPCL session, the actual ciphersuite negotiated between the TLS peers can be insecure.
 Recommendations for ciphersuite use are included in BCP 195 <xref target="RFC7525"/>.
 It is up to security policies within each TCPCL entity to ensure that the negotiated TLS ciphersuite meets transport security requirements.
+        </t>
+      </section>
+      <section anchor="sec-threat-untrust-cert">
+        <name>Threat: Untrusted End-Entity Certificate</name>
+        <t>
+The profile in <xref target="sec-tls-authentication"/> uses end-entity certificates chained up to a trusted root CA.
+During TLS handshake, either entity can send a certificate set which does not contain the full chain, possibly excluding intermediate or root CAs.
+In an environment where peers are known to already contain needed root and intermediate CAs there is no need to include those CAs, but this has a risk of an entity not actually having one of the needed CAs.
         </t>
       </section>
       <section>
@@ -2649,7 +2674,11 @@ Expert(s) are encouraged to be biased towards approving registrations unless the
               <td>Extension Failure</td>
             </tr>
             <tr>
-              <td>0x06--0xEF</td>
+              <td>0x06</td>
+              <td>Session Terminating</td>
+            </tr>
+            <tr>
+              <td>0x07--0xEF</td>
               <td>Unassigned</td>
             </tr>
             <tr>
@@ -2828,6 +2857,7 @@ This specification is based on comments on implementation of <xref target="RFC72
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.4511.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.4838.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.5489.xml"/>
+        <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.6698.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.7122.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.7242.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.7250.xml"/>

@@ -14,7 +14,7 @@ else(MSVC)
   add_compile_options(-Wall -Wextra -pedantic -Werror)
 endif(MSVC)
 
-find_package(PkgConfig)
+find_package(PkgConfig REQUIRED)
 
 pkg_check_modules(WIRESHARK REQUIRED IMPORTED_TARGET wireshark>=2.6)
 if(TARGET PkgConfig::WIRESHARK)
@@ -30,6 +30,9 @@ endif()
 
 pkg_get_variable(WIRESHARK_SYSTEM_PLUGINDIR wireshark plugindir)
 set(INSTALL_MODULE_PATH "${WIRESHARK_SYSTEM_PLUGINDIR}/epan" CACHE FILEPATH "path to install the plugin module")
+
+pkg_check_modules(GLIB2 glib-2.0)
+pkg_check_modules(LIBGCRYPT libgcrypt)
 
 find_package(GTest 1.6)
 

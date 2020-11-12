@@ -61,11 +61,13 @@ class Connection(object):
         '''
         return self.__s_tls is not None
 
-    def get_base_socket(self):
-        ''' Get the base (insecure) socket object if available.
+    def get_app_socket(self):
+        ''' Get the socket object used for TCPCL traffic.
 
-        :return: The socket object or None.
+        :return: The socket object.
         '''
+        if self.__s_tls:
+            return self.__s_tls
         return self.__s_notls
 
     def get_secure_socket(self):
@@ -666,8 +668,8 @@ class Messenger(Connection):
                         self._sessinit_this = self.send_sess_init().payload
 
                     self._sessinit_peer = pkt.payload
-                    self.merge_session_params()
                     self._in_sess = True
+                    self.merge_session_params()
                     self._update_state('established')
                     if self._in_sess_func:
                         self._in_sess_func()
@@ -761,53 +763,56 @@ class Messenger(Connection):
         '''
         self.__logger.debug('Session negotiation')
 
+        peer_ipaddrid = self.get_app_socket().getpeername()[0]
+        if self._as_passive:
+            peer_dnsid = None
+        elif self._peer_name == peer_ipaddrid:
+            peer_dnsid = None
+        else:
+            peer_dnsid = self._peer_name
         peer_nodeid = str(self._sessinit_peer.nodeid_data)
-        peer_dns = self._peer_name if not self._as_passive else None
-        peer_addr = self.get_base_socket().getpeername()[0]
 
-        authn_nodeid = None  # authenticated Node ID
-        authn_dns = None  # authenticated DNS name
-        authn_addr = None
+        # These are set to None if absent, False if invalid, or the valid value
+        authn_nodeid = None
+        authn_dnsid = None
+        authn_ipaddrid = None
+
+        def match_id(peer_val, cert, san_key, require_authn, log_name):
+            authn_val = None
+            if cert and peer_val:
+                cert_ids = set()
+                for (name_type, name_data) in cert.get('subjectAltName', []):
+                    if name_type == san_key:
+                        cert_ids.add(name_data)
+                self.__logger.debug('Authenticating %s "%s" with cert containing: %s',
+                                    log_name, peer_val, cert_ids)
+
+                if cert_ids:
+                    if peer_val in cert_ids:
+                        authn_val = peer_val
+                    else:
+                        authn_val = False
+
+            # Handle authentication result
+            if authn_val:
+                self.__logger.debug('Certificate matched %s "%s"', log_name, authn_val)
+            else:
+                self.__logger.warning('Peer %s not authenticated', log_name)
+                if authn_val is False or require_authn:
+                    raise TerminateError(messages.SessionTerm.Reason.CONTACT_FAILURE)
+            return authn_val
 
         sock_tls = self.get_secure_socket()
         if sock_tls:
             # Verify TLS name bindings
             cert = sock_tls.getpeercert()
 
-            # DNS/IP matching with standard function to handle wildcards
-            if cert and peer_dns:
-                self.__logger.debug('Authenticating TLS host "%s" with subjectAltName: %s',
-                                    peer_dns, cert.get('subjectAltName'))
-                try:
-                    ssl.match_hostname(cert, peer_dns)
-                    authn_dns = peer_dns
-                except ssl.CertificateError:
-                    pass
-            # host authentication result
-            if authn_dns:
-                self.__logger.debug('Certificate matched host name "%s"', authn_dns)
-            else:
-                self.__logger.warning('Peer host name not authenticated')
-                if self._config.require_host_authn:
-                    raise TerminateError(messages.SessionTerm.Reason.CONTACT_FAILURE)
-
-            # Exact Node ID URI matching
-            if cert and peer_nodeid:
-                self.__logger.debug('Authenticating Node ID "%s" with subjectAltName: %s',
-                                    peer_nodeid, cert.get('subjectAltName'))
-                uri_names = set()
-                for (name_type, name_data) in cert.get('subjectAltName', []):
-                    if name_type == 'URI':
-                        uri_names.add(name_data)
-                if peer_nodeid in uri_names:
-                    authn_nodeid = peer_nodeid
-            # node authentication result
-            if authn_nodeid:
-                self.__logger.debug('Certificate matched Node ID "%s"', authn_nodeid)
-            else:
-                self.__logger.warning('Peer Node ID not authenticated')
-                if self._config.require_node_authn:
-                    raise TerminateError(messages.SessionTerm.Reason.CONTACT_FAILURE)
+            # Exact IPADDR-ID matching
+            authn_ipaddrid = match_id(peer_ipaddrid, cert, 'IP Address', self._config.require_host_authn, 'IPADDR-ID')
+            # Exact DNS-ID matching
+            authn_dnsid = match_id(peer_dnsid, cert, 'DNS', self._config.require_host_authn, 'DNS-ID')
+            # Exact NODE-ID matching
+            authn_dnsid = match_id(peer_nodeid, cert, 'URI', self._config.require_node_authn, 'NODE-ID')
 
         self._keepalive_time = min(self._sessinit_this.keepalive,
                                    self._sessinit_peer.keepalive)
@@ -829,11 +834,11 @@ class Messenger(Connection):
         # Record the negotiated parameters
         self._sess_parameters = dict(
             peer_nodeid=peer_nodeid,
-            peer_dns=peer_dns,
-            peer_addr=peer_addr,
+            peer_dnsid=peer_dnsid,
+            peer_ipaddrid=peer_ipaddrid,
             authn_nodeid=authn_nodeid,
-            authn_dns=authn_dns,
-            authn_addr=authn_addr,
+            authn_dnsid=authn_dnsid,
+            authn_ipaddrid=authn_ipaddrid,
             keepalive=self._keepalive_time,
             peer_transfer_mru=self._sessinit_peer.transfer_mru,
             peer_segment_mru=self._sessinit_peer.segment_mru,
