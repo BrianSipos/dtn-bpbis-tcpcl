@@ -65,7 +65,7 @@
         <email>simon@per.reau.lt</email>
       </address>
     </author>
-    <date day="26" month="October" year="2020"/>
+    <date day="14" month="November" year="2020"/>
     <area>Transport</area>
     <workgroup>Delay-Tolerant Networking</workgroup>
     <abstract>
@@ -136,7 +136,7 @@ The mapping of Node ID to potential convergence layer (CL) protocol and network 
             </li>
           <li>
 Logic for routing bundles along a path toward a bundle's endpoint.
-This CL protocol is involved only in transporting bundles between adjacent entitys in a routing sequence.
+This CL protocol is involved only in transporting bundles between adjacent entities in a routing sequence.
             </li>
           <li>
 Policies or mechanisms for issuing Public Key Infrastructure Using X.509 (PKIX) certificates; provisioning, deploying, or accessing certificates and private keys; deploying or accessing certificate revocation lists (CRLs); or configuring security parameters on an individual entity or across a network.
@@ -906,7 +906,7 @@ This ordering also allows the passive peer to adapt to alternate TCPCL protocol 
         </t>
         <t>
 The format of the Contact Header is described in <xref target="sec-contact-header"/>.
-Because the TCPCL protocol version in use is part of the initial Contact Header, entitys using TCPCL version 4 can coexist on a network with entitys using earlier TCPCL versions (with some negotiation needed for interoperation as described in <xref target="sec-contact-negotiate"/>).
+Because the TCPCL protocol version in use is part of the initial Contact Header, entities using TCPCL version 4 can coexist on a network with entities using earlier TCPCL versions (with some negotiation needed for interoperation as described in <xref target="sec-contact-negotiate"/>).
         </t>
         <t>
 Within this specification when an entity is said to "close" a TCP connection the entity SHALL use the TCP FIN mechanism and not the RST mechanism.
@@ -1150,7 +1150,7 @@ Using PKIX certificates exchanged during the TLS handshake, each of the entities
 The logic for handling certificates and certificate data is separated into three phases:
           </t>
           <ol>
-            <li>Validating the certification path from the end-entity certificiate up to a trusted root CA.</li>
+            <li>Validating the certification path from the end-entity certificate up to a trusted root CA.</li>
             <li>Authenticating identities from a valid end-entity certificate.</li>
             <li>Applying security policy to the result of each identity type authentication.</li>
           </ol>
@@ -2176,7 +2176,7 @@ The protocol includes a provision for clean termination of idle sessions.
 Determining the length of time to wait before terminating idle sessions, if they are to be terminated at all, is an implementation and configuration matter.
         </t>
         <t>
-If there is a configured time to termiante idle sessions and if no TCPCL messages (other than KEEPALIVE messages) has been received for at least that amount of time, then either entity MAY terminate the session by transmitting a SESS_TERM message indicating the reason code of "Idle timeout" (as described in <xref target="tab-SESS_TERM-reasons"/>).
+If there is a configured time to terminate idle sessions and if no TCPCL messages (other than KEEPALIVE messages) has been received for at least that amount of time, then either entity MAY terminate the session by transmitting a SESS_TERM message indicating the reason code of "Idle timeout" (as described in <xref target="tab-SESS_TERM-reasons"/>).
         </t>
       </section>
     </section>
@@ -2245,9 +2245,9 @@ When TLS is available on an entity, it is strongly encouraged that the security 
 This requires that the TLS handshake occurs, regardless of the policy-driven parameters of the handshake and policy-driven handling of the handshake outcome.
         </t>
         <t>
-One mechanism to mitigate the possibility of TLS stripping is the presence of a TLSA record <xref target="RFC6698"/> for the passive peer.
-This mechanism relies on DNS and is unidirectional, so it doesn't help with applying policy toward the active peer.
-It can be useful in an evironment using opportunistic security.
+One mechanism to mitigate the possibility of TLS stripping is the use of DNS-based Authentication of Named Entities (DANE) <xref target="RFC6698"/> for the passive peer.
+This mechanism relies on DNS and is unidirectional, so it doesn't help with applying policy toward the active peer, but it can be useful in an environment using opportunistic security.
+The configuration and use of DANE are are outside of the scope of this document.
         </t>
         <t>
 The negotiated use of TLS is identical behavior to STARTTLS use in <xref target="RFC2595"/> and <xref target="RFC4511"/>.
@@ -2275,7 +2275,7 @@ In an environment where peers are known to already contain needed root and inter
 Even when TLS itself is operating properly an attacker can attempt to exploit vulnerabilities within certificate check algorithms or configuration to establish a secure TCPCL session using an invalid certificate.
 A BP agent treats the peer Node ID within a TCPCL session as authoritative and an invalid certificate exploit could lead to bundle data leaking and/or denial of service to the Node ID being impersonated.
 There are many reasons, described in <xref target="RFC5280"/>, why a certificate can fail to validate, including using the certificate outside of its valid time interval, using purposes for which it was not authorized, or using it after it has been revoked by its CA.
-Validating a certificate is a complex task and can require network connectivity outside of the primary TCPCL network path(s) if a mechanism such as the Online Certificate Status Protocol (OCSP) is used by the CA.
+Validating a certificate is a complex task and can require network connectivity outside of the primary TCPCL network path(s) if a mechanism such as the Online Certificate Status Protocol (OCSP) <xref target="RFC6960"/> is used by the CA.
 The configuration and use of particular certificate validation methods are outside of the scope of this document.
         </t>
       </section>
@@ -2858,6 +2858,7 @@ This specification is based on comments on implementation of <xref target="RFC72
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.4838.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.5489.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.6698.xml"/>
+        <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.6960.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.7122.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.7242.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.7250.xml"/>
@@ -2908,7 +2909,8 @@ The areas in which extensions from <xref target="RFC7242"/> have been made as ne
         <li>Added contact negotiation failure SESS_TERM reason code.</li>
         <li>Added MSG_REJECT message to indicate an unknown or unhandled message was received.</li>
         <li>Added TLS connection security mechanism.</li>
-        <li>Added Resource Exhaustion SESS_TERM reason code.</li>
+        <li>Added "Not Acceptable", "Extension Failure", and "Session Terminating" XFER_REFUSE reason codes.</li>
+        <li>Added "Resource Exhaustion" SESS_TERM reason code.</li>
       </ul>
     </section>
   </back>

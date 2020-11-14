@@ -1,8 +1,8 @@
-acknowledgement
-acknowledgements
 Aalto
 Ack
 ACK
+acknowledgement
+acknowledgements
 BCP
 BPv
 Burleigh
@@ -29,8 +29,8 @@ HostName
 IANA
 IESG
 IETF
-INIT
 incrementing
+INIT
 interoperation
 IPADDR
 iPAddress
@@ -56,11 +56,13 @@ plaintext
 pre
 PSK
 queueing
+Responder
 retransmission
 retransmissions
 Retransmit
 retransmitted
 RKF
+RST
 RTO
 RTT
 SDNV
@@ -78,6 +80,7 @@ TCPCLOSE
 TCPCLv
 teardown
 TLS
+TLSA
 TLV
 UDP
 unhandled
