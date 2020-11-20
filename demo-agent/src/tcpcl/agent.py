@@ -355,16 +355,6 @@ def main(*argv):
         logging.info('Registered as "%s"', bus_serv.get_name())
 
     if args.tls_enable:
-        # attempted recommended practice of pre-master secret logging
-        pmk_name = os.environ.get('SSLKEYLOGFILE')
-        if pmk_name:
-            try:
-                import sslkeylog
-                logging.info('Logging pre-master key to: %s', pmk_name)
-                sslkeylog.set_keylog(pmk_name)
-            except ImportError as err:
-                logging.error('Cannot use SSLKEYLOGFILE: %s', err)
-
         version_map = {
             None: ssl.PROTOCOL_TLS,
             '1.0': ssl.PROTOCOL_TLSv1,
@@ -377,6 +367,7 @@ def main(*argv):
             raise argparse.ArgumentTypeError('Invalid TLS version "{0}"'.format(args.tls_version))
 
         config.ssl_ctx = ssl.SSLContext(vers_enum)
+        config.ssl_ctx.keylog_filename = os.environ.get('SSLKEYLOGFILE')
         if args.tls_ciphers:
             config.ssl_ctx.set_ciphers(args.tls_ciphers)
         if args.tls_ca:

@@ -716,15 +716,15 @@ The requirements about TCPCL certificate use are broad to support two quite diff
           <dd>
 In the ideal case, the CA(s) issuing certificates for TCPCL entities are aware of the end use of the certificate, have a mechanism for verifying ownership of a Node ID, and are issuing certificates directly for that Node ID.
 In this environment, the ability to authenticate a peer entity Node ID directly avoids the need to authenticate a network name or address and then implicitly trust Node ID of the peer.
-The TCPCL authenticates the Node ID whenever possible and this is preferred over lower-level PKIX identifiers.
-            </dd>
+The TCPCL authenticates the Node ID whenever possible and this is preferred over lower-level PKIX identities.
+          </dd>
           <dt>DTN-Ignorant CAs:</dt>
           <dd>
 It is expected that Internet-scale "public" CAs will continue to focus on DNS names as the preferred PKIX identifier.
 There are large infrastructures already in-place for managing network-level authentication and protocols to manage identity verification in those environments <xref target="RFC8555"/>.
 The TCPCL allows for this type of environment by authenticating a lower-level identifier for a peer and requiring the entity to trust that the Node ID given by the peer (during session initialization) is valid.
 This situation not ideal, as it allows vulnerabilities described in <xref target="sec-threat-node-impersonation"/>, but still provides some amount of mutual authentication to take place for a TCPCL session.
-            </dd>
+          </dd>
         </dl>
         <t>
 Even within a single TCPCL session, each entity may operate within different PKI environments and with different identifier limitations.
@@ -732,8 +732,14 @@ The requirements related to identifiers in in a PKIX certificate are in <xref ta
         </t>
         <t>
 It is important for interoperability that a TCPCL entity have its own security policy tailored to accommodate the peers with which it is expected to operate.
+Some security policy recommendations are given in <xref target="sec-tls-auth-policy-rec"/> but these are meant as a starting point for tailoring.
 A strict TLS security policy is appropriate for a private network with a single shared CA.
 Operation on the Internet (such as inter-site BP gateways) could trade more lax TCPCL security with the use of encrypted bundle encapsulation <xref target="I-D.ietf-dtn-bibect"/> to ensure strong bundle security.
+        </t>
+        <t>
+By using the Server Name Indication (SNI) DNS name (see <xref target="sec-tls-handshake"/>) a single passive entity can act as a convergence layer for multiple BP agents with distinct Node IDs.
+When this "virtual host" behavior is used, the DNS name is used as the indication of which BP Node the active entity is attempting to communicate with.
+A virtual host CL entity can be authenticated by a certificate containing all of the DNS names and/or Node IDs being hosted or by several certificates each authenticating a single DNS name and/or Node ID, using the SNI value from the peer to select which certificate to use.
         </t>
       </section>
       <section anchor="sec-session-keeping">
@@ -919,9 +925,9 @@ Either mechanism, however, when received will cause a TCP connection to become c
 This section describes the format of the Contact Header and the meaning of its fields.
         </t>
         <t>
-If an entity is capable of exchanging messages according to TLS 1.3 <xref target="RFC8446"/> or any successors which are compatible with that TLS ClientHello, the the CAN_TLS flag within its Contact Header SHALL be set to 1.
-This behavior prefers the use of TLS when possible, even if security policy does not allow or require authentication.
-This follows the opportunistic security model of <xref target="RFC7435"/>, though an active attacker could interfere with the exchange in such cases.
+If the entity is configured to enable exchanging messages according to TLS 1.3 <xref target="RFC8446"/> or any successors which are compatible with that TLS ClientHello, the the CAN_TLS flag within its Contact Header SHALL be set to 1.
+The RECOMMENDED policy is to enable TLS for all sessions, even if security policy does not allow or require authentication.
+This follows the opportunistic security model of <xref target="RFC7435"/>, though an active attacker could interfere with the exchange in such cases (see <xref target="sec-threat-tls-strip"/>).
         </t>
         <t>
 Upon receipt of the Contact Header, both entities perform the validation and negotiation procedures defined in <xref target="sec-contact-negotiate"/>.
@@ -977,7 +983,7 @@ All reserved header flag bits SHALL be ignored by the receiver.
             <tr>
               <td>CAN_TLS</td>
               <td>0x01</td>
-              <td>If bit is set, indicates that the sending peer is capable of TLS security.</td>
+              <td>If bit is set, indicates that the sending peer has enabled TLS security.</td>
             </tr>
             <tr>
               <td>Reserved</td>
@@ -1018,17 +1024,22 @@ The negotiated contact parameters defined by this specification are described in
           <dd>
 Both Contact Headers of a successful contact negotiation have identical TCPCL Version numbers as described above.
 Only upon response of a Contact Header from the passive entity is the TCPCL protocol version established and session negotiation begun.
-            </dd>
+          </dd>
           <dt>Enable TLS:</dt>
           <dd>
+            <t>
 Negotiation of the Enable TLS parameter is performed by taking the logical AND of the two Contact Headers' CAN_TLS flags.
 A local security policy is then applied to determine of the negotiated value of Enable TLS is acceptable.
 It can be a reasonable security policy to require or disallow the use of TLS depending upon the desired network flows.
-Because this state is negotiated over an unsecured medium, there is a risk of a TLS Stripping as described in <xref target="sec-security"/>.
+The RECOMMENDED policy is to require TLS for all sessions, even if security policy does not allow or require authentication.
+Because this state is negotiated over an unsecured medium, there is a risk of a TLS Stripping as described in <xref target="sec-threat-tls-strip"/>.
+            </t>
+            <t>
 If the Enable TLS state is unacceptable, the entity SHALL terminate the session with a reason code of "Contact Failure".
 Note that this contact failure reason is different than a failure of TLS handshake or TLS authentication after an agreed-upon and acceptable Enable TLS state.
 If the negotiated Enable TLS value is true and acceptable then TLS negotiation feature (described in <xref target="sec-session-security"/>) begins immediately following the Contact Header exchange.
-            </dd>
+            </t>
+          </dd>
         </dl>
       </section>
       <section anchor="sec-session-security">
@@ -1065,19 +1076,13 @@ When the Node ID is identified, there is no need for any lower-level identificat
             <dt>DNS Name:</dt>
             <dd>
 If CA policy forbids a certificate to contain an arbitrary NODE-ID but allows a DNS-ID to be identified then one or more stable DNS names can be identified in the certificate.
-The use of wildcard DNS-ID is discouraged due to the complex rules for matching and dependence on implementation support for wildcard matching (see Section 6.4.3 of <xref target="RFC6125"/>).
+The use of wildcard DNS-ID is discouraged due to the complex rules for matching and dependence on implementation support for wildcard matching (see <xref section="6.4.3" target="RFC6125"/>).
             </dd>
             <dt>Network Address:</dt>
             <dd>
 If no stable DNS name is available but a stable network address is available and CA policy allows a certificate to contain a IPADDR-ID (as defined below) then one or more network addresses can be identified in the certificate.
             </dd>
           </dl>
-          <t>
-When only a DNS-ID or IPADDR-ID can be identified by a certificate, it is implied that an entity which authenticates using that certificate is trusted to provide a valid Node ID in its SESS_INIT; the certificate itself does not actually authenticate that Node ID.
-          </t>
-          <t>
-The RECOMMENDED security policy of an entity is to validate a NODE-ID when present, and only require DNS-ID/IPADDR-ID authentication in the absence of a NODE-ID.
-          </t>
           <t>
 This specification defines a NODE-ID of a certificate as being the subjectAltName entry of type uniformResourceIdentifier whose value is a URI consistent with the requirements of <xref target="RFC3986"/> and the URI schemes of the IANA "Bundle Protocol URI Scheme Type" registry <xref target="IANA-BUNDLE"/>.
 This is similar to the URI-ID of <xref target="RFC6125"/> but does not require any structure to the scheme-specific-part of the URI.
@@ -1086,6 +1091,38 @@ A URI scheme can refine this "exact match" logic with rules about how Node IDs w
           </t>
           <t>
 This specification defines a IPADDR-ID of a certificate as being the subjectAltName entry of type iPAddress whose value is encoded according to <xref target="RFC5280"/>.
+          </t>
+        </section>
+        <section anchor="sec-tcpcl-cert-profile">
+          <name>Certificate Profile for TCPCL</name>
+          <t>
+All end-entity certificates used by a TCPCL entity SHALL conform to <xref target="RFC5280"/>, or any updates or successors to that profile.
+When an end-entity certificate is supplied, the full certification chain SHOULD be included unless security policy indicates that is unnecessary.
+          </t>
+          <t>
+The TCPCL requires Version 3 certificates due to the extensions used by this profile.
+TCPCL entities SHALL reject as invalid Version 1 and Version 2 end-entity certificates.
+          </t>
+          <t>
+TCPCL entities SHALL accept certificates that contain an empty Subject field or contain a Subject without a Common Name.
+Identity information in end-entity certificates is contained entirely in the subjectAltName extension as defined in <xref target="sec-tls-identification"/> and below.
+          </t>
+          <t>
+Unless prohibited by CA policy, a TCPCL end-entity certificate SHALL contain a NODE-ID which authenticates the Node ID of the peer.
+When assigned one or more stable DNS names, a TCPCL end-entity certificate SHOULD contain DNS-ID which authenticates those (fully qualified) names.
+When assigned one or more stable network addresss, a TCPCL end-entity certificate MAY contain IPADDR-ID which authenticates those addresses.
+          </t>
+          <t>
+This document defines a PKIX Extended Key Usage key purpose "id-kp-dtnSecurity" in <xref target="sec-iana-kp-oid"/> which MAY be used to restrict a certificate's use.
+The "id-kp-dtnSecurity" purpose SHOULD NOT be combined with other purposes in the same certificate.
+Doing so can cause the same private key to be over-exposed and makes handling key compromise more difficult.
+          </t>
+          <t>
+The PKIX Key Usage bits which are consistent with TCPCL security are: digitalSignature, keyEncipherment, and keyAgreement.
+The specific algorithms used during the TLS handshake will determine which of those key uses are exercised.
+          </t>
+          <t>
+When allowed by CA policy, a TCPCL end-entity certificate SHOULD contain an Online Certificate Status Protocol (OCSP) URI within an Authority Information Access extension in accordance with <xref section="4.2.2.1" target="RFC5280"/>.
           </t>
         </section>
         <section anchor="sec-tls-handshake">
@@ -1106,16 +1143,14 @@ Within each TLS handshake, the following requirements apply (using the rough ord
           <dl newline="false" spacing="normal">
             <dt>Client Hello:</dt>
             <dd>
-When a resolved DNS name was used to establish the TCP connection, the TLS ClientHello SHOULD include a Server Name Indication (SNI) in accordance with <xref target="RFC6066"/>.
+When a resolved DNS name was used to establish the TCP connection, the TLS ClientHello SHOULD include a "server_name" extension in accordance with <xref target="RFC6066"/>.
 When present, the "server_name" extension SHALL contain a "HostName" value taken from the DNS name (of the passive entity) which was resolved.
-Note: The 'HostName in the "server_name" extension is the network name for the passive entity, not the Node ID of that entity.
-              </dd>
+Note: The "HostName" in the "server_name" extension is the network name for the passive entity, not the Node ID of that entity.
+            </dd>
             <dt>Server Certificate:</dt>
             <dd>
 The passive entity SHALL supply a certificate within the TLS handshake to allow authentication of its side of the session.
-Unless prohibited by CA policy, the passive entity certificate SHALL contain a NODE-ID which authenticates the Node ID of the peer.
-When assigned a stable DNS name, the passive entity certificate SHOULD contain a DNS-ID which authenticates that (fully qualified) name.
-When assigned a stable network address, the passive entity certificate MAY contain a IPADDR-ID which authenticates that address.
+The supplied end-entity certificate SHALL conform to the profile of <xref target="sec-tcpcl-cert-profile"/>.
 The passive entity MAY use the SNI DNS name to choose an appropriate server-side certificate which authenticates that DNS name.
               </dd>
             <dt>Certificate Request:</dt>
@@ -1125,15 +1160,9 @@ During TLS handshake, the passive entity SHALL request a client-side certificate
             <dt>Client Certificate:</dt>
             <dd>
 The active entity SHALL supply a certificate chain within the TLS handshake to allow authentication of its side of the session.
-Unless prohibited by CA policy, the active entity certificate SHALL contain a NODE-ID which authenticates the Node ID of the peer.
-When assigned a stable DNS name, the active entity certificate SHOULD contain a DNS-ID which authenticates that (fully qualified) name.
-When assigned a stable network address, the active entity certificate MAY contain a IPADDR-ID which authenticates that address.
+The supplied end-entity certificate SHALL conform to the profile of <xref target="sec-tcpcl-cert-profile"/>.
               </dd>
           </dl>
-          <t>
-All certificates supplied during TLS handshake SHALL conform to <xref target="RFC5280"/>, or any updates or successors to that profile.
-When a certificate is supplied during TLS handshake, the full certification chain SHOULD be included unless security policy indicates that is unnecessary.
-          </t>
           <t>
 If a TLS handshake cannot negotiate a TLS connection, both entities of the TCPCL session SHALL close the TCP connection.
 At this point the TCPCL session has not yet been established so there is no TCPCL session to terminate.
@@ -1147,51 +1176,80 @@ This session negotiation and all subsequent messaging are secured.
           <name>TLS Authentication</name>
           <t>
 Using PKIX certificates exchanged during the TLS handshake, each of the entities can authenticate a peer Node ID directly or authenticate the peer DNS name or network address.
-The logic for handling certificates and certificate data is separated into three phases:
+The logic for handling certificates and certificate data is separated into the following phases:
           </t>
           <ol>
             <li>Validating the certification path from the end-entity certificate up to a trusted root CA.</li>
+            <li>Validating the Extended Key Usage (EKU) and other properties of the end-entity certificate.</li>
             <li>Authenticating identities from a valid end-entity certificate.</li>
             <li>Applying security policy to the result of each identity type authentication.</li>
           </ol>
           <t>
-By using the SNI DNS name (see <xref target="sec-tls-handshake"/>) a single passive entity can act as a convergence layer for multiple BP agents with distinct Node IDs.
-When this "virtual host" behavior is used, the DNS name is used as the indication of which BP Node the active entity is attempting to communicate with.
-A virtual host CL entity can be authenticated by a certificate containing all of the DNS names and/or Node IDs being hosted or by several certificates each authenticating a single DNS name and/or Node ID, using the SNI value from the peer to select which certificate to use.
-          </t>
-          <t>
-For any peer certificate received during TLS handshake, the entity SHALL perform the certification path validation of <xref target="RFC5280"/> up to one of the entity's trusted CA certificates.
-If certificate validation fails or if security policy disallows a certificate for any reason, the entity SHALL fail the TLS handshake with a bad certificate error.
-Leaving out part of the certification chain can cause the entity to fail to validate a certificate if the left-out certificates are unknown to the entity (see <xref target="sec-threat-untrust-cert"/>).
-          </t>
-          <t>
-The result of authenticating a peer identity (i.e., Node ID, DNS name, or IP address) against one type of certificate claim is one of:
+The result of validating a peer identity (see <xref target="sec-tls-identification"/>) against one or more type of certificate claim is one of the following:
           </t>
           <dl newline="false" spacing="normal">
             <dt>Absent:</dt>
             <dd>
-Indicating that no claims of that type are present in the certificate and the identity cannot be authenticated.
+Indicating that no such claims are present in the certificate and the identity cannot be authenticated.
             </dd>
             <dt>Success:</dt>
             <dd>
-Indicating that one or more claims of that type are present and one matches the peer identity value.
+Indicating that one or more such claims are present and at least one matches the peer identity value.
               </dd>
             <dt>Failure:</dt>
             <dd>
-Indicating that one or more claims of that type are present and none match the peer identity.
+Indicating that one or more such claims are present and none match the peer identity.
               </dd>
           </dl>
+          <section anchor="sec-tls-auth-valid-cert">
+            <name>Certificate Path and Purpose Validation</name>
+            <t>
+For any peer end-entity certificate received during TLS handshake, the entity SHALL perform the certification path validation of <xref target="RFC5280"/> up to one of the entity's trusted CA certificates.
+If enabled by local policy, the entity SHALL perform an OCSP check of each certificate providing OCSP authoritiy information in accordance with <xref target="RFC6960"/>.
+If certificate validation fails or if security policy disallows a certificate for any reason, the entity SHALL fail the TLS handshake with a "bad_certificate" alert.
+Leaving out part of the certification chain can cause the entity to fail to validate a certificate if the left-out certificates are unknown to the entity (see <xref target="sec-threat-untrust-cert"/>).
+            </t>
+            <t>
+For the end-entity peer certificate received during TLS handshake, the entity SHALL apply security policy to the Key Usage extension (if present) and Extended Key Usage extension (if present) in accordance with <xref section="4.2.1.12" target="RFC5280"/> and the profile in <xref target="sec-tcpcl-cert-profile"/>.
+            </t>
+          </section>
+          <section anchor="sec-tls-auth-valid-netid">
+            <name>Network-Level Authentication</name>
+            <t>
+Either during or immediately after the TLS handshake, each entity SHALL validate the following certificate identifiers together in accordance with <xref section="6" target="RFC6125"/>:
+            </t>
+            <ul>
+              <li>
+If the active entity resolved a DNS name (of the passive entity) in order to initiate the TCP connection that DNS name SHALL be used as a DNS-ID reference identifier.
+              </li>
+              <li>
+The IP address of the other side of the TCP connection SHALL be used as an IPADDR-ID reference identifier.
+              </li>
+            </ul>
+            <t>
+If the network-level identifiers authentication result is Failure or if the result is Absent and security policy requires an authenticated network-level identifier, the entity SHALL terminate the session (with a reason code of "Contact Failure").
+            </t>
+          </section>
+          <section anchor="sec-tls-auth-valid-nodeid">
+            <name>Node ID Authentication</name>
+            <t>
+Immediately before Session Parameter Negotiation, each entity SHALL validate the certificate NODE-ID in accordance with <xref section="6" target="RFC6125"/> using the Node ID of the peer's SESS_INIT message as the NODE-ID reference identifier.
+If the NODE-ID validation result is Failure or if the result is Absent and security policy requires an authenticated Node ID, the entity SHALL terminate the session (with a reason code of "Contact Failure").
+            </t>
+          </section>
+        </section>
+        <section anchor="sec-tls-auth-policy-rec">
+          <name>Policy Recommendations</name>
           <t>
-Either during or immediately after the TLS handshake if the active entity resolved a DNS name (of the passive entity) in order to initiate the TCP connection, the active entity SHALL authenticate that DNS name using any DNS-ID of the peer certificate.
-If the DNS name authentication result is Failure or if the result is Absent and security policy requires an authenticated DNS name, the entity SHALL terminate the session (with a reason code of "Contact Failure").
+A RECOMMENDED security policy is to enable the use of OCSP checking during TLS handshake.
+A RECOMMENDED security policy is that if an Extended Key Usage is present that it needs to contain "id-kp-dtnSecurity" (of <xref target="sec-tls-auth-valid-cert"/>) to be usable with TCPCL security.
+A RECOMMENDED security policy is to require either an authenticated Node ID (of <xref target="sec-tls-auth-valid-netid"/>) or both an authenticated network-level identifier (of <xref target="sec-tls-auth-valid-netid"/>) and an Extended Key Usage containing "id-kp-dtnSecurity".
           </t>
           <t>
-Either during or immediately after the TLS handshake, each side of the session SHALL authenticate the IP address of the other side of the TCP connection using any IPADDR-ID of the peer certificate.
-If the address authentication result is Failure or if the result is Absent and security policy requires an authenticated network address, the entity SHALL terminate the session (with a reason code of "Contact Failure").
-          </t>
-          <t>
-Immediately before Session Parameter Negotiation, each side of the session SHALL authenticate the Node ID of the peer's SESS_INIT message using any NODE-ID of the peer certificate.
-If the Node ID authentication result is Failure or if the result is Absent and security policy requires an authenticated Node ID, the entity SHALL terminate the session (with a reason code of "Contact Failure").
+This policy assumes that a DTN-aware CA (see <xref target="sec-pkix-env"/>) will only issue a certificate for a Node ID when it has verified that the private key holder actually controls the DTN node.
+This policy assumes that a DTN-aware CA will perform enough due-diligance when issuing certificates with an "id-kp-dtnSecurity" to trust the entity to provide a valid Node ID in its SESS_INIT; this is needed to avoid the threat identified in <xref target="sec-threat-node-impersonation"/>.
+This policy assumes that a certificate will either contain a Node ID or a network-level identifier, depending on what the CA can verify, but if the certificate contains both types of identifier they are both valid.
+This policy relies on and informs the certificate requirements in <xref target="sec-tls-handshake"/>.
           </t>
         </section>
         <section>
@@ -2232,11 +2290,11 @@ A man-in-the-middle attacker can also manipulate a Contact Header to present a l
 It is up to security policies within each TCPCL entity to ensure that the negotiated TCPCL version meets transport security requirements.
         </t>
       </section>
-      <section>
+      <section anchor="sec-threat-tls-strip">
         <name>Threat: Transport Security Stripping</name>
         <t>
 When security policy allows non-TLS sessions, TCPCL does not protect against active network attackers.
-It is possible for a man-in-the-middle attacker to set the CAN_TLS flag to 0 on either side of the Contact Header exchange.
+It is possible for a man-in-the-middle attacker to set the CAN_TLS flag to 0 on either side of the Contact Header exchange, which will cause the negotiation of <xref target="sec-contact-negotiate"/> to disable TLS.
 This leads to the "SSL Stripping" attack described in <xref target="RFC7457"/>.
         </t>
         <t>
@@ -2245,12 +2303,12 @@ When TLS is available on an entity, it is strongly encouraged that the security 
 This requires that the TLS handshake occurs, regardless of the policy-driven parameters of the handshake and policy-driven handling of the handshake outcome.
         </t>
         <t>
-One mechanism to mitigate the possibility of TLS stripping is the use of DNS-based Authentication of Named Entities (DANE) <xref target="RFC6698"/> for the passive peer.
+One mechanism to mitigate the possibility of TLS stripping is the use of DNS-based Authentication of Named Entities (DANE) <xref target="RFC6698"/> toward the passive peer.
 This mechanism relies on DNS and is unidirectional, so it doesn't help with applying policy toward the active peer, but it can be useful in an environment using opportunistic security.
-The configuration and use of DANE are are outside of the scope of this document.
+The configuration and use of DANE are outside of the scope of this document.
         </t>
         <t>
-The negotiated use of TLS is identical behavior to STARTTLS use in <xref target="RFC2595"/> and <xref target="RFC4511"/>.
+The negotiated use of TLS is identical behavior to STARTTLS use in <xref target="RFC2595"/>, <xref target="RFC4511"/>, and others.
         </t>
       </section>
       <section>
@@ -2274,8 +2332,10 @@ In an environment where peers are known to already contain needed root and inter
         <t>
 Even when TLS itself is operating properly an attacker can attempt to exploit vulnerabilities within certificate check algorithms or configuration to establish a secure TCPCL session using an invalid certificate.
 A BP agent treats the peer Node ID within a TCPCL session as authoritative and an invalid certificate exploit could lead to bundle data leaking and/or denial of service to the Node ID being impersonated.
-There are many reasons, described in <xref target="RFC5280"/>, why a certificate can fail to validate, including using the certificate outside of its valid time interval, using purposes for which it was not authorized, or using it after it has been revoked by its CA.
-Validating a certificate is a complex task and can require network connectivity outside of the primary TCPCL network path(s) if a mechanism such as the Online Certificate Status Protocol (OCSP) <xref target="RFC6960"/> is used by the CA.
+        </t>
+        <t>
+There are many reasons, described in <xref target="RFC5280"/> and <xref target="RFC6125"/>, why a certificate can fail to validate, including using the certificate outside of its valid time interval, using purposes for which it was not authorized, or using it after it has been revoked by its CA.
+Validating a certificate is a complex task and can require network connectivity outside of the primary TCPCL network path(s) if a mechanism such as OCSP <xref target="RFC6960"/> is used by the CA.
 The configuration and use of particular certificate validation methods are outside of the scope of this document.
         </t>
       </section>
@@ -2289,18 +2349,21 @@ When permitted by the negotiated TLS version (see <xref target="RFC8446"/>), it 
       <section anchor="sec-threat-node-impersonation">
         <name>Threat: BP Node Impersonation</name>
         <t>
-The certificates exchanged by TLS enable authentication of peer DNS name and Node ID, but it is possible that a peer either not provide a valid certificate or that the certificate does not validate either the DNS name or Node ID of the peer (see <xref target="sec-pkix-env"/>).
-Having a CA-validated certificate does not alone guarantee the identity of the network host or BP node from which the certificate is provided; additional validation procedures in <xref target="sec-tls-handshake"/> bind the DNS name or Node ID based on the contents of the certificate.
+The certificates exchanged by TLS enable authentication of peer DNS name and Node ID, but it is possible that a peer either not provide a valid certificate or that the certificate does not validate either the DNS-ID/IPADDR-ID or NODE-ID of the peer (see <xref target="sec-pkix-env"/>).
+Having a CA-validated certificate does not alone guarantee the identity of the network host or BP node from which the certificate is provided; additional validation procedures in <xref target="sec-tls-handshake"/> bind the DNS-ID/IPADDR-ID or NODE-ID based on the contents of the certificate.
         </t>
         <t>
-The DNS name validation is a weaker form of authentication, because even if a peer is operating on an authenticated network DNS name it can provide an invalid Node ID and cause bundles to be "leaked" to an invalid node.
+The DNS-ID/IPADDR-ID validation is a weaker form of authentication, because even if a peer is operating on an authenticated network DNS name or IP address it can provide an invalid Node ID and cause bundles to be "leaked" to an invalid node.
 Especially in DTN environments, network names and addresses of nodes can be time-variable so binding a certificate to a Node ID is a more stable identity.
         </t>
         <t>
-Node ID validation ensures that the peer to which a bundle is transferred is in fact the node which the BP Agent expects it to be.
-It is a reasonable policy to skip DNS name validation if certificates can be guaranteed to validate the peer's Node ID.
+NODE-ID validation ensures that the peer to which a bundle is transferred is in fact the node which the BP Agent expects it to be.
 In circumstances where certificates can only be issued to DNS names, Node ID validation is not possible but it could be reasonable to assume that a trusted host is not going to present an invalid Node ID.
-Determining of when a DNS name authentication can be trusted to validate a Node ID is also a policy matter outside the scope of this document.
+Determining when a DNS-ID/IPADDR-ID authentication can be trusted to validate a Node ID is also a policy matter outside of the scope of this document.
+        </t>
+        <t>
+One mitigation to arbitrary entities with valid PKIX certificates impersonating arbitrary Node IDs is the use of the PKIX Extended Key Usage key purpose "id-kp-dtnSecurity" in <xref target="sec-iana-kp-oid"/>.
+When this Extended Key Usage is present in the certificate, it represents a stronger assertion that the private key holder should in fact be trusted to operate as a DTN Node.
         </t>
       </section>
       <section>
@@ -2329,6 +2392,15 @@ The victim entity can terminate the session during the negotiation of <xref targ
         </t>
         <t>
 Finally, an attacker or a misconfigured entity can cause issues at the TCP connection which will cause unnecessary TCP retransmissions or connection resets, effectively denying the use of the overlying TCPCL session.
+        </t>
+      </section>
+      <section anchor="sec-security-tls-mandate">
+        <name>Mandatory-to-Implement TLS</name>
+        <t>
+Following IETF best current practice, TLS is mandatory to implement for all TCPCL implementations but TLS is optional to use for a given TCPCL session.
+The recommended configuration of <xref target="sec-contact-header"/> is to always enable TLS, but entites are permitted to disable TLS based on local configration.
+The configuration to enable or disable TLS for an entity or a session is outside of the scope of this document.
+The configuration to disable TLS is different from the threat of TLS stripping described in <xref target="sec-threat-tls-strip"/>.
         </t>
       </section>
       <section anchor="sec-security-tlsalt">
@@ -2798,6 +2870,39 @@ Expert(s) are encouraged to be biased towards approving registrations unless the
           </tbody>
         </table>
       </section>
+
+      <section anchor="sec-iana-kp-oid">
+        <name>Object Identifier for PKIX Extended Key Usage</name>
+        <t>
+IANA has created, under the "Structure of Management Information (SMI) Numbers" registry <xref target="IANA-SMI"/>, a sub-registry titled "SMI Security for PKIX Extended Key Purpose".
+The extended key purpose table is updated to include a purpose "id-kp-dtnSecurity" for identifying DTN endpoints as in the following table.
+        </t>
+        <table align="center">
+          <thead>
+            <tr>
+              <th>Decimal</th>
+              <th>Description</th>
+              <th>References</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>KP-TBD</td>
+              <td>id-kp-dtnSecurity</td>
+              <td>This specification.</td>
+            </tr>
+          </tbody>
+        </table>
+        <t>
+This also corresponds with the following SMI for that key purpose:
+        </t>
+        <sourcecode type="mib" markers="true">
+
+id-kp-dtnSecurity OBJECT IDENTIFIER ::= {
+  iso(1) identified-organization(3) dod(6) internet(1)
+  security(5) mechanisms(5) pkix(7) kp(3) KP-TBD }
+        </sourcecode>
+      </section>
     </section>
     <section anchor="sec-doc-ack">
       <name>Acknowledgments</name>
@@ -2811,6 +2916,15 @@ This specification is based on comments on implementation of <xref target="RFC72
       <name>References</name>
       <references>
         <name>Normative References</name>
+        <reference anchor="IANA-BUNDLE" target="https://www.iana.org/assignments/bundle/">
+          <front>
+            <title>Bundle Protocol</title>
+            <author>
+              <organization>IANA</organization>
+            </author>
+            <date/>
+          </front>
+        </reference>
         <reference anchor="IANA-PORTS" target="https://www.iana.org/assignments/service-names-port-numbers/">
           <front>
             <title>Service Name and Transport Protocol Port Number Registry</title>
@@ -2820,9 +2934,9 @@ This specification is based on comments on implementation of <xref target="RFC72
             <date/>
           </front>
         </reference>
-        <reference anchor="IANA-BUNDLE" target="https://www.iana.org/assignments/bundle/">
+        <reference anchor="IANA-SMI" target="https://www.iana.org/assignments/smi-numbers/">
           <front>
-            <title>Bundle Protocol</title>
+            <title>Structure of Management Information (SMI) Numbers</title>
             <author>
               <organization>IANA</organization>
             </author>
@@ -2836,6 +2950,7 @@ This specification is based on comments on implementation of <xref target="RFC72
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.5280.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.6066.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.6125.xml"/>
+        <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.6960.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.7525.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.8126.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.8174.xml"/>
@@ -2858,7 +2973,6 @@ This specification is based on comments on implementation of <xref target="RFC72
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.4838.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.5489.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.6698.xml"/>
-        <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.6960.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.7122.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.7242.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.7250.xml"/>

@@ -239,8 +239,9 @@ class Connection(object):
         try:
             data = sock.recv(self.CHUNK_SIZE)
         except (socket.error, ssl.SSLWantReadError) as err:
-            self.__logger.error('Failed to "recv" on socket: %s', err)
-            data = None
+            self.__logger.error('Failed to "recv" on socket: (%s) %s', err.__class__.__name__, err)
+            # Optimistically continue to read
+            return True
 
         if not data:
             # Connection closed

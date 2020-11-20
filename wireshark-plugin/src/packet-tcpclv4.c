@@ -24,6 +24,9 @@
 #define WIRESHARK_VERSION_MINOR VERSION_MINOR
 #endif
 
+/// Glib logging "domain" name
+static const char *LOG_DOMAIN = "tcpclv4";
+
 /// Protocol preferences and defaults
 static const guint TCPCL_PORT_NUM = 4556;
 static gboolean tcpcl_desegment_transfer = TRUE;
@@ -34,9 +37,9 @@ static gboolean tcpcl_decode_bundle = TRUE;
 static int proto_tcpcl = -1;
 
 /// Dissector handles
-static dissector_handle_t handle_tcpcl;
-static dissector_handle_t handle_ssl;
-static dissector_handle_t handle_bp;
+static dissector_handle_t handle_tcpcl = NULL;
+static dissector_handle_t handle_ssl = NULL;
+static dissector_handle_t handle_bp = NULL;
 
 /// Extension sub-dissectors
 static dissector_table_t sess_ext_dissectors;
@@ -764,9 +767,7 @@ static guint get_message_len(packet_info *pinfo, tvbuff_t *tvb, int ext_offset, 
     tcpcl_peer_t *tx_peer, *rx_peer;
     get_peers(&tx_peer, &rx_peer, tcpcl_convo, pinfo);
     guint8 msgtype = 0;
-#if 0
-    fprintf(stdout, "LEN scanning at %d|%d|%d ...\n", cur_loc->frame_num, cur_loc->src_ix, cur_loc->raw_offset);
-#endif
+    g_log(LOG_DOMAIN, G_LOG_LEVEL_DEBUG, "get_message_len() scanning at %d|%d|%d ...\n", cur_loc->frame_num, cur_loc->src_ix, cur_loc->raw_offset);
     const gboolean is_contact = (
         !frame_loc_valid(&(tx_peer->chdr_seen))
         || frame_loc_equal(&(tx_peer->chdr_seen), cur_loc)
@@ -842,9 +843,7 @@ static guint get_message_len(packet_info *pinfo, tvbuff_t *tvb, int ext_offset, 
         }
     }
     const int needlen = offset - init_offset;
-#if 0
-    fprintf(stdout, "LEN decoded msg type %x, remain length %d, need length %d\n", msgtype, buflen - init_offset, needlen);
-#endif
+    g_log(LOG_DOMAIN, G_LOG_LEVEL_DEBUG, "get_message_len() decoded msg type %x, remain length %d, need length %d\n", msgtype, buflen - init_offset, needlen);
     frame_loc_delete(cur_loc);
     return needlen;
 }
@@ -867,15 +866,14 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
     const char *msgtype_name = NULL;
     proto_tree *tree_msg = NULL;
     tvbuff_t *xferload_tvb = NULL;
-#if 0
-    fprintf(stdout, "DISSECT scanning...\n");
-#endif
+    g_log(LOG_DOMAIN, G_LOG_LEVEL_DEBUG, "dissect_message() scanning at %d|%d|%d ...\n", cur_loc->frame_num, cur_loc->src_ix, cur_loc->raw_offset);
     const gboolean is_contact = (
         !frame_loc_valid(&(tx_peer->chdr_seen))
         || frame_loc_equal(&(tx_peer->chdr_seen), cur_loc)
     );
     if (is_contact) {
         msgtype_name = "Contact Header";
+        g_log(LOG_DOMAIN, G_LOG_LEVEL_DEBUG, "dissect_message() decoding contact header, buf length %d\n", tvb_captured_length(tvb));
 
         proto_item *item_chdr = proto_tree_add_item(tree, hf_chdr_tree, tvb, offset, 0, ENC_NA);
         tree_msg = proto_item_add_subtree(item_chdr, ett_chdr);
@@ -919,9 +917,7 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
         msgtype = tvb_get_guint8(tvb, offset);
         proto_tree_add_uint(tree_msg, hf_mhdr_type, tvb, offset, 1, msgtype);
         offset += 1;
-#if 0
-        fprintf(stdout, "DISSECT decoding msg type %x, buf length %d\n", msgtype, tvb_captured_length(tvb));
-#endif
+        g_log(LOG_DOMAIN, G_LOG_LEVEL_DEBUG, "dissect_message() decoding msg type %x, buf length %d\n", msgtype, tvb_captured_length(tvb));
         msgtype_name = val_to_str(msgtype, message_type_vals, "type 0x%" PRIx32);
 
         wmem_strbuf_t *suffix_text = wmem_strbuf_new(wmem_packet_scope(), NULL);
@@ -1488,6 +1484,7 @@ static int dissect_tcpcl(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
      * there yet */
     conversation_t *convo = find_or_create_conversation(pinfo);
     tcpcl_conversation_t *tcpcl_convo = (tcpcl_conversation_t *)conversation_get_proto_data(convo, proto_tcpcl);
+    g_log(LOG_DOMAIN, G_LOG_LEVEL_DEBUG, "dissect_tcpcl() at %d ...\n", pinfo->num);
     if (!tcpcl_convo) {
         tcpcl_convo = tcpcl_conversation_new();
         conversation_add_proto_data(convo, proto_tcpcl, tcpcl_convo);
@@ -1556,6 +1553,7 @@ static int dissect_xferext_transferlen(tvbuff_t *tvb, packet_info *pinfo _U_, pr
 
 /// Overall registration of the protocol
 static void proto_register_tcpcl(void) {
+    g_log(LOG_DOMAIN, G_LOG_LEVEL_DEBUG, "proto_register_tcpcl()\n");
     proto_tcpcl = proto_register_protocol(
         "DTN TCP Convergence Layer Protocol Version 4", /* name */
         "TCPCLv4", /* short name */
@@ -1619,6 +1617,7 @@ static void proto_register_tcpcl(void) {
 }
 
 static void proto_reg_handoff_tcpcl(void) {
+    g_log(LOG_DOMAIN, G_LOG_LEVEL_DEBUG, "proto_reg_handoff_tcpcl()\n");
     dissector_add_uint_with_preference("tcp.port", TCPCL_PORT_NUM, handle_tcpcl);
 
     handle_ssl = find_dissector_add_dependency(TLS_DISSECTOR_NAME, proto_tcpcl);
