@@ -1108,14 +1108,20 @@ TCPCL entities SHALL accept certificates that contain an empty Subject field or 
 Identity information in end-entity certificates is contained entirely in the subjectAltName extension as defined in <xref target="sec-tls-identification"/> and below.
           </t>
           <t>
+All end-entity and CA certificates used for TCPCL SHOULD contain both a Subject Key Identifier and an Authority Key Identifier extension in accordance with <xref target="RFC5280"/>.
+TCPCL entities SHOULD NOT rely on either a Subject Key Identifier and an Authority Key Identifier being present in any received certificate.
+Including key identifiers simplifies the work of an entity needing to assemble a certification chain.
+          </t>
+          <t>
 Unless prohibited by CA policy, a TCPCL end-entity certificate SHALL contain a NODE-ID which authenticates the Node ID of the peer.
 When assigned one or more stable DNS names, a TCPCL end-entity certificate SHOULD contain DNS-ID which authenticates those (fully qualified) names.
 When assigned one or more stable network addresss, a TCPCL end-entity certificate MAY contain IPADDR-ID which authenticates those addresses.
           </t>
           <t>
 This document defines a PKIX Extended Key Usage key purpose "id-kp-dtnSecurity" in <xref target="sec-iana-kp-oid"/> which MAY be used to restrict a certificate's use.
-The "id-kp-dtnSecurity" purpose SHOULD NOT be combined with other purposes in the same certificate.
-Doing so can cause the same private key to be over-exposed and makes handling key compromise more difficult.
+The "id-kp-dtnSecurity" purpose can be combined with other purposes in the same certificate.
+Although not specifically required by TCPCL, some networks or TLS implementations assume the use of "id-kp-clientAuth" and "id-kp-serverAuth" are needed for, respectively, the client-side and server-side of TLS authentication.
+For interoperability, a TCPCL end-entity certificate MAY contain an Extended Key Usage with both "id-kp-clientAuth" and "id-kp-serverAuth" values.
           </t>
           <t>
 The PKIX Key Usage bits which are consistent with TCPCL security are: digitalSignature, keyEncipherment, and keyAgreement.

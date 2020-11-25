@@ -33,6 +33,7 @@ and dynamic segment sizing.
         'cbor2 >=4.1,<4.2',
         'crcmod >=1.7',
         'PyGObject >=3.34', # glib integration
+        'cryptography >=0.9',
     ],
     extras_require={},
 

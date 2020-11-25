@@ -8,6 +8,9 @@ import logging
 import os
 import socket
 import ssl
+import ipaddress
+from cryptography.hazmat.backends import default_backend
+from cryptography import x509
 
 import dbus.service
 from gi.repository import GLib as glib
@@ -764,13 +767,14 @@ class Messenger(Connection):
         '''
         self.__logger.debug('Session negotiation')
 
-        peer_ipaddrid = self.get_app_socket().getpeername()[0]
+        peer_addr_str = self.get_app_socket().getpeername()[0]
         if self._as_passive:
             peer_dnsid = None
-        elif self._peer_name == peer_ipaddrid:
+        elif self._peer_name == peer_addr_str:
             peer_dnsid = None
         else:
             peer_dnsid = self._peer_name
+        peer_ipaddrid = ipaddress.ip_address(peer_addr_str)
         peer_nodeid = str(self._sessinit_peer.nodeid_data)
 
         # These are set to None if absent, False if invalid, or the valid value
@@ -778,42 +782,72 @@ class Messenger(Connection):
         authn_dnsid = None
         authn_ipaddrid = None
 
-        def match_id(peer_val, cert, san_key, require_authn, log_name):
-            authn_val = None
-            if cert and peer_val:
-                cert_ids = set()
-                for (name_type, name_data) in cert.get('subjectAltName', []):
-                    if name_type == san_key:
-                        cert_ids.add(name_data)
-                self.__logger.debug('Authenticating %s "%s" with cert containing: %s',
-                                    log_name, peer_val, cert_ids)
+        def match_id(ref_id, cert, san_key, log_name):
+            cert_ids = None
+            if cert:
+                try:
+                    ext = cert.extensions.get_extension_for_oid(x509.oid.ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
+                    cert_ids = ext.value.get_values_for_type(san_key)
+                except x509.ExtensionNotFound:
+                    pass
 
-                if cert_ids:
-                    if peer_val in cert_ids:
-                        authn_val = peer_val
-                    else:
-                        authn_val = False
+            self.__logger.debug('Authenticating %s reference %s with cert containing: %s',
+                                log_name, repr(ref_id), cert_ids)
+
+            if cert_ids:
+                if ref_id in cert_ids:
+                    authn_val = ref_id
+                else:
+                    # cert IDs but no match
+                    authn_val = False
+            else:
+                # no certificate IDs
+                authn_val = None
 
             # Handle authentication result
-            if authn_val:
-                self.__logger.debug('Certificate matched %s "%s"', log_name, authn_val)
-            else:
+            if not authn_val and ref_id and cert_ids:
                 self.__logger.warning('Peer %s not authenticated', log_name)
-                if authn_val is False or require_authn:
-                    raise TerminateError(messages.SessionTerm.Reason.CONTACT_FAILURE)
+            else:
+                self.__logger.debug('Certificate matched %s reference %s', log_name, repr(authn_val))
             return authn_val
 
         sock_tls = self.get_secure_socket()
         if sock_tls:
+            # Native (python ssl) validation for reference
+            try:
+                ssl.match_hostname(sock_tls.getpeercert(), peer_dnsid or peer_addr_str)
+            except ssl.CertificateError as err:
+                self.__logger.warning('Native name validation failed: %s', err)
+
             # Verify TLS name bindings
-            cert = sock_tls.getpeercert()
+            cert_der = sock_tls.getpeercert(True)
+            cert = x509.load_der_x509_certificate(cert_der, default_backend())
+            self.__logger.debug('Peer certificate: %s', cert)
+
+            try:
+                ku_bits = cert.extensions.get_extension_for_oid(x509.oid.ExtensionOID.KEY_USAGE).value
+            except x509.ExtensionNotFound:
+                ku_bits = None
+            self.__logger.debug('Peer KU: %s', ku_bits)
+
+            try:
+                eku_set = cert.extensions.get_extension_for_oid(x509.oid.ExtensionOID.EXTENDED_KEY_USAGE).value
+            except x509.ExtensionNotFound:
+                eku_set = None
+            self.__logger.debug('Peer EKU: %s', eku_set)
+            #Example print(x509.ObjectIdentifier('1.3.6.1.5.5.7.3.1') in eku_set)
 
             # Exact IPADDR-ID matching
-            authn_ipaddrid = match_id(peer_ipaddrid, cert, 'IP Address', self._config.require_host_authn, 'IPADDR-ID')
+            authn_ipaddrid = match_id(peer_ipaddrid, cert, x509.IPAddress, 'IPADDR-ID')
             # Exact DNS-ID matching
-            authn_dnsid = match_id(peer_dnsid, cert, 'DNS', self._config.require_host_authn, 'DNS-ID')
+            authn_dnsid = match_id(peer_dnsid, cert, x509.DNSName, 'DNS-ID')
             # Exact NODE-ID matching
-            authn_dnsid = match_id(peer_nodeid, cert, 'URI', self._config.require_node_authn, 'NODE-ID')
+            authn_nodeid = match_id(peer_nodeid, cert, x509.UniformResourceIdentifier, 'NODE-ID')
+
+            any_fail = (peer_ipaddrid and authn_ipaddrid is False) or (peer_dnsid and authn_dnsid is False) or authn_nodeid is False
+            netname_absent = authn_ipaddrid is None and authn_dnsid is None
+            if any_fail or (netname_absent and self._config.require_host_authn) or (authn_nodeid is None and self._config.require_node_authn):
+                raise TerminateError(messages.SessionTerm.Reason.CONTACT_FAILURE)
 
         self._keepalive_time = min(self._sessinit_this.keepalive,
                                    self._sessinit_peer.keepalive)
