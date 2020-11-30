@@ -335,6 +335,7 @@ static int ett_sessext_data = -1;
 static int ett_xferext = -1;
 static int ett_xferext_flags = -1;
 static int ett_xferext_data = -1;
+/// Tree structures
 static int *ett[] = {
     &ett_tcpcl,
     &ett_chdr,

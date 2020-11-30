@@ -92,85 +92,6 @@ typedef enum {
     BP_STATUS_REPORT_DELETED,
 } AdminBundleStatusInfoType;
 
-/// The basic header structure of CBOR encoding
-typedef struct {
-    /// The start offset of this header
-    gint start;
-    /// The length of just this header
-    gint length;
-    /// The expert info object (if error)
-    expert_field *error;
-
-    /// Major type of this item (cbor_type)
-    guint8 type_major;
-    /// Minor type of this item
-    guint8 type_minor;
-    /// Either the encoded value or zero (with one-bit truncation possible)
-    gint64 rawvalue;
-} bp_cbor_head_t;
-
-bp_cbor_head_t * bp_scan_cbor_head(tvbuff_t *tvb, gint start);
-
-/** Function to match the GDestroyNotify signature.
- */
-void bp_cbor_head_delete(gpointer ptr);
-
-/// The same enumeration from libcbor-0.5
-typedef enum cbor_type {
-    CBOR_TYPE_UINT = 0, ///< positive integers
-    CBOR_TYPE_NEGINT = 1, ///< negative integers
-    CBOR_TYPE_BYTESTRING = 2, ///< byte strings
-    CBOR_TYPE_STRING = 3, ///< text strings
-    CBOR_TYPE_ARRAY = 4, ///< arrays
-    CBOR_TYPE_MAP = 5, ///< maps
-    CBOR_TYPE_TAG = 6, ///< tags
-    CBOR_TYPE_FLOAT_CTRL = 7, ///< decimals and special values (true, false, nil, ...)
-} cbor_type;
-
-/// The same enumeration from libcbor-0.5
-typedef enum {
-    CBOR_CTRL_NONE = 0,
-    CBOR_CTRL_FALSE = 20,
-    CBOR_CTRL_TRUE = 21,
-    CBOR_CTRL_NULL = 22,
-    CBOR_CTRL_UNDEF = 23
-} _cbor_ctrl;
-
-/// The basic header structure of CBOR encoding
-typedef struct {
-    /// The start offset of this chunk
-    gint start;
-    /// The length of just this chunk
-    gint head_length;
-    /// The length of this chunk and its immediate definite data (i.e. strings)
-    gint data_length;
-    /// Additional blocks in order (type expert_field*)
-    GSequence *errors;
-    /// Additional blocks in order (type gint64)
-    GSequence *tags;
-
-    /// Major type of this block
-    cbor_type type_major;
-    /// Minor type of this item
-    guint8 type_minor;
-    /// The header-encoded value
-    gint64 head_value;
-} bp_cbor_chunk_t;
-
-/** Scan for a tagged chunk of headers.
- *
- * @param tvb The TVB to read from.
- * @param start The offset with in @c tvb.
- * @return The chunk of data found, including any errors.
- */
-bp_cbor_chunk_t * bp_scan_cbor_chunk(tvbuff_t *tvb, gint start);
-
-void bp_cbor_chunk_mark_errors(packet_info *pinfo, proto_item *item, const bp_cbor_chunk_t *chunk);
-
-/** Function to match the GDestroyNotify signature.
- */
-void bp_cbor_chunk_delete(gpointer ptr);
-
 /// DTN time with derived UTC time
 typedef struct {
     /// DTN time
@@ -199,32 +120,32 @@ void bp_creation_ts_delete(gpointer ptr);
  */
 gint bp_creation_ts_compare(gconstpointer a, gconstpointer b, gpointer user_data);
 
-/// Metadata from a Node ID
+/// Metadata from a Endpoint ID
 typedef struct {
     /// Scheme ID number
     gint64 scheme;
     /// Derived URI text
     const char *uri;
-} bp_nodeid_t;
+} bp_eid_t;
 
 /** Construct a new timestamp.
  */
-bp_nodeid_t * bp_nodeid_new();
+bp_eid_t * bp_eid_new();
 
 /** Function to match the GDestroyNotify signature.
  */
-void bp_nodeid_delete(gpointer ptr);
+void bp_eid_delete(gpointer ptr);
 
 /// Metadata extracted from the primary block
 typedef struct {
     /// Bundle flags (assumed zero)
     guint64 flags;
     /// Destination EID
-    bp_nodeid_t *dst_nodeid;
-    /// Source EID
-    bp_nodeid_t *src_nodeid;
-    /// Report-to EID
-    bp_nodeid_t *rep_nodeid;
+    bp_eid_t *dst_eid;
+    /// Source NID
+    bp_eid_t *src_nodeid;
+    /// Report-to NID
+    bp_eid_t *rep_nodeid;
     /// Creation Timestamp
     bp_creation_ts_t ts;
     /// Optional fragment start offset
@@ -305,7 +226,7 @@ void bp_bundle_delete(gpointer ptr);
 /// Identification of an individual bundle
 typedef struct {
     /// Pointer to an external Source Node ID
-    bp_nodeid_t *src;
+    bp_eid_t *src;
     /// Pointer to an external Creation Timestamp
     bp_creation_ts_t *ts;
     /// Pointer to external optional fragment start offset
@@ -316,7 +237,7 @@ typedef struct {
 
 /** Construct a new object on the file allocator.
  */
-bp_bundle_ident_t * bp_bundle_ident_new(bp_nodeid_t *src, bp_creation_ts_t *ts, guint64 *off, guint64 *len);
+bp_bundle_ident_t * bp_bundle_ident_new(bp_eid_t *src, bp_creation_ts_t *ts, guint64 *off, guint64 *len);
 
 /** Function to match the GDestroyNotify signature.
  */
