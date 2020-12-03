@@ -343,7 +343,10 @@ The top-level session states indicated are:
               <dt>Session Negotiating:</dt>
               <dd>Contact negotiation has been completed (including possible TLS use) and session negotiation has begun.</dd>
               <dt>Established:</dt>
-              <dd>The session has been fully established and is ready for its first transfer.</dd>
+              <dd>
+The session has been fully established and is ready for its first transfer.
+When the session is established, the peer Node ID (along with indication of whether or not it was authenticated) and the negotiated session parameters (see <xref target="sec-session-negotiate"/>) are also communicated to the BP agent.
+              </dd>
               <dt>Ending:</dt>
               <dd>The entity sent SESS_TERM message and is in the ending state.</dd>
               <dt>Terminated:</dt>
@@ -1118,8 +1121,8 @@ When assigned one or more stable DNS names, a TCPCL end-entity certificate SHOUL
 When assigned one or more stable network addresss, a TCPCL end-entity certificate MAY contain IPADDR-ID which authenticates those addresses.
           </t>
           <t>
-This document defines a PKIX Extended Key Usage key purpose "id-kp-dtnSecurity" in <xref target="sec-iana-kp-oid"/> which MAY be used to restrict a certificate's use.
-The "id-kp-dtnSecurity" purpose can be combined with other purposes in the same certificate.
+This document defines a PKIX Extended Key Usage key purpose "id-kp-bundleSecurity" in <xref target="sec-iana-kp-oid"/> which MAY be used to restrict a certificate's use.
+The "id-kp-bundleSecurity" purpose can be combined with other purposes in the same certificate.
 Although not specifically required by TCPCL, some networks or TLS implementations assume the use of "id-kp-clientAuth" and "id-kp-serverAuth" are needed for, respectively, the client-side and server-side of TLS authentication.
 For interoperability, a TCPCL end-entity certificate MAY contain an Extended Key Usage with both "id-kp-clientAuth" and "id-kp-serverAuth" values.
           </t>
@@ -1222,7 +1225,7 @@ For the end-entity peer certificate received during TLS handshake, the entity SH
           <section anchor="sec-tls-auth-valid-netid">
             <name>Network-Level Authentication</name>
             <t>
-Either during or immediately after the TLS handshake, each entity SHALL validate the following certificate identifiers together in accordance with <xref section="6" target="RFC6125"/>:
+Either during or immediately after the TLS handshake, if required by security policy each entity SHALL validate the following certificate identifiers together in accordance with <xref section="6" target="RFC6125"/>:
             </t>
             <ul>
               <li>
@@ -1239,7 +1242,7 @@ If the network-level identifiers authentication result is Failure or if the resu
           <section anchor="sec-tls-auth-valid-nodeid">
             <name>Node ID Authentication</name>
             <t>
-Immediately before Session Parameter Negotiation, each entity SHALL validate the certificate NODE-ID in accordance with <xref section="6" target="RFC6125"/> using the Node ID of the peer's SESS_INIT message as the NODE-ID reference identifier.
+Immediately before Session Parameter Negotiation, if required by security policy each entity SHALL validate the certificate NODE-ID in accordance with <xref section="6" target="RFC6125"/> using the Node ID of the peer's SESS_INIT message as the NODE-ID reference identifier.
 If the NODE-ID validation result is Failure or if the result is Absent and security policy requires an authenticated Node ID, the entity SHALL terminate the session (with a reason code of "Contact Failure").
             </t>
           </section>
@@ -1248,14 +1251,14 @@ If the NODE-ID validation result is Failure or if the result is Absent and secur
           <name>Policy Recommendations</name>
           <t>
 A RECOMMENDED security policy is to enable the use of OCSP checking during TLS handshake.
-A RECOMMENDED security policy is that if an Extended Key Usage is present that it needs to contain "id-kp-dtnSecurity" (of <xref target="sec-tls-auth-valid-cert"/>) to be usable with TCPCL security.
-A RECOMMENDED security policy is to require either an authenticated Node ID (of <xref target="sec-tls-auth-valid-netid"/>) or both an authenticated network-level identifier (of <xref target="sec-tls-auth-valid-netid"/>) and an Extended Key Usage containing "id-kp-dtnSecurity".
+A RECOMMENDED security policy is that if an Extended Key Usage is present that it needs to contain "id-kp-bundleSecurity" (of <xref target="sec-tls-auth-valid-cert"/>) to be usable with TCPCL security.
+A RECOMMENDED security policy is to require a validated Node ID (of <xref target="sec-tls-auth-valid-nodeid"/>) and to ignore any network-level identifier (of <xref target="sec-tls-auth-valid-netid"/>).
           </t>
           <t>
-This policy assumes that a DTN-aware CA (see <xref target="sec-pkix-env"/>) will only issue a certificate for a Node ID when it has verified that the private key holder actually controls the DTN node.
-This policy assumes that a DTN-aware CA will perform enough due-diligance when issuing certificates with an "id-kp-dtnSecurity" to trust the entity to provide a valid Node ID in its SESS_INIT; this is needed to avoid the threat identified in <xref target="sec-threat-node-impersonation"/>.
-This policy assumes that a certificate will either contain a Node ID or a network-level identifier, depending on what the CA can verify, but if the certificate contains both types of identifier they are both valid.
 This policy relies on and informs the certificate requirements in <xref target="sec-tls-handshake"/>.
+This policy assumes that a DTN-aware CA (see <xref target="sec-pkix-env"/>) will only issue a certificate for a Node ID when it has verified that the private key holder actually controls the DTN node; this is needed to avoid the threat identified in <xref target="sec-threat-node-impersonation"/>.
+This policy requires that a certificate contain a NODE-ID and allows the certificate to also contain network-level identifiers.
+A tailored policy on a more controlled network could relax the requirement on Node ID validation and allow just network-level identifiers to authenticate a peer.
           </t>
         </section>
         <section>
@@ -1472,7 +1475,11 @@ If the content of the Session Extension Items data disagrees with the Session Ex
             </dd>
         </dl>
         <t>
-When the active entity initiates a TCPCL session, it is likely based on routing information which binds a Node ID to CL parameters.
+If an entity receives a peer Node ID which is not authenticated (by the procedure of <xref target="sec-tls-auth-valid-nodeid"/>) that Node ID SHOULD NOT be used by a BP agent for any discovery or routing functions.
+Trusting an unauthenticated Node ID can lead to the threat described in <xref target="sec-threat-node-impersonation"/>.
+        </t>
+        <t>
+When the active entity initiates a TCPCL session, it is likely based on routing information which binds a Node ID to CL parameters used to initiate the session.
 If the active entity receives a SESS_INIT with different Node ID than was intended for the TCPCL session, the session MAY be allowed to be established.
 If allowed, such a session SHALL be associated with the Node ID provided in the SESS_INIT message rather than any intended value.
         </t>
@@ -2290,7 +2297,7 @@ This can be avoided by always using TLS, even if authentication is not available
         <name>Threat: TCPCL Version Downgrade</name>
         <t>
 When a TCPCL entity supports multiple versions of the protocol it is possible for a malicious or misconfigured peer to use an older version of TCPCL which does not support transport security.
-A man-in-the-middle attacker can also manipulate a Contact Header to present a lower protocol version than desired.
+A on-path attacker can also manipulate a Contact Header to present a lower protocol version than desired.
         </t>
         <t>
 It is up to security policies within each TCPCL entity to ensure that the negotiated TCPCL version meets transport security requirements.
@@ -2300,7 +2307,7 @@ It is up to security policies within each TCPCL entity to ensure that the negoti
         <name>Threat: Transport Security Stripping</name>
         <t>
 When security policy allows non-TLS sessions, TCPCL does not protect against active network attackers.
-It is possible for a man-in-the-middle attacker to set the CAN_TLS flag to 0 on either side of the Contact Header exchange, which will cause the negotiation of <xref target="sec-contact-negotiate"/> to disable TLS.
+It is possible for a on-path attacker to set the CAN_TLS flag to 0 on either side of the Contact Header exchange, which will cause the negotiation of <xref target="sec-contact-negotiate"/> to disable TLS.
 This leads to the "SSL Stripping" attack described in <xref target="RFC7457"/>.
         </t>
         <t>
@@ -2368,7 +2375,7 @@ In circumstances where certificates can only be issued to DNS names, Node ID val
 Determining when a DNS-ID/IPADDR-ID authentication can be trusted to validate a Node ID is also a policy matter outside of the scope of this document.
         </t>
         <t>
-One mitigation to arbitrary entities with valid PKIX certificates impersonating arbitrary Node IDs is the use of the PKIX Extended Key Usage key purpose "id-kp-dtnSecurity" in <xref target="sec-iana-kp-oid"/>.
+One mitigation to arbitrary entities with valid PKIX certificates impersonating arbitrary Node IDs is the use of the PKIX Extended Key Usage key purpose "id-kp-bundleSecurity" in <xref target="sec-iana-kp-oid"/>.
 When this Extended Key Usage is present in the certificate, it represents a stronger assertion that the private key holder should in fact be trusted to operate as a DTN Node.
         </t>
       </section>
@@ -2435,7 +2442,7 @@ Using non-PKI node authentication methods is outside of the scope of this docume
         <t>
 The only requirement on Transfer IDs is that they be unique with each session from the sending peer only.
 The trivial algorithm of the first transfer starting at zero and later transfers incrementing by one causes absolutely predictable Transfer IDs.
-Even when a TCPCL session is not TLS secured and there is a man-in-the-middle attacker causing denial of service with XFER_REFUSE messages, it is not possible to preemptively refuse a transfer so there is no benefit in having unpredictable Transfer IDs within a session.
+Even when a TCPCL session is not TLS secured and there is a on-path attacker causing denial of service with XFER_REFUSE messages, it is not possible to preemptively refuse a transfer so there is no benefit in having unpredictable Transfer IDs within a session.
         </t>
       </section>
     </section>
@@ -2881,7 +2888,7 @@ Expert(s) are encouraged to be biased towards approving registrations unless the
         <name>Object Identifier for PKIX Extended Key Usage</name>
         <t>
 IANA has created, under the "Structure of Management Information (SMI) Numbers" registry <xref target="IANA-SMI"/>, a sub-registry titled "SMI Security for PKIX Extended Key Purpose".
-The extended key purpose table is updated to include a purpose "id-kp-dtnSecurity" for identifying DTN endpoints as in the following table.
+The extended key purpose table is updated to include a purpose "id-kp-bundleSecurity" for identifying DTN endpoints as in the following table.
         </t>
         <table align="center">
           <thead>
@@ -2894,7 +2901,7 @@ The extended key purpose table is updated to include a purpose "id-kp-dtnSecurit
           <tbody>
             <tr>
               <td>KP-TBD</td>
-              <td>id-kp-dtnSecurity</td>
+              <td>id-kp-bundleSecurity</td>
               <td>This specification.</td>
             </tr>
           </tbody>
@@ -2904,7 +2911,7 @@ This also corresponds with the following SMI for that key purpose:
         </t>
         <sourcecode type="mib" markers="true">
 
-id-kp-dtnSecurity OBJECT IDENTIFIER ::= {
+id-kp-bundleSecurity OBJECT IDENTIFIER ::= {
   iso(1) identified-organization(3) dod(6) internet(1)
   security(5) mechanisms(5) pkix(7) kp(3) KP-TBD }
         </sourcecode>
