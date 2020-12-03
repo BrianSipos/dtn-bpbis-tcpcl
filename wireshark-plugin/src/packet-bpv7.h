@@ -120,6 +120,13 @@ void bp_creation_ts_delete(gpointer ptr);
  */
 gint bp_creation_ts_compare(gconstpointer a, gconstpointer b, gpointer user_data);
 
+/** Endpoint ID scheme encodings.
+ */
+typedef enum {
+    EID_SCHEME_DTN = 1,
+    EID_SCHEME_IPN = 2,
+} EidScheme;
+
 /// Metadata from a Endpoint ID
 typedef struct {
     /// Scheme ID number
@@ -135,6 +142,10 @@ bp_eid_t * bp_eid_new();
 /** Function to match the GDestroyNotify signature.
  */
 void bp_eid_delete(gpointer ptr);
+
+/** Function to match the GCompareFunc signature.
+ */
+gboolean bp_eid_equal(gconstpointer a, gconstpointer b);
 
 /// Metadata extracted from the primary block
 typedef struct {
@@ -250,6 +261,18 @@ gboolean bp_bundle_ident_equal(gconstpointer a, gconstpointer b);
 /** Function to match the GHashFunc signature.
  */
 guint bp_bundle_ident_hash(gconstpointer key);
+
+/** Extract an Endpoint ID.
+ *
+ * @param tree The tree to write items under.
+ * @param hfindex The root item field.
+ * @param pinfo Packet info to update.
+ * @param tvb Buffer to read from.
+ * @param[in,out] offset Starting offset within @c tvb.
+ * @param[out] eid If non-null, the EID to write to.
+ * @return The new tree item.
+ */
+proto_item * proto_tree_add_cbor_eid(proto_tree *tree, int hfindex, packet_info *pinfo, tvbuff_t *tvb, gint *offset, bp_eid_t *eid);
 
 /// Metadata for an entire conversation
 typedef struct {

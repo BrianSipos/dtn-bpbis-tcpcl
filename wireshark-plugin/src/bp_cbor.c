@@ -291,8 +291,7 @@ guint64 * cbor_require_uint64(const bp_cbor_chunk_t *chunk) {
     }
 }
 
-#if 0
-static gint64 * cbor_require_int64(const bp_cbor_chunk_t *chunk) {
+gint64 * cbor_require_int64(const bp_cbor_chunk_t *chunk) {
     switch (chunk->type_major) {
         case CBOR_TYPE_UINT:
         case CBOR_TYPE_NEGINT: {
@@ -304,7 +303,6 @@ static gint64 * cbor_require_int64(const bp_cbor_chunk_t *chunk) {
             return NULL;
     }
 }
-#endif
 
 tvbuff_t * cbor_require_string(tvbuff_t *parent, const bp_cbor_chunk_t *chunk) {
     tvbuff_t *result = NULL;
@@ -317,6 +315,10 @@ tvbuff_t * cbor_require_string(tvbuff_t *parent, const bp_cbor_chunk_t *chunk) {
             return NULL;
     }
     return result;
+}
+
+void bp_cbor_require_delete(gpointer ptr) {
+    file_scope_delete(ptr);
 }
 
 proto_item * proto_tree_add_cbor_boolean(proto_tree *tree, int hfindex, packet_info *pinfo, tvbuff_t *tvb, const bp_cbor_chunk_t *chunk, const gboolean *value) {
@@ -335,15 +337,13 @@ proto_item * proto_tree_add_cbor_uint64(proto_tree *tree, int hfindex, packet_in
     return item;
 }
 
-#if 0
-static proto_item * proto_tree_add_cbor_int64(proto_tree *tree, int hfindex, packet_info *pinfo, tvbuff_t *tvb, const bp_cbor_chunk_t *chunk, const gint64 *value) {
+proto_item * proto_tree_add_cbor_int64(proto_tree *tree, int hfindex, packet_info *pinfo, tvbuff_t *tvb, const bp_cbor_chunk_t *chunk, const gint64 *value) {
     proto_item *item = proto_tree_add_int64(tree, hfindex, tvb, chunk->start, chunk->head_length, value ? *value : 0);
     if (!value) {
         expert_add_info(pinfo, item, &ei_item_missing);
     }
     return item;
 }
-#endif
 
 proto_item * proto_tree_add_cbor_bitmask(proto_tree *tree, int hfindex, const gint ett, const int **fields, packet_info *pinfo, tvbuff_t *tvb, const bp_cbor_chunk_t *chunk, const guint64 *value) {
     header_field_info *field = proto_registrar_get_nth(hfindex);

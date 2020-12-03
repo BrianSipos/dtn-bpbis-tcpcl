@@ -132,18 +132,47 @@ gboolean cbor_require_array_size(tvbuff_t *tvb, packet_info *pinfo, proto_item *
  * @param count_min The minimum required array size.
  * @param count_max The maximum required array size.
  * @return The array header chunk, if the array is valid.
+ * The chunk can be deleted with bp_cbor_chunk_delete().
  */
 bp_cbor_chunk_t * cbor_require_array_with_size(tvbuff_t *tvb, packet_info *pinfo, proto_item *item, gint *offset, gint64 count_min, gint64 count_max);
 
+/** Require a CBOR item to have a boolean value.
+ *
+ * @param chunk The chunk to read from.
+ * @return Pointer to the boolean value, if the item was boolean.
+ * The value can be deleted with bp_cbor_require_delete().
+ */
 gboolean * cbor_require_boolean(const bp_cbor_chunk_t *chunk);
 
+/** Require a CBOR item to have an unsigned-integer value.
+ * @note This reader will clip the most significant bit of the value.
+ *
+ * @param chunk The chunk to read from.
+ * @return Pointer to the boolean value, if the item was an integer.
+ * The value can be deleted with bp_cbor_require_delete().
+ */
 guint64 * cbor_require_uint64(const bp_cbor_chunk_t *chunk);
 
+/** Require a CBOR item to have an signed- or unsigned-integer value.
+ * @note This reader will clip the most significant bit of the value.
+ *
+ * @param chunk The chunk to read from.
+ * @return Pointer to the boolean value, if the item was an integer.
+ * The value can be deleted with bp_cbor_require_delete().
+ */
+gint64 * cbor_require_int64(const bp_cbor_chunk_t *chunk);
+
 tvbuff_t * cbor_require_string(tvbuff_t *parent, const bp_cbor_chunk_t *chunk);
+
+/** Function to match the GDestroyNotify signature.
+ */
+void bp_cbor_require_delete(gpointer ptr);
 
 proto_item * proto_tree_add_cbor_boolean(proto_tree *tree, int hfindex, packet_info *pinfo, tvbuff_t *tvb, const bp_cbor_chunk_t *chunk, const gboolean *value);
 
 proto_item * proto_tree_add_cbor_uint64(proto_tree *tree, int hfindex, packet_info *pinfo, tvbuff_t *tvb, const bp_cbor_chunk_t *chunk, const guint64 *value);
+
+proto_item * proto_tree_add_cbor_int64(proto_tree *tree, int hfindex, packet_info *pinfo, tvbuff_t *tvb, const bp_cbor_chunk_t *chunk, const gint64 *value);
 
 proto_item * proto_tree_add_cbor_bitmask(proto_tree *tree, int hfindex, const gint ett, const int **fields, packet_info *pinfo, tvbuff_t *tvb, const bp_cbor_chunk_t *chunk, const guint64 *value);
 

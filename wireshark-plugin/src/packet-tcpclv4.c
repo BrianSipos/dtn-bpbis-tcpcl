@@ -41,6 +41,8 @@ static dissector_handle_t handle_tcpcl = NULL;
 static dissector_handle_t handle_ssl = NULL;
 static dissector_handle_t handle_bp = NULL;
 
+/// Dissect opaque CBOR parameters/results
+static dissector_table_t dissect_media = NULL;
 /// Extension sub-dissectors
 static dissector_table_t sess_ext_dissectors;
 static dissector_table_t xfer_ext_dissectors;
@@ -144,9 +146,12 @@ static int hf_xfer_total_len = -1;
 static int hf_xfer_segment_extlist_len = -1;
 static int hf_xfer_segment_data_len = -1;
 static int hf_xfer_segment_seen_len = -1;
+static int hf_xfer_segment_related_start = -1;
+static int hf_xfer_segment_time_start = -1;
 static int hf_xfer_segment_related_ack = -1;
 static int hf_xfer_segment_time_diff = -1;
 static int hf_xfer_ack_ack_len = -1;
+static int hf_xfer_ack_time_start = -1;
 static int hf_xfer_ack_related_seg = -1;
 static int hf_xfer_ack_time_diff = -1;
 static int hf_xfer_refuse_reason = -1;
@@ -191,7 +196,7 @@ static hf_register_info fields[] = {
     {&hf_sessext_flags, {"Item Flags", "tcpclv4.sessext.flags", FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL}},
     {&hf_sessext_flags_crit, {"CRITICAL", "tcpclv4.sessext.flags.critical", FT_UINT8, BASE_DEC, NULL, TCPCL_EXTENSION_FLAG_CRITICAL, NULL, HFILL}},
     {&hf_sessext_type, {"Item Type", "tcpclv4.sessext.type", FT_UINT8, BASE_HEX, VALS(sessext_type_vals), 0x0, NULL, HFILL}},
-    {&hf_sessext_len, {"Item Length", "tcpclv4.sessext.len", FT_UINT32, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+    {&hf_sessext_len, {"Item Length", "tcpclv4.sessext.len", FT_UINT32, BASE_DEC|BASE_UNIT_STRING, &units_octet_octets, 0x0, NULL, HFILL}},
     {&hf_sessext_data, {"Type-Specific Data", "tcpclv4.sessext.data", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL}},
 
     // Transfer extension fields
@@ -199,7 +204,7 @@ static hf_register_info fields[] = {
     {&hf_xferext_flags, {"Item Flags", "tcpclv4.xferext.flags", FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL}},
     {&hf_xferext_flags_crit, {"CRITICAL", "tcpclv4.xferext.flags.critical", FT_UINT8, BASE_DEC, NULL, TCPCL_EXTENSION_FLAG_CRITICAL, NULL, HFILL}},
     {&hf_xferext_type, {"Item Type", "tcpclv4.xferext.type", FT_UINT8, BASE_HEX, VALS(xferext_type_vals), 0x0, NULL, HFILL}},
-    {&hf_xferext_len, {"Item Length", "tcpclv4.xferext.len", FT_UINT32, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+    {&hf_xferext_len, {"Item Length", "tcpclv4.xferext.len", FT_UINT32, BASE_DEC|BASE_UNIT_STRING, &units_octet_octets, 0x0, NULL, HFILL}},
     {&hf_xferext_data, {"Type-Specific Data", "tcpclv4.xferext.data", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL}},
 
     // SESS_INIT fields
@@ -226,12 +231,15 @@ static hf_register_info fields[] = {
     {&hf_xfer_total_len, {"Expected Total Length", "tcpclv4.xfer.total_len", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
     // XFER_SEGMENT fields
     {&hf_xfer_segment_extlist_len, {"Extension Items Length", "tcpclv4.xfer_segment.extlist_len", FT_UINT32, BASE_DEC|BASE_UNIT_STRING, &units_octet_octets, 0x0, NULL, HFILL}},
-    {&hf_xfer_segment_data_len, {"Data Length", "tcpclv4.xfer_segment.data_len", FT_UINT64, BASE_DEC|BASE_UNIT_STRING, &units_octet_octets, 0x0, NULL, HFILL}},
-    {&hf_xfer_segment_seen_len, {"Seen Length", "tcpclv4.xfer_segment.seen_len", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+    {&hf_xfer_segment_data_len, {"Segment Length", "tcpclv4.xfer_segment.data_len", FT_UINT64, BASE_DEC|BASE_UNIT_STRING, &units_octet_octets, 0x0, NULL, HFILL}},
+    {&hf_xfer_segment_seen_len, {"Seen Length", "tcpclv4.xfer_segment.seen_len", FT_UINT64, BASE_DEC|BASE_UNIT_STRING, &units_octet_octets, 0x0, NULL, HFILL}},
+    {&hf_xfer_segment_related_start, {"Related XFER_SEGMENT start", "tcpclv4.xfer_segment.related_start", FT_FRAMENUM, BASE_NONE, NULL, 0x0, NULL, HFILL}},
+    {&hf_xfer_segment_time_start, {"Time since transfer Start", "tcpclv4.xfer_segment.time_since_start", FT_RELATIVE_TIME, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_xfer_segment_related_ack, {"Related XFER_ACK", "tcpclv4.xfer_segment.related_ack", FT_FRAMENUM, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_xfer_segment_time_diff, {"Acknowledgment Time", "tcpclv4.xfer_segment.time_diff", FT_RELATIVE_TIME, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     // XFER_ACK fields
     {&hf_xfer_ack_ack_len, {"Acknowledged Length", "tcpclv4.xfer_ack.ack_len", FT_UINT64, BASE_DEC|BASE_UNIT_STRING, &units_octet_octets, 0x0, NULL, HFILL}},
+    {&hf_xfer_ack_time_start, {"Time since transfer Start", "tcpclv4.xfer_segment.time_since_start", FT_RELATIVE_TIME, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_xfer_ack_related_seg, {"Related XFER_SEGMENT", "tcpclv4.xfer_ack.related_seg", FT_FRAMENUM, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_xfer_ack_time_diff, {"Acknowledgment Time", "tcpclv4.xfer_ack.time_diff", FT_RELATIVE_TIME, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     // XFER_REFUSE fields
@@ -518,6 +526,8 @@ struct seg_meta {
     /// Total transfer length including this segment
     guint64 seen_len;
 
+    /// Potential related start segment
+    seg_meta_t *related_start;
     /// Potential related XFER_ACK
     ack_meta_t *related_ack;
 };
@@ -528,6 +538,7 @@ static seg_meta_t * seg_meta_new(const packet_info *pinfo, const frame_loc_t *lo
     obj->frame_time = pinfo->abs_ts;
     obj->flags = 0;
     obj->seen_len = 0;
+    obj->related_start = NULL;
     obj->related_ack = NULL;
     return obj;
 }
@@ -554,6 +565,8 @@ struct ack_meta {
     /// Total acknowledged length including this ack
     guint64 seen_len;
 
+    /// Potential related start segment
+    seg_meta_t *related_start;
     /// Potential related XFER_SEGMENT
     seg_meta_t *related_seg;
 };
@@ -564,6 +577,7 @@ static ack_meta_t * ack_meta_new(const packet_info *pinfo, const frame_loc_t *lo
     obj->frame_time = pinfo->abs_ts;
     obj->flags = 0;
     obj->seen_len = 0;
+    obj->related_start = NULL;
     obj->related_seg = NULL;
     return obj;
 }
@@ -1158,6 +1172,14 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                         seg_meta->flags = flags;
                     }
 
+                    // mark start-of-transfer
+                    if (!(seg_meta->related_start)) {
+                        seg_meta_t *seg_front = g_sequence_get(g_sequence_get_begin_iter(xfer->seg_list));
+                        if (seg_front && (seg_front->flags & TCPCL_TRANSFER_FLAG_START)) {
+                            seg_meta->related_start = seg_front;
+                        }
+                    }
+
                     // accumulate segment sizes
                     guint64 prev_seen_len;
                     if (g_sequence_iter_is_begin(iter)) {
@@ -1202,13 +1224,22 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                         PROTO_ITEM_SET_GENERATED(item_total);
                     }
 
+                    if (seg_meta->related_start) {
+                        proto_item *item_rel = proto_tree_add_uint(tree_msg, hf_xfer_segment_related_start, tvb, 0, 0, seg_meta->related_start->frame_loc.frame_num);
+                        PROTO_ITEM_SET_GENERATED(item_rel);
+
+                        nstime_t td;
+                        nstime_delta(&td, &(seg_meta->frame_time), &(seg_meta->related_start->frame_time));
+                        proto_item *item_td = proto_tree_add_time(tree_msg, hf_xfer_segment_time_start, tvb, 0, 0, &td);
+                        PROTO_ITEM_SET_GENERATED(item_td);
+                    }
                     if (seg_meta->related_ack) {
                         proto_item *item_rel = proto_tree_add_uint(tree_msg, hf_xfer_segment_related_ack, tvb, 0, 0, seg_meta->related_ack->frame_loc.frame_num);
                         PROTO_ITEM_SET_GENERATED(item_rel);
 
                         nstime_t td;
                         nstime_delta(&td, &(seg_meta->related_ack->frame_time), &(seg_meta->frame_time));
-                        proto_item *item_td = proto_tree_add_time(tree_msg, hf_xfer_ack_time_diff, tvb, 0, 0, &td);
+                        proto_item *item_td = proto_tree_add_time(tree_msg, hf_xfer_segment_time_diff, tvb, 0, 0, &td);
                         PROTO_ITEM_SET_GENERATED(item_td);
 
                     }
@@ -1305,6 +1336,14 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                         ack_meta->seen_len = ack_len;
                     }
 
+                    // mark start-of-transfer
+                    if (!(ack_meta->related_start)) {
+                        seg_meta_t *seg_front = g_sequence_get(g_sequence_get_begin_iter(xfer->seg_list));
+                        if (seg_front && (seg_front->flags & TCPCL_TRANSFER_FLAG_START)) {
+                            ack_meta->related_start = seg_front;
+                        }
+                    }
+
                     // Assemble both of the links here, as ACK will always follow segment
                     if (!(ack_meta->related_seg)) {
                         GSequenceIter *seg_iter = g_sequence_get_begin_iter(xfer->seg_list);
@@ -1320,6 +1359,15 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                     if (xfer->total_length) {
                         proto_item *item_total = proto_tree_add_uint64(tree_msg, hf_xfer_total_len, tvb, 0, 0, *(xfer->total_length));
                         PROTO_ITEM_SET_GENERATED(item_total);
+                    }
+                    if (ack_meta->related_start) {
+                        proto_item *item_rel = proto_tree_add_uint(tree_msg, hf_xfer_segment_related_start, tvb, 0, 0, ack_meta->related_start->frame_loc.frame_num);
+                        PROTO_ITEM_SET_GENERATED(item_rel);
+
+                        nstime_t td;
+                        nstime_delta(&td, &(ack_meta->frame_time), &(ack_meta->related_start->frame_time));
+                        proto_item *item_td = proto_tree_add_time(tree_msg, hf_xfer_segment_time_start, tvb, 0, 0, &td);
+                        PROTO_ITEM_SET_GENERATED(item_td);
                     }
                     if (ack_meta->related_seg) {
                         proto_item *item_rel = proto_tree_add_uint(tree_msg, hf_xfer_ack_related_seg, tvb, 0, 0, ack_meta->related_seg->frame_loc.frame_num);
@@ -1454,7 +1502,6 @@ static gint dissect_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
             }
         }
         if (sublen == 0) {
-            dissector_table_t dissect_media = find_dissector_table("media_type");
             if (dissect_media) {
                 sublen = dissector_try_string(
                     dissect_media,
@@ -1620,6 +1667,8 @@ static void proto_register_tcpcl(void) {
 static void proto_reg_handoff_tcpcl(void) {
     g_log(LOG_DOMAIN, G_LOG_LEVEL_DEBUG, "proto_reg_handoff_tcpcl()\n");
     dissector_add_uint_with_preference("tcp.port", TCPCL_PORT_NUM, handle_tcpcl);
+
+    dissect_media = find_dissector_table("media_type");
 
     handle_ssl = find_dissector_add_dependency(TLS_DISSECTOR_NAME, proto_tcpcl);
     handle_bp = find_dissector_add_dependency("bpv7", proto_tcpcl);

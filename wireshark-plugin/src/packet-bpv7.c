@@ -26,10 +26,18 @@ static int proto_bp = -1;
 /// Protocol-level data
 static bp_history_t *bp_history = NULL;
 
+/// Dissect opaque CBOR parameters/results
+static dissector_table_t dissect_media = NULL;
 /// Extension sub-dissectors
 static dissector_table_t block_dissectors = NULL;
 static dissector_table_t payload_dissectors = NULL;
 static dissector_table_t admin_dissectors = NULL;
+
+static const val64_string eid_schemes[] = {
+    {EID_SCHEME_DTN, "dtn"},
+    {EID_SCHEME_IPN, "ipn"},
+    {0, NULL},
+};
 
 static const val64_string crc_vals[] = {
     {BP_CRC_NONE, "None"},
@@ -174,12 +182,12 @@ static hf_register_info fields[] = {
     {&hf_crc_actual_int16, {"CRC Computed", "bpv7.crc_actual_int", FT_UINT16, BASE_HEX, NULL, 0x0, NULL, HFILL}},
     {&hf_crc_actual_int32, {"CRC Computed", "bpv7.crc_actual_int", FT_UINT32, BASE_HEX, NULL, 0x0, NULL, HFILL}},
 
-    {&hf_time_dtntime, {"DTN Time", "bpv7.time.dtntime", FT_UINT64, BASE_DEC | BASE_UNIT_STRING, &units_seconds, 0x0, NULL, HFILL}},
+    {&hf_time_dtntime, {"DTN Time", "bpv7.time.dtntime", FT_UINT64, BASE_DEC | BASE_UNIT_STRING, &units_milliseconds, 0x0, NULL, HFILL}},
     {&hf_time_utctime, {"UTC Time", "bpv7.time.utctime", FT_ABSOLUTE_TIME, ABSOLUTE_TIME_UTC, NULL, 0x0, NULL, HFILL}},
 
     {&hf_create_ts_time, {"Time", "bpv7.create_ts.time", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_create_ts_seqno, {"Sequence Number", "bpv7.create_ts.seqno", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
-    {&hf_eid_scheme, {"Scheme Code", "bpv7.eid.scheme", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+    {&hf_eid_scheme, {"Scheme Code", "bpv7.eid.scheme", FT_UINT64, BASE_DEC | BASE_VAL64_STRING, VALS64(eid_schemes), 0x0, NULL, HFILL}},
     {&hf_eid_dtn_ssp_code, {"DTN SSP", "bpv7.eid.dtn_ssp_code", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
     {&hf_eid_dtn_ssp_text, {"DTN SSP", "bpv7.eid.dtn_ssp_text", FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL}},
     {&hf_eid_ipn_node, {"IPN Node Number", "bpv7.eid.ipn_node", FT_UINT64, BASE_DEC, NULL, 0x0, NULL, HFILL}},
@@ -374,6 +382,12 @@ void bp_eid_delete(gpointer ptr) {
     file_scope_delete(ptr);
 }
 
+gboolean bp_eid_equal(gconstpointer a, gconstpointer b) {
+    const bp_eid_t *aobj = a;
+    const bp_eid_t *bobj = b;
+    return aobj->uri && bobj->uri && g_str_equal(aobj->uri, bobj->uri);
+}
+
 bp_block_primary_t * bp_block_primary_new() {
     bp_block_primary_t *obj = wmem_new0(wmem_file_scope(), bp_block_primary_t);
     obj->dst_eid = bp_eid_new();
@@ -496,7 +510,7 @@ gboolean bp_bundle_ident_equal(gconstpointer a, gconstpointer b) {
     const bp_bundle_ident_t *aobj = a;
     const bp_bundle_ident_t *bobj = b;
     return (
-        aobj->src->uri && bobj->src->uri && g_str_equal(aobj->src->uri, bobj->src->uri)
+        bp_eid_equal(aobj->src, bobj->src)
         && (aobj->ts->time.dtntime == bobj->ts->time.dtntime)
         && (aobj->ts->seqno == bobj->ts->seqno)
         && optional_uint64_equal(aobj->frag_offset, bobj->frag_offset)
@@ -513,24 +527,20 @@ guint bp_bundle_ident_hash(gconstpointer key) {
     );
 }
 
+/** Convert DTN time to absolute time.
+ * DTN Time is defined in Section 4.1.6.
+ *
+ * @param dtntime Number of milliseconds from an epoch.
+ * @return The associated absolute time.
+ */
 static nstime_t dtn_to_utctime(const gint64 dtntime) {
-    // Offset from Section 4.1.6
     nstime_t utctime;
-    utctime.secs = 946684800 + dtntime;
-    utctime.nsecs = 0;
+    utctime.secs = 946684800 + dtntime / 1000;
+    utctime.nsecs = 1000000 * (dtntime % 1000);
     return utctime;
 }
 
-/** Extract an Endpoint ID.
- *
- * @param tree The tree to write items under.
- * @param hfindex The root item field.
- * @param pinfo Packet info to update.
- * @param tvb Buffer to read from.
- * @param[in,out] offset Starting offset within @c tvb.
- * @param[out] ts If non-null, the timestamp to write to.
- */
-static void proto_tree_add_cbor_eid(proto_tree *tree, int hfindex, packet_info *pinfo, tvbuff_t *tvb, gint *offset, bp_eid_t *eid) {
+proto_item * proto_tree_add_cbor_eid(proto_tree *tree, int hfindex, packet_info *pinfo, tvbuff_t *tvb, gint *offset, bp_eid_t *eid) {
     proto_item *item_eid = proto_tree_add_item(tree, hfindex, tvb, *offset, 0, ENC_NA);
     proto_tree *tree_eid = proto_item_add_subtree(item_eid, ett_eid);
     const gint eid_start = *offset;
@@ -538,7 +548,7 @@ static void proto_tree_add_cbor_eid(proto_tree *tree, int hfindex, packet_info *
     bp_cbor_chunk_t *chunk = cbor_require_array_with_size(tvb, pinfo, item_eid, offset, 2, 2);
     if (!chunk) {
         proto_item_set_len(item_eid, *offset - eid_start);
-        return;
+        return item_eid;
     }
     bp_cbor_chunk_delete(chunk);
 
@@ -549,12 +559,12 @@ static void proto_tree_add_cbor_eid(proto_tree *tree, int hfindex, packet_info *
     bp_cbor_chunk_delete(chunk);
     if (!scheme) {
         cbor_skip_next_item(tvb, offset);
-        return;
+        return item_eid;
     }
 
     wmem_strbuf_t *uribuf = wmem_strbuf_new(wmem_file_scope(), NULL);
     switch (*scheme) {
-        case 1: {
+        case EID_SCHEME_DTN: {
             chunk = bp_scan_cbor_chunk(tvb, *offset);
             switch (chunk->type_major) {
                 case CBOR_TYPE_UINT: {
@@ -595,7 +605,7 @@ static void proto_tree_add_cbor_eid(proto_tree *tree, int hfindex, packet_info *
             bp_cbor_chunk_delete(chunk);
             break;
         }
-        case 2: {
+        case EID_SCHEME_IPN: {
             chunk = cbor_require_array_with_size(tvb, pinfo, item_eid, offset, 2, 2);
             if (!chunk) {
                 proto_item_set_len(item_eid, *offset - eid_start);
@@ -648,6 +658,7 @@ static void proto_tree_add_cbor_eid(proto_tree *tree, int hfindex, packet_info *
     }
 
     proto_item_set_len(item_eid, *offset - eid_start);
+    return item_eid;
 }
 
 static void proto_tree_add_dtn_time(proto_tree *tree, int hfindex, packet_info *pinfo, tvbuff_t *tvb, gint *offset, bp_dtn_time_t *out) {
@@ -1008,7 +1019,7 @@ static gint dissect_block_canonical(tvbuff_t *tvb, packet_info *pinfo, proto_tre
         }
     }
 
-    proto_item_append_text(item_block, ": %s", val64_to_str(*type_code, blocktype_vals, "type %" PRIu64));
+    proto_item_append_text(item_block, ": %s", val64_to_str(*type_code, blocktype_vals, "Type %" PRIu64));
     dissector_handle_t data_dissect = NULL;
     if (type_code) {
         data_dissect = dissector_get_uint_handle(block_dissectors, *type_code);
@@ -1299,7 +1310,7 @@ static int dissect_payload_admin(tvbuff_t *tvb, packet_info *pinfo, proto_tree *
 
     dissector_handle_t admin_dissect = NULL;
     if (type_code) {
-        proto_item_append_text(item_rec, ": %s", val64_to_str(*type_code, admin_type_vals, "type %" PRIu64));
+        proto_item_append_text(item_rec, ": %s", val64_to_str(*type_code, admin_type_vals, "Type %" PRIu64));
         admin_dissect = dissector_get_uint_handle(admin_dissectors, *type_code);
     }
     tvbuff_t *tvb_record = tvb_new_subset_remaining(tvb, offset);
@@ -1311,7 +1322,6 @@ static int dissect_payload_admin(tvbuff_t *tvb, packet_info *pinfo, proto_tree *
         }
     }
     if (sublen == 0) {
-        dissector_table_t dissect_media = find_dissector_table("media_type");
         if (dissect_media) {
             sublen = dissector_try_string(
                 dissect_media,
@@ -1605,10 +1615,10 @@ static void proto_register_bp(void) {
         "If enabled, the blocks will have CRC checks performed.",
         &bp_compute_crc
     );
-
 }
 
 static void proto_reg_handoff_bp(void) {
+    dissect_media = find_dissector_table("media_type");
 
     /* Packaged extensions */
     {

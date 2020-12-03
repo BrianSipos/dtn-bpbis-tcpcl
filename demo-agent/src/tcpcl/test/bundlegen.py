@@ -9,6 +9,7 @@ import shutil
 import string
 import struct
 import sys
+import enum
 import unittest
 
 import cbor2
@@ -164,13 +165,23 @@ def randcboritem(maxdepth=10):
 class Generator(object):
     ''' A 'bundle' data generator.
     '''
-
-    KNOWN_BLOCK_TYPES = (6, 7, 10)
+    
+    BLOCK_NUM_PRIMARY = 1
+    BLOCK_TYPE_PRIMARY = 1
+    BLOCK_TYPE_BIB = 99  #FIXME: not a real allocation
+    BLOCK_TYPE_BCB = 98  #FIXME: not a real allocation
+    
+    @enum.unique
+    class BlockType(enum.IntFlag):
+        ''' Non-primary block types. '''
+        PREV_NODE = 6
+        BUNDLE_AGE = 7
+        HOP_COUNT = 10
 
     def create_block_data(self, block_type, block_flags, bundle_flags):
         ''' Block-type-specific data gerator.
         '''
-        if block_type == 1 and bundle_flags & 0x0002:
+        if block_type == self.BLOCK_TYPE_PRIMARY and bundle_flags & 0x0002:
             # Admin record
             admin_type = 1
             admin_data = [  # Status Report
@@ -188,17 +199,41 @@ class Generator(object):
                 admin_type,
                 admin_data,
             ])
-        elif block_type == 6:
+        elif block_type == self.BlockType.PREV_NODE:
             # Previous Node
             return binaryCborTag(randnodeid())
-        elif block_type == 7:
+        elif block_type == self.BlockType.BUNDLE_AGE:
             # Bundle Age
             return binaryCborTag(random.randint(0, 1e10))
-        elif block_type == 10:
+        elif block_type == self.BlockType.HOP_COUNT:
             # Hop Count
             return binaryCborTag([
                 random.randint(0, 1e1),  # limit
                 random.randint(0, 1e1),  # current
+            ])
+        elif block_type in (self.BLOCK_TYPE_BIB, self.BLOCK_TYPE_BCB):
+            @enum.unique
+            class Flag(enum.IntEnum):
+                HAS_PARAMS = 0x01
+                HAS_SOURCE = 0x02
+            
+            ctx_id = 1
+            sec_flags = Flag.HAS_PARAMS | Flag.HAS_SOURCE
+            return binaryCborTag([
+                [ # targets
+                    1, # just primary
+                ],
+                ctx_id,
+                sec_flags,
+                randnodeid(),
+                [ # parameters
+                    [1, b'hi'],
+                ],
+                [
+                    [ # result target #1
+                        [96, b'there'],
+                    ],
+                ],
             ])
 
         return cbor2.dumps(randcboritem())
@@ -217,8 +252,8 @@ class Generator(object):
             ],
             crc_type_ix=3
         )
-        if block.fields[block.crc_type_ix] != 0:
-            # Has CRC
+        has_crc = block.fields[block.crc_type_ix] != 0
+        if has_crc:
             block.fields.append(None)
             block.crc_field_ix = len(block.fields) - 1
         return block
@@ -229,7 +264,7 @@ class Generator(object):
         :return: A single bundle file.
         :rtype: file-like
         '''
-        return io.BytesIO(randbytes(random.randint(10, 100)))
+        return io.BytesIO(randbytes(random.randint(1000, 10000)))
 
     def create_invalid_cbor(self):
         ''' Generate a valid-CBOR content which is not really a bundle.
@@ -260,12 +295,12 @@ class Generator(object):
             ],
             crc_type_ix=2,
         )
-        if block.fields[1] & 0x0001:
-            # Is fragment
+        is_fragment = block.fields[1] & 0x0001
+        if is_fragment:
             block.fields.append(random.randint(0, 1e4))  # fragment offset
             block.fields.append(random.randint(0, 1e4))  # total application data unit length
-        if block.fields[block.crc_type_ix] != 0:
-            # Has CRC
+        has_crc = block.fields[block.crc_type_ix] != 0
+        if has_crc:
             block.fields.append(None)
             block.crc_field_ix = len(block.fields) - 1
         blocks.append(block)
@@ -273,13 +308,17 @@ class Generator(object):
         unused_blocknum = set(range(2, 30))
         # Non-payload blocks
         for _ in range(random.randint(0, 4)):
-            block_type = random.choice(self.KNOWN_BLOCK_TYPES)
+            block_type = random.choice([obj.value for obj in self.BlockType])
+            block = self.create_block_random(block_type, bundle_flags, unused_blocknum)
+            blocks.append(block)
+        if True:
+            block_type = random.choice([self.BLOCK_TYPE_BIB, self.BLOCK_TYPE_BCB])
             block = self.create_block_random(block_type, bundle_flags, unused_blocknum)
             blocks.append(block)
         # Last block is payload
         if True:
-            block_type = 1
-            block = self.create_block_random(block_type, bundle_flags, {1})
+            block_type = self.BLOCK_TYPE_PRIMARY
+            block = self.create_block_random(block_type, bundle_flags, {self.BLOCK_NUM_PRIMARY})
             blocks.append(block)
 
         buf = io.BytesIO()
@@ -347,6 +386,11 @@ def main():
     parser.add_argument('--log-level', dest='log_level', default='info',
                         metavar='LEVEL',
                         help='Console logging lowest level displayed.')
+    parser.add_argument('--enable-test', type=str, default=[],
+                        action='append', choices=['private_extensions'],
+                        help='Names of test modes enabled')
+    parser.add_argument('--segment-mru', type=int, default=None,
+                        help='Entity maximum segment data size')
     parser.add_argument('genmode',
                         choices=('fullvalid', 'randcbor', 'randbytes'),
                         help='Type of "bundle" to generate.')
@@ -376,7 +420,9 @@ def main():
 
     config_pasv = tcpcl.agent.Config()
     config_pasv.stop_on_close = True
-    config_pasv.enable_test = ['private_extensions']
+    config_pasv.enable_test = args.enable_test
+    if args.segment_mru:
+        config_pasv.segment_size_mru = args.segment_mru
 
     def run_pasv(config):
         agent = tcpcl.agent.Agent(config)
@@ -385,7 +431,9 @@ def main():
 
     config_actv = tcpcl.agent.Config()
     config_actv.stop_on_close = True
-    config_actv.enable_test = ['private_extensions']
+    config_actv.enable_test = args.enable_test
+    if args.segment_mru:
+        config_actv.segment_size_mru = args.segment_mru
 
     def run_actv(config):
         agent = tcpcl.agent.Agent(config)
