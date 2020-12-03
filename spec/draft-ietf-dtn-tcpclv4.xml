@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<rfc xmlns:xi="http://www.w3.org/2001/XInclude" category="std" consensus="true" docName="draft-ietf-dtn-tcpclv4-23" ipr="trust200902" submissionType="IETF" tocInclude="true" version="3" xml:lang="en">
+<rfc xmlns:xi="http://www.w3.org/2001/XInclude" category="std" consensus="true" docName="draft-ietf-dtn-tcpclv4-24" ipr="trust200902" submissionType="IETF" tocInclude="true" version="3" xml:lang="en">
   <front>
     <title abbrev="DTN TCPCLv4">
       Delay-Tolerant Networking TCP Convergence Layer Protocol Version 4
     </title>
-    <seriesInfo name="Internet-Draft" value="draft-ietf-dtn-tcpclv4-23"/>
+    <seriesInfo name="Internet-Draft" value="draft-ietf-dtn-tcpclv4-24"/>
     <author fullname="Brian Sipos" initials="B." surname="Sipos">
       <organization abbrev="RKF Engineering">
         RKF Engineering Solutions, LLC
@@ -2968,7 +2968,7 @@ This specification is based on comments on implementation of <xref target="RFC72
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.8126.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.8174.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.8446.xml"/>
-        <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml3/reference.I-D.draft-ietf-dtn-bpbis-27.xml"/>
+        <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml3/reference.I-D.draft-ietf-dtn-bpbis-29.xml"/>
       </references>
       <references>
         <name>Informative References</name>
@@ -2993,7 +2993,7 @@ This specification is based on comments on implementation of <xref target="RFC72
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.7457.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.7942.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.8555.xml"/>
-        <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml3/reference.I-D.draft-ietf-dtn-bpsec-23.xml"/>
+        <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml3/reference.I-D.draft-ietf-dtn-bpsec-25.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml3/reference.I-D.draft-ietf-dtn-bibect-03.xml"/>
         <reference anchor="github-dtn-bpbis-tcpcl" target="https://github.com/BSipos-RKF/dtn-bpbis-tcpcl/">
           <front>
