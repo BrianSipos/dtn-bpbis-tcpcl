@@ -1121,7 +1121,7 @@ Including key identifiers simplifies the work of an entity needing to assemble a
           <t>
 Unless prohibited by CA policy, a TCPCL end-entity certificate SHALL contain a NODE-ID which authenticates the Node ID of the peer.
 When assigned one or more stable DNS names, a TCPCL end-entity certificate SHOULD contain DNS-ID which authenticates those (fully qualified) names.
-When assigned one or more stable network addresss, a TCPCL end-entity certificate MAY contain IPADDR-ID which authenticates those addresses.
+When assigned one or more stable network addresses, a TCPCL end-entity certificate MAY contain IPADDR-ID which authenticates those addresses.
           </t>
           <t>
 This document defines a PKIX Extended Key Usage key purpose "id-kp-bundleSecurity" in <xref target="sec-iana-kp-oid"/> which can be used to restrict a certificate's use.
@@ -1221,7 +1221,7 @@ Indicating that one or more such claims are present and none match the peer iden
             <name>Certificate Path and Purpose Validation</name>
             <t>
 For any peer end-entity certificate received during TLS handshake, the entity SHALL perform the certification path validation of <xref target="RFC5280"/> up to one of the entity's trusted CA certificates.
-If enabled by local policy, the entity SHALL perform an OCSP check of each certificate providing OCSP authoritiy information in accordance with <xref target="RFC6960"/>.
+If enabled by local policy, the entity SHALL perform an OCSP check of each certificate providing OCSP authority information in accordance with <xref target="RFC6960"/>.
 If certificate validation fails or if security policy disallows a certificate for any reason, the entity SHALL fail the TLS handshake with a "bad_certificate" alert.
 Leaving out part of the certification chain can cause the entity to fail to validate a certificate if the left-out certificates are unknown to the entity (see <xref target="sec-threat-untrust-cert"/>).
             </t>
@@ -2421,7 +2421,7 @@ Finally, an attacker or a misconfigured entity can cause issues at the TCP conne
         <name>Mandatory-to-Implement TLS</name>
         <t>
 Following IETF best current practice, TLS is mandatory to implement for all TCPCL implementations but TLS is optional to use for a given TCPCL session.
-The recommended configuration of <xref target="sec-contact-header"/> is to always enable TLS, but entites are permitted to disable TLS based on local configration.
+The recommended configuration of <xref target="sec-contact-header"/> is to always enable TLS, but entities are permitted to disable TLS based on local configuration.
 The configuration to enable or disable TLS for an entity or a session is outside of the scope of this document.
 The configuration to disable TLS is different from the threat of TLS stripping described in <xref target="sec-threat-tls-strip"/>.
         </t>
