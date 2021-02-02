@@ -1,7 +1,12 @@
 # DTN TCPCLv4
 
 Source for for TCPCLv4 draft document.
-The final specification is hosted at <https://datatracker.ietf.org/doc/draft-ietf-dtn-tcpclv4/>
+The final specification is hosted at <https://datatracker.ietf.org/doc/draft-ietf-dtn-tcpclv4/>.
+
+A local build can be made with commands:
+```
+(mkdir -p spec/build && cd spec/build && cmake .. && cmake --build .)
+```
 
 # Demo Convergence Layer Agent
 
