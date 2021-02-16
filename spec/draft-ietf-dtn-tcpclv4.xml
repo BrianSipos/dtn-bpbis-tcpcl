@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<rfc xmlns:xi="http://www.w3.org/2001/XInclude" category="std" consensus="true" docName="draft-ietf-dtn-tcpclv4-25" ipr="trust200902" submissionType="IETF" tocInclude="true" version="3" xml:lang="en">
+<rfc xmlns:xi="http://www.w3.org/2001/XInclude" category="std" consensus="true" docName="draft-ietf-dtn-tcpclv4-26" ipr="trust200902" submissionType="IETF" tocInclude="true" version="3" xml:lang="en">
   <front>
     <title abbrev="DTN TCPCLv4">
       Delay-Tolerant Networking TCP Convergence Layer Protocol Version 4
     </title>
-    <seriesInfo name="Internet-Draft" value="draft-ietf-dtn-tcpclv4-25"/>
+    <seriesInfo name="Internet-Draft" value="draft-ietf-dtn-tcpclv4-26"/>
     <author fullname="Brian Sipos" initials="B." surname="Sipos">
       <organization abbrev="RKF Engineering">
         RKF Engineering Solutions, LLC
@@ -1135,7 +1135,7 @@ For interoperability, a TCPCL end-entity certificate MAY contain an Extended Key
 When allowed by CA policy, a TCPCL end-entity certificate SHOULD contain a PKIX Key Usage extension in accordance with <xref section="4.2.1.3" target="RFC5280"/>.
 The PKIX Key Usage bit which is consistent with TCPCL security using TLS 1.3 is digitalSignature.
 The specific algorithms used during the TLS handshake will determine which of those key uses are exercised.
-Earlier versions of TCPCL can mandate use of the bits keyEncipherment or keyAgreement.
+Earlier versions of TLS can mandate use of the bits keyEncipherment or keyAgreement.
           </t>
           <t>
 When allowed by CA policy, a TCPCL end-entity certificate SHOULD contain an Online Certificate Status Protocol (OCSP) URI within an Authority Information Access extension in accordance with <xref section="4.2.2.1" target="RFC5280"/>.
@@ -2977,7 +2977,7 @@ This specification is based on comments on implementation of <xref target="RFC72
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.8126.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.8174.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.8446.xml"/>
-        <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml3/reference.I-D.draft-ietf-dtn-bpbis-30.xml"/>
+        <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml3/reference.I-D.ietf-dtn-bpbis.xml"/>
         <reference anchor="X.680" target="https://www.itu.int/rec/T-REC-X.680-201508-I/en">
           <front>
             <title>Information technology -- Abstract Syntax Notation One (ASN.1): Specification of basic notation</title>
@@ -3012,8 +3012,8 @@ This specification is based on comments on implementation of <xref target="RFC72
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.7457.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.7942.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.8555.xml"/>
-        <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml3/reference.I-D.draft-ietf-dtn-bpsec-26.xml"/>
-        <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml3/reference.I-D.draft-ietf-dtn-bibect-03.xml"/>
+        <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml3/reference.I-D.ietf-dtn-bpsec.xml"/>
+        <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml3/reference.I-D.ietf-dtn-bibect.xml"/>
         <reference anchor="github-dtn-demo-agent" target="https://github.com/BSipos-RKF/dtn-demo-agent/">
           <front>
             <title>TCPCL Example Implementation</title>
