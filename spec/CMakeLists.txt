@@ -1,9 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
-project(
-    draft-ietf-dtn-tcpclv4
-    LANGUAGES
-)
-
+# Inherit variables from top-level project
 set(DRAFT_NAME "${PROJECT_NAME}")
 
 find_program(XML2RFC xml2rfc)
@@ -30,12 +25,12 @@ set(DRAFT_NAME_HTML "${DRAFT_NAME}.html")
 add_custom_command(
     OUTPUT "${DRAFT_NAME_TXT}"
     DEPENDS "${DRAFT_NAME_XML}"
-    COMMAND ${XML2RFC} --no-network --text -o "${DRAFT_NAME_TXT}" "${DRAFT_NAME_XML}"
+    COMMAND ${XML2RFC} --text -o "${DRAFT_NAME_TXT}" "${DRAFT_NAME_XML}"
 )
 add_custom_command(
     OUTPUT "${DRAFT_NAME_HTML}"
     DEPENDS "${DRAFT_NAME_XML}"
-    COMMAND ${XML2RFC} --no-network --html -o "${DRAFT_NAME_HTML}" "${DRAFT_NAME_XML}"
+    COMMAND ${XML2RFC} --html -o "${DRAFT_NAME_HTML}" "${DRAFT_NAME_XML}"
 )
 
 set(DICTIONARY_TXT "${CMAKE_CURRENT_SOURCE_DIR}/dictionary.txt")
@@ -58,3 +53,11 @@ add_custom_target(
     specs ALL
     DEPENDS "${DRAFT_NAME_TXT}" "${DRAFT_NAME_HTML}" "${MISSPELLING_TXT}"
 )
+install(
+    FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/${DRAFT_NAME_TXT}"
+        "${CMAKE_CURRENT_BINARY_DIR}/${DRAFT_NAME_HTML}"
+        "${CMAKE_CURRENT_BINARY_DIR}/${MISSPELLING_TXT}"
+    TYPE DOC
+)
+
