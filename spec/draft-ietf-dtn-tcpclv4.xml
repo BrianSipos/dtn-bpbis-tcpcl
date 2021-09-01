@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<?rfc toc="yes"?>
 <rfc xmlns:xi="http://www.w3.org/2001/XInclude" category="std" consensus="true" docName="draft-ietf-dtn-tcpclv4-26" ipr="trust200902" submissionType="IETF" tocInclude="true" version="3" xml:lang="en">
   <front>
     <title abbrev="DTN TCPCLv4">
@@ -65,9 +66,10 @@
         <email>simon@per.reau.lt</email>
       </address>
     </author>
-    <date day="15" month="February" year="2021"/>
+    <date/>
     <area>Transport</area>
     <workgroup>Delay-Tolerant Networking</workgroup>
+    <keyword>DTN</keyword>
     <abstract>
       <t>
 This document describes a TCP-based convergence layer (TCPCL) for Delay-Tolerant Networking (DTN).
@@ -469,7 +471,7 @@ The states of a normal TCPCL session (i.e., without session failures) are indica
   +-------+
   | START |
   +-------+
-      | 
+      |
   TCP Establishment
       |
       V
@@ -497,7 +499,7 @@ The states of a normal TCPCL session (i.e., without session failures) are indica
 +-------------+                    +-------------+
                                            |
      +----------TCP Close Message----------+
-     |                                     
+     |
      V
  +-------+
  |  END  |
@@ -564,8 +566,8 @@ TCP Connecting
       V
  +------------+
  | Negotiated |--Failure--&gt;[TCPCLOSE]
- +------------+                      
-    |       |                        
+ +------------+
+    |       |
   No TLS    +----Negotiate---+      [ST]
     |               TLS      |       ^
     V                        |    Failure
@@ -833,19 +835,19 @@ No errors or rejections are shown in this example.
           <artwork align="center" type="ascii-art">
              Entity A                             Entity B
              ========                             ========
-    +-------------------------+         
+    +-------------------------+
     |  Open TCP Connection    | -&gt;      +-------------------------+
     +-------------------------+      &lt;- |    Accept Connection    |
                                         +-------------------------+
-    +-------------------------+         
+    +-------------------------+
     |     Contact Header      | -&gt;      +-------------------------+
     +-------------------------+      &lt;- |     Contact Header      |
                                         +-------------------------+
-    +-------------------------+         
+    +-------------------------+
     |        SESS_INIT        | -&gt;      +-------------------------+
     +-------------------------+      &lt;- |        SESS_INIT        |
                                         +-------------------------+
-    
+
     +-------------------------+
     |   XFER_SEGMENT (start)  | -&gt;
     |     Transfer ID [I1]    |
@@ -871,7 +873,7 @@ No errors or rejections are shown in this example.
                                         |     Length   [L1+L2+L3] |
                                         +-------------------------+
 
-    +-------------------------+         
+    +-------------------------+
     |       SESS_TERM         | -&gt;      +-------------------------+
     +-------------------------+      &lt;- |        SESS_TERM        |
                                         +-------------------------+
@@ -1089,8 +1091,9 @@ If no stable DNS name is available but a stable network address is available and
             </dd>
           </dl>
           <t>
-This specification defines a NODE-ID of a certificate as being the subjectAltName entry of type uniformResourceIdentifier whose value is a URI consistent with the requirements of <xref target="RFC3986"/> and the URI schemes of the IANA "Bundle Protocol URI Scheme Type" registry <xref target="IANA-BUNDLE"/>.
-This is similar to the URI-ID of <xref target="RFC6125"/> but does not require any structure to the scheme-specific-part of the URI.
+This specification defines a NODE-ID of a certificate as being the subjectAltName entry of type otherName with a <tt>type-id</tt> being the <tt>id-on-dtnEID</tt> OID defined in <xref target="sec-iana-pkix-on-oid"/>.
+The value associated with otherName type <tt>id-on-dtnEID</tt> shall be a URI, percent-encoded as an IA5String, with a scheme which is present in the IANA "Bundle Protocol URI Scheme Type" registry <xref target="IANA-BUNDLE"/>.
+The NODE-ID is similar to the URI-ID of <xref target="RFC6125"/> but does not require any additional structure to the scheme-specific-part of the URI.
 Unless specified otherwise by the definition of the URI scheme being authenticated, URI matching of a NODE-ID SHALL use the URI comparison logic of <xref target="RFC3986"/> and scheme-based normalization of those schemes specified in <xref target="I-D.ietf-dtn-bpbis"/>.
 A URI scheme can refine this "exact match" logic with rules about how Node IDs within that scheme are to be compared with the certificate-authenticated NODE-ID.
           </t>
@@ -1124,12 +1127,12 @@ When assigned one or more stable DNS names, a TCPCL end-entity certificate SHOUL
 When assigned one or more stable network addresses, a TCPCL end-entity certificate MAY contain IPADDR-ID which authenticates those addresses.
           </t>
           <t>
-This document defines a PKIX Extended Key Usage key purpose "id-kp-bundleSecurity" in <xref target="sec-iana-kp-oid"/> which can be used to restrict a certificate's use.
-The "id-kp-bundleSecurity" purpose can be combined with other purposes in the same certificate.
+This document defines a PKIX Extended Key Usage key purpose <tt>id-kp-bundleSecurity</tt> OID in <xref target="sec-iana-pkix-kp-oid"/> which can be used to restrict a certificate's use.
+The <tt>id-kp-bundleSecurity</tt> purpose can be combined with other purposes in the same certificate.
 When allowed by CA policy, a BPSec end-entity certificate SHOULD contain a PKIX Extended Key Usage extension in accordance with <xref section="4.2.1.12" target="RFC5280"/>.
-When the PKIX Extended Key Usage extension is present, it SHOULD contain a key purpose "id-kp-bundleSecurity" as defined in <xref target="sec-iana-kp-oid"/>.
-Although not specifically required by TCPCL, some networks or TLS implementations assume the use of "id-kp-clientAuth" and "id-kp-serverAuth" are needed for, respectively, the client-side and server-side of TLS authentication.
-For interoperability, a TCPCL end-entity certificate MAY contain an Extended Key Usage with both "id-kp-clientAuth" and "id-kp-serverAuth" values.
+When the PKIX Extended Key Usage extension is present, it SHOULD contain a key purpose <tt>id-kp-bundleSecurity</tt> as defined in <xref target="sec-iana-pkix-kp-oid"/>.
+Although not specifically required by TCPCL, some networks or TLS implementations assume the use of <tt>id-kp-clientAuth</tt> and <tt>id-kp-serverAuth</tt> are needed for, respectively, the client-side and server-side of TLS authentication.
+For interoperability, a TCPCL end-entity certificate MAY contain an Extended Key Usage with both <tt>id-kp-clientAuth</tt> and <tt>id-kp-serverAuth</tt> values.
           </t>
           <t>
 When allowed by CA policy, a TCPCL end-entity certificate SHOULD contain a PKIX Key Usage extension in accordance with <xref section="4.2.1.3" target="RFC5280"/>.
@@ -1258,7 +1261,7 @@ If the NODE-ID validation result is Failure or if the result is Absent and secur
           <name>Policy Recommendations</name>
           <t>
 A RECOMMENDED security policy is to enable the use of OCSP checking during TLS handshake.
-A RECOMMENDED security policy is that if an Extended Key Usage is present that it needs to contain "id-kp-bundleSecurity" (of <xref target="sec-tls-auth-valid-cert"/>) to be usable with TCPCL security.
+A RECOMMENDED security policy is that if an Extended Key Usage is present that it needs to contain <tt>id-kp-bundleSecurity</tt> (of <xref target="sec-tls-auth-valid-cert"/>) to be usable with TCPCL security.
 A RECOMMENDED security policy is to require a validated Node ID (of <xref target="sec-tls-auth-valid-nodeid"/>) and to ignore any network-level identifier (of <xref target="sec-tls-auth-valid-netid"/>).
           </t>
           <t>
@@ -1280,11 +1283,11 @@ In this example the active peer terminates the session but termination can be in
          Entity A                             Entity B
         active peer                         passive peer
 
-+-------------------------+         
++-------------------------+
 |  Open TCP Connection    | -&gt;      +-------------------------+
 +-------------------------+      &lt;- |    Accept Connection    |
                                     +-------------------------+
-+-------------------------+         
++-------------------------+
 |     Contact Header      | -&gt;      +-------------------------+
 +-------------------------+      &lt;- |     Contact Header      |
                                     +-------------------------+
@@ -1297,7 +1300,7 @@ In this example the active peer terminates the session but termination can be in
            DNS-ID and IPADDR-ID authentication occurs.
                Secured TCPCL messaging can begin.
 
-+-------------------------+         
++-------------------------+
 |        SESS_INIT        | -&gt;      +-------------------------+
 +-------------------------+      &lt;- |        SESS_INIT        |
                                     +-------------------------+
@@ -1305,11 +1308,11 @@ In this example the active peer terminates the session but termination can be in
                   NODE-ID authentication occurs.
            Session is established, transfers can begin.
 
-+-------------------------+         
++-------------------------+
 |       SESS_TERM         | -&gt;      +-------------------------+
 +-------------------------+      &lt;- |        SESS_TERM        |
                                     +-------------------------+
-+-------------------------+         
++-------------------------+
 |    TLS Closure Alert    | -&gt;      +-------------------------+
 +-------------------------+      &lt;- |    TLS Closure Alert    |
                                     +-------------------------+
@@ -1328,8 +1331,8 @@ After the initial exchange of a Contact Header and (if TLS is negotiated to be u
         <figure anchor="fig-msg-header">
           <name>Format of the Message Header</name>
           <artwork align="center" type="ascii-art">
-                 
- 0 1 2 3 4 5 6 7 
+
+ 0 1 2 3 4 5 6 7
 +---------------+
 | Message Type  |
 +---------------+
@@ -2385,7 +2388,7 @@ In circumstances where certificates can only be issued to DNS names, Node ID val
 Determining when a DNS-ID/IPADDR-ID authentication can be trusted to validate a Node ID is also a policy matter outside of the scope of this document.
         </t>
         <t>
-One mitigation to arbitrary entities with valid PKIX certificates impersonating arbitrary Node IDs is the use of the PKIX Extended Key Usage key purpose "id-kp-bundleSecurity" in <xref target="sec-iana-kp-oid"/>.
+One mitigation to arbitrary entities with valid PKIX certificates impersonating arbitrary Node IDs is the use of the PKIX Extended Key Usage key purpose <tt>id-kp-bundleSecurity</tt> in <xref target="sec-iana-pkix-kp-oid"/>.
 When this Extended Key Usage is present in the certificate, it represents a stronger assertion that the private key holder should in fact be trusted to operate as a DTN Node.
         </t>
       </section>
@@ -2893,7 +2896,45 @@ Expert(s) are encouraged to be biased towards approving registrations unless the
           </tbody>
         </table>
       </section>
-      <section anchor="sec-iana-kp-oid">
+      <section anchor="sec-iana-pkix-on-oid">
+        <name>Object Identifier for PKIX Other Name Forms</name>
+        <t>
+IANA has created, under the "Structure of Management Information (SMI) Numbers" registry <xref target="IANA-SMI"/>, a sub-registry titled "SMI Security for PKIX Other Name Forms".
+The other name forms table is updated to include a row "id-on-dtnEID" for identifying DTN endpoint IDs as in the following table.
+        </t>
+        <table align="center">
+          <thead>
+            <tr>
+              <th>Decimal</th>
+              <th>Description</th>
+              <th>References</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>ON-TBD</td>
+              <td>id-on-dtnEID</td>
+              <td>This specification.</td>
+            </tr>
+          </tbody>
+        </table>
+        <t>
+This also corresponds with the following SMI, in ASN.1 syntax of <xref target="X.680"/>, for that <tt>AnotherName</tt> type-id and value:
+        </t>
+        <sourcecode markers="true" type="mib">
+
+id-on-dtnEID OBJECT IDENTIFIER ::= {
+  iso(1) identified-organization(3) dod(6) internet(1)
+  security(5) mechanisms(5) pkix(7) on(8) ON-TBD }
+
+-- Same encoding as GeneralName of uniformResourceIdentifier
+DtnEID ::= IA5String
+</sourcecode>
+      <t>
+The use of this OID is defined in <xref target="sec-tls-identification"/> and <xref target="sec-tcpcl-cert-profile"/>.
+      </t>
+      </section>
+      <section anchor="sec-iana-pkix-kp-oid">
         <name>Object Identifier for PKIX Extended Key Usage</name>
         <t>
 IANA has created, under the "Structure of Management Information (SMI) Numbers" registry <xref target="IANA-SMI"/>, a sub-registry titled "SMI Security for PKIX Extended Key Purpose".
@@ -2924,6 +2965,9 @@ id-kp-bundleSecurity OBJECT IDENTIFIER ::= {
   iso(1) identified-organization(3) dod(6) internet(1)
   security(5) mechanisms(5) pkix(7) kp(3) KP-TBD }
 </sourcecode>
+      <t>
+The use of this OID is defined in <xref target="sec-tcpcl-cert-profile"/>.
+      </t>
       </section>
     </section>
     <section anchor="sec-doc-ack">
