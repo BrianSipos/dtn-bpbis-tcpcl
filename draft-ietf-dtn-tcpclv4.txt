@@ -150,7 +150,7 @@ Internet-Draft                 DTN TCPCLv4                September 2021
      11.1.  Normative References . . . . . . . . . . . . . . . . . .  70
      11.2.  Informative References . . . . . . . . . . . . . . . . .  72
    Appendix A.  Significant changes from RFC7242 . . . . . . . . . .  74
-   Appendix B.  Example of dtnEID Other Name Form  . . . . . . . . .  75
+   Appendix B.  Example of bundleEID Other Name Form . . . . . . . .  75
    Authors' Addresses  . . . . . . . . . . . . . . . . . . . . . . .  76
 
 
@@ -1582,16 +1582,16 @@ Internet-Draft                 DTN TCPCLv4                September 2021
       addresses can be identified in the certificate.
 
    This specification defines a NODE-ID of a certificate as being the
-   subjectAltName entry of type otherName with a type of "id-on-dtnEID"
-   (see Section 4.4.2.1) and a value limited to a Node ID.  An entity
-   SHALL ignore any otherName with a type of "id-on-dtnEID" and a value
-   which is some URI other than a Node ID.  The NODE-ID is similar to
-   the URI-ID of [RFC6125] but restricted to a DTN Node ID rather than a
-   URI with a qualified-name authority part.  Unless specified otherwise
-   by the definition of the URI scheme being authenticated, URI matching
-   of a NODE-ID SHALL use the URI comparison logic of [RFC3986] and
-   scheme-based normalization of those schemes specified in
-   [I-D.ietf-dtn-bpbis].  A URI scheme can refine this "exact match"
+   subjectAltName entry of type otherName with a type of "id-on-
+   bundleEID" (see Section 4.4.2.1) and a value limited to a Node ID.
+   An entity SHALL ignore any otherName with a type of "id-on-bundleEID"
+   and a value which is some URI other than a Node ID.  The NODE-ID is
+   similar to the URI-ID of [RFC6125] but restricted to a Node ID rather
+   than a URI with a qualified-name authority part.  Unless specified
+   otherwise by the definition of the URI scheme being authenticated,
+   URI matching of a NODE-ID SHALL use the URI comparison logic of
+   [RFC3986] and scheme-based normalization of those schemes specified
+   in [I-D.ietf-dtn-bpbis].  A URI scheme can refine this "exact match"
    logic with rules about how Node IDs within that scheme are to be
    compared with the certificate-authenticated NODE-ID.
 
@@ -1684,11 +1684,11 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 4.4.2.1.  PKIX OID Allocations
 
-   This document defines a PKIX Other Name Form of "id-on-dtnEID" in
+   This document defines a PKIX Other Name Form of "id-on-bundleEID" in
    Section 9.9 which can be used as the "type-id" in a subjectAltName
    entry of type otherName.  The value associated with otherName type
-   "id-on-dtnEID" SHALL be a URI, encoded as an IA5String, with a scheme
-   which is present in the IANA "Bundle Protocol URI Scheme Type"
+   "id-on-bundleEID" SHALL be a URI, encoded as an IA5String, with a
+   scheme which is present in the IANA "Bundle Protocol URI Scheme Type"
    registry [IANA-BUNDLE].  Although this otherName form allows any
    Endpoint ID to be present, the NODE-ID defined in Section 4.4.1
    limits its use to contain only a Node ID.
@@ -3833,30 +3833,30 @@ Internet-Draft                 DTN TCPCLv4                September 2021
    IANA has created, under the "Structure of Management Information
    (SMI) Numbers" registry [IANA-SMI], a sub-registry titled "SMI
    Security for PKIX Other Name Forms".  The other name forms table is
-   updated to include a row "id-on-dtnEID" for identifying DTN Endpoint
-   IDs as in the following table.
+   updated to include a row "id-on-bundleEID" for identifying DTN
+   Endpoint IDs as in the following table.
 
-             +=========+==============+=====================+
-             | Decimal | Description  | References          |
-             +=========+==============+=====================+
-             | ON-TBD  | id-on-dtnEID | This specification. |
-             +---------+--------------+---------------------+
+            +=========+=================+=====================+
+            | Decimal | Description     | References          |
+            +=========+=================+=====================+
+            | ON-TBD  | id-on-bundleEID | This specification. |
+            +---------+-----------------+---------------------+
 
-                                 Table 18
+                                  Table 18
 
    This also corresponds with the following SMI, in ASN.1 syntax of
    [X.680], for that otherName type-id and value:
 
    <CODE BEGINS>
    -- The otherName type-value sequence
-   dtnEID OTHER-NAME ::= { DtnEID IDENTIFIED BY { id-on-dtnEID }}
+   bundleEID OTHER-NAME ::= { BundleEID IDENTIFIED BY { id-on-bundleEID }}
 
-   id-on-dtnEID OBJECT IDENTIFIER ::= {
+   id-on-bundleEID OBJECT IDENTIFIER ::= {
      iso(1) identified-organization(3) dod(6) internet(1)
      security(5) mechanisms(5) pkix(7) on(8) ON-TBD }
 
    -- Same encoding as GeneralName of uniformResourceIdentifier
-   DtnEID ::= IA5String
+   BundleEID ::= IA5String
    <CODE ENDS>
 
 
@@ -4188,7 +4188,7 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
    *  Added "Resource Exhaustion" SESS_TERM reason code.
 
-Appendix B.  Example of dtnEID Other Name Form
+Appendix B.  Example of bundleEID Other Name Form
 
    EDITOR NOTE: The encoded hex part "0b" and OID segment "11" are to be
    replaced by ON-TBD allocated value.  It was necessary to choose some
@@ -4202,7 +4202,7 @@ Sipos, et al.             Expires 12 March 2022                [Page 75]
 Internet-Draft                 DTN TCPCLv4                September 2021
 
 
-   This non-normative example demonstrates using a "dtnEID" as an
+   This non-normative example demonstrates using a "bundleEID" as an
    otherName in GeneralName to encode the Node ID "dtn://example/".
 
    The hexadecimal form of the DER encoding of the otherName is:
@@ -4219,7 +4219,7 @@ Internet-Draft                 DTN TCPCLv4                September 2021
           :     }
           :   }
 
-                Figure 28: Visualized decoding of the dtnEID
+              Figure 28: Visualized decoding of the bundleEID
 
 Authors' Addresses
 
