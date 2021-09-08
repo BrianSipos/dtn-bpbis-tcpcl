@@ -1091,11 +1091,14 @@ If no stable DNS name is available but a stable network address is available and
             </dd>
           </dl>
           <t>
-This specification defines a NODE-ID of a certificate as being the subjectAltName entry of type otherName with a <tt>type-id</tt> being the <tt>id-on-dtnEID</tt> OID defined in <xref target="sec-iana-pkix-on-oid"/>.
-The value associated with otherName type <tt>id-on-dtnEID</tt> shall be a URI, percent-encoded as an IA5String, with a scheme which is present in the IANA "Bundle Protocol URI Scheme Type" registry <xref target="IANA-BUNDLE"/>.
-The NODE-ID is similar to the URI-ID of <xref target="RFC6125"/> but does not require any additional structure to the scheme-specific-part of the URI.
+This specification defines a NODE-ID of a certificate as being the subjectAltName entry of type otherName with a type of <tt>id-on-dtnEID</tt> (see <xref target="sec-pkix-oids"/>) and a value limited to a Node ID.
+An entity SHALL ignore any otherName with a type of <tt>id-on-dtnEID</tt> and a value which is some URI other than a Node ID.
+The NODE-ID is similar to the URI-ID of <xref target="RFC6125"/> but restricted to a DTN Node ID rather than a URI with a qualified-name authority part.
 Unless specified otherwise by the definition of the URI scheme being authenticated, URI matching of a NODE-ID SHALL use the URI comparison logic of <xref target="RFC3986"/> and scheme-based normalization of those schemes specified in <xref target="I-D.ietf-dtn-bpbis"/>.
 A URI scheme can refine this "exact match" logic with rules about how Node IDs within that scheme are to be compared with the certificate-authenticated NODE-ID.
+          </t>
+          <t>
+This specification reuses the DNS-ID definition of <xref section="1.8" target="RFC6125"/>, which is the subjectAltName entry of type dNSName whose value is encoded according to <xref target="RFC5280"/>.
           </t>
           <t>
 This specification defines a IPADDR-ID of a certificate as being the subjectAltName entry of type iPAddress whose value is encoded according to <xref target="RFC5280"/>.
@@ -1127,10 +1130,8 @@ When assigned one or more stable DNS names, a TCPCL end-entity certificate SHOUL
 When assigned one or more stable network addresses, a TCPCL end-entity certificate MAY contain IPADDR-ID which authenticates those addresses.
           </t>
           <t>
-This document defines a PKIX Extended Key Usage key purpose <tt>id-kp-bundleSecurity</tt> OID in <xref target="sec-iana-pkix-kp-oid"/> which can be used to restrict a certificate's use.
-The <tt>id-kp-bundleSecurity</tt> purpose can be combined with other purposes in the same certificate.
 When allowed by CA policy, a BPSec end-entity certificate SHOULD contain a PKIX Extended Key Usage extension in accordance with <xref section="4.2.1.12" target="RFC5280"/>.
-When the PKIX Extended Key Usage extension is present, it SHOULD contain a key purpose <tt>id-kp-bundleSecurity</tt> as defined in <xref target="sec-iana-pkix-kp-oid"/>.
+When the PKIX Extended Key Usage extension is present, it SHOULD contain a key purpose <tt>id-kp-bundleSecurity</tt> (see <xref target="sec-pkix-oids"/> and <xref target="sec-iana-pkix-kp-oid"/>).
 Although not specifically required by TCPCL, some networks or TLS implementations assume the use of <tt>id-kp-clientAuth</tt> and <tt>id-kp-serverAuth</tt> are needed for, respectively, the client-side and server-side of TLS authentication.
 For interoperability, a TCPCL end-entity certificate MAY contain an Extended Key Usage with both <tt>id-kp-clientAuth</tt> and <tt>id-kp-serverAuth</tt> values.
           </t>
@@ -1143,6 +1144,18 @@ Earlier versions of TLS can mandate use of the bits keyEncipherment or keyAgreem
           <t>
 When allowed by CA policy, a TCPCL end-entity certificate SHOULD contain an Online Certificate Status Protocol (OCSP) URI within an Authority Information Access extension in accordance with <xref section="4.2.2.1" target="RFC5280"/>.
           </t>
+          <section anchor="sec-pkix-oids">
+            <name>PKIX OID Allocations</name>
+            <t>
+This document defines a PKIX Other Name Form of <tt>id-on-dtnEID</tt> in <xref target="sec-iana-pkix-on-oid"/> which can be used as the <tt>type-id</tt> in a subjectAltName entry of type otherName.
+The value associated with otherName type <tt>id-on-dtnEID</tt> SHALL be a URI, encoded as an IA5String, with a scheme which is present in the IANA "Bundle Protocol URI Scheme Type" registry <xref target="IANA-BUNDLE"/>.
+Although this otherName form allows any Endpoint ID to be present, the NODE-ID defined in <xref target="sec-tls-identification"/> limits its use to contain only a Node ID.
+            </t>
+            <t>
+This document defines a PKIX Extended Key Usage key purpose <tt>id-kp-bundleSecurity</tt> in <xref target="sec-iana-pkix-kp-oid"/> which can be used to restrict a certificate's use.
+The <tt>id-kp-bundleSecurity</tt> purpose can be combined with other purposes in the same certificate.
+            </t>
+          </section>
         </section>
         <section anchor="sec-tls-handshake">
           <name>TLS Handshake</name>
@@ -2900,7 +2913,7 @@ Expert(s) are encouraged to be biased towards approving registrations unless the
         <name>Object Identifier for PKIX Other Name Forms</name>
         <t>
 IANA has created, under the "Structure of Management Information (SMI) Numbers" registry <xref target="IANA-SMI"/>, a sub-registry titled "SMI Security for PKIX Other Name Forms".
-The other name forms table is updated to include a row "id-on-dtnEID" for identifying DTN endpoint IDs as in the following table.
+The other name forms table is updated to include a row "id-on-dtnEID" for identifying DTN Endpoint IDs as in the following table.
         </t>
         <table align="center">
           <thead>
@@ -2919,9 +2932,12 @@ The other name forms table is updated to include a row "id-on-dtnEID" for identi
           </tbody>
         </table>
         <t>
-This also corresponds with the following SMI, in ASN.1 syntax of <xref target="X.680"/>, for that <tt>AnotherName</tt> type-id and value:
+This also corresponds with the following SMI, in ASN.1 syntax of <xref target="X.680"/>, for that otherName type-id and value:
         </t>
         <sourcecode markers="true" type="mib">
+
+-- The otherName type-value sequence
+dtnEID OTHER-NAME ::= { DtnEID IDENTIFIED BY { id-on-dtnEID }}
 
 id-on-dtnEID OBJECT IDENTIFIER ::= {
   iso(1) identified-organization(3) dod(6) internet(1)
@@ -3113,6 +3129,33 @@ The areas in which extensions from <xref target="RFC7242"/> have been made as ne
         <li>Added "Not Acceptable", "Extension Failure", and "Session Terminating" XFER_REFUSE reason codes.</li>
         <li>Added "Resource Exhaustion" SESS_TERM reason code.</li>
       </ul>
+    </section>
+    <section>
+      <name>Example of dtnEID Other Name Form</name>
+      <t>EDITOR NOTE: The encoded hex part "0b" and OID segment "11" are to be replaced by ON-TBD allocated value. It was necessary to choose some OID value, so I chose the first not-allocated code point.</t>
+      <t>
+This non-normative example demonstrates using a <tt>dtnEID</tt> as an otherName in GeneralName to encode the Node ID "dtn://example/".
+      </t>
+      <t>
+The hexadecimal form of the DER encoding of the otherName is:
+      </t>
+      <sourcecode type="hex">
+a01c06082b0601050507080ba010160e64746e3a2f2f6578616d706c652f
+      </sourcecode>
+      <t>
+And the text decoding in <xref target="fig-example-dtneid"/> is an output of Peter Gutmann's "dumpasn1" program.
+      </t>
+      <figure anchor="fig-example-dtneid">
+        <name>Visualized decoding of the dtnEID</name>
+        <artwork align="left" type="ascii-art">
+  0  28: [0] {
+  2   8:   OBJECT IDENTIFIER '1 3 6 1 5 5 7 8 11'
+ 12  16:   [0] {
+ 14  14:     IA5String 'dtn://example/'
+       :     }
+       :   }
+</artwork>
+      </figure>
     </section>
   </back>
 </rfc>
