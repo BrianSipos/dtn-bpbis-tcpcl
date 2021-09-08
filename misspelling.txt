@@ -1,6 +1,0 @@
-AnotherName
-DtnEID
-GeneralName
-OID
-dtnEID
-otherName
