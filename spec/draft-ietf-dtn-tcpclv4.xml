@@ -1091,8 +1091,8 @@ If no stable DNS name is available but a stable network address is available and
             </dd>
           </dl>
           <t>
-This specification defines a NODE-ID of a certificate as being the subjectAltName entry of type otherName with a type of <tt>id-on-bundleEID</tt> (see <xref target="sec-pkix-oids"/>) and a value limited to a Node ID.
-An entity SHALL ignore any otherName with a type of <tt>id-on-bundleEID</tt> and a value which is some URI other than a Node ID.
+This specification defines a NODE-ID of a certificate as being the subjectAltName entry of type otherName with a name form of <tt>bundleEID</tt> (see <xref target="sec-pkix-oids"/>) and a value limited to a Node ID.
+An entity SHALL ignore any otherName with a name form of <tt>bundleEID</tt> and a value which is some URI other than a Node ID.
 The NODE-ID is similar to the URI-ID of <xref target="RFC6125"/> but restricted to a Node ID rather than a URI with a qualified-name authority part.
 Unless specified otherwise by the definition of the URI scheme being authenticated, URI matching of a NODE-ID SHALL use the URI comparison logic of <xref target="RFC3986"/> and scheme-based normalization of those schemes specified in <xref target="I-D.ietf-dtn-bpbis"/>.
 A URI scheme can refine this "exact match" logic with rules about how Node IDs within that scheme are to be compared with the certificate-authenticated NODE-ID.
@@ -1147,8 +1147,8 @@ When allowed by CA policy, a TCPCL end-entity certificate SHOULD contain an Onli
           <section anchor="sec-pkix-oids">
             <name>PKIX OID Allocations</name>
             <t>
-This document defines a PKIX Other Name Form of <tt>id-on-bundleEID</tt> in <xref target="sec-iana-pkix-on-oid"/> which can be used as the <tt>type-id</tt> in a subjectAltName entry of type otherName.
-The value associated with otherName type <tt>id-on-bundleEID</tt> SHALL be a URI, encoded as an IA5String, with a scheme which is present in the IANA "Bundle Protocol URI Scheme Type" registry <xref target="IANA-BUNDLE"/>.
+This document defines a PKIX Other Name Form identifier of <tt>id-on-bundleEID</tt> in <xref target="sec-iana-pkix-on-oid"/> which can be used as the <tt>type-id</tt> in a subjectAltName entry of type otherName.
+The <tt>bundleEID</tt> value associated with otherName type-id <tt>id-on-bundleEID</tt> SHALL be a URI, encoded as an IA5String, with a scheme which is present in the IANA "Bundle Protocol URI Scheme Type" registry <xref target="IANA-BUNDLE"/>.
 Although this otherName form allows any Endpoint ID to be present, the NODE-ID defined in <xref target="sec-tls-identification"/> limits its use to contain only a Node ID.
             </t>
             <t>
@@ -3134,7 +3134,7 @@ The areas in which extensions from <xref target="RFC7242"/> have been made as ne
       <name>Example of bundleEID Other Name Form</name>
       <t>EDITOR NOTE: The encoded hex part "0b" and OID segment "11" are to be replaced by ON-TBD allocated value. It was necessary to choose some OID value, so I chose the first not-allocated code point.</t>
       <t>
-This non-normative example demonstrates using a <tt>bundleEID</tt> as an otherName in GeneralName to encode the Node ID "dtn://example/".
+This non-normative example demonstrates an otherName with a name form of <tt>bundleEID</tt> to encode the Node ID "dtn://example/".
       </t>
       <t>
 The hexadecimal form of the DER encoding of the otherName is:
