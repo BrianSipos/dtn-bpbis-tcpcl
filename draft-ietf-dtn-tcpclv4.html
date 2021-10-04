@@ -2760,11 +2760,11 @@ When allowed by CA policy, a TCPCL end-entity certificate SHOULD contain an Onli
 <a href="#section-4.4.2.1" class="section-number selfRef">4.4.2.1. </a><a href="#name-pkix-oid-allocations" class="section-name selfRef">PKIX OID Allocations</a>
             </h5>
 <p id="section-4.4.2.1-1">
-This document defines a PKIX Other Name Form identifier of <code>id-on-bundleEID</code> in <a href="#sec-iana-pkix-on-oid" class="xref">Section 9.10</a> which can be used as the <code>type-id</code> in a subjectAltName entry of type otherName.
+This document defines a PKIX Other Name Form identifier of <code>id-on-bundleEID</code> in <a href="#sec-asn1-mod" class="xref">Appendix B</a> which can be used as the <code>type-id</code> in a subjectAltName entry of type otherName.
 The <code>BundleEID</code> value associated with otherName type-id <code>id-on-bundleEID</code> SHALL be a URI, encoded as an IA5String, with a scheme which is present in the IANA "Bundle Protocol URI Scheme Type" registry <span>[<a href="#IANA-BUNDLE" class="xref">IANA-BUNDLE</a>]</span>.
 Although this otherName form allows any Endpoint ID to be present, the NODE-ID defined in <a href="#sec-tls-identification" class="xref">Section 4.4.1</a> limits its use to contain only a Node ID.<a href="#section-4.4.2.1-1" class="pilcrow">¶</a></p>
 <p id="section-4.4.2.1-2">
-This document defines a PKIX Extended Key Usage key purpose <code>id-kp-bundleSecurity</code> in <a href="#sec-iana-pkix-kp-oid" class="xref">Section 9.11</a> which can be used to restrict a certificate's use.
+This document defines a PKIX Extended Key Usage key purpose <code>id-kp-bundleSecurity</code> in <a href="#sec-asn1-mod" class="xref">Appendix B</a> which can be used to restrict a certificate's use.
 The <code>id-kp-bundleSecurity</code> purpose can be combined with other purposes in the same certificate.<a href="#section-4.4.2.1-2" class="pilcrow">¶</a></p>
 </section>
 </div>
