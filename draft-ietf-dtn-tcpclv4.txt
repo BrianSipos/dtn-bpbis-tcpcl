@@ -5,11 +5,11 @@
 Delay-Tolerant Networking                                       B. Sipos
 Internet-Draft                                           RKF Engineering
 Intended status: Standards Track                               M. Demmer
-Expires: 27 March 2022                                       UC Berkeley
+Expires: 7 April 2022                                        UC Berkeley
                                                                   J. Ott
                                                         Aalto University
                                                             S. Perreault
-                                                       23 September 2021
+                                                          4 October 2021
 
 
    Delay-Tolerant Networking TCP Convergence Layer Protocol Version 4
@@ -42,7 +42,7 @@ Status of This Memo
    time.  It is inappropriate to use Internet-Drafts as reference
    material or to cite them other than as "work in progress."
 
-   This Internet-Draft will expire on 27 March 2022.
+   This Internet-Draft will expire on 7 April 2022.
 
 Copyright Notice
 
@@ -53,9 +53,9 @@ Copyright Notice
 
 
 
-Sipos, et al.             Expires 27 March 2022                 [Page 1]
+Sipos, et al.             Expires 7 April 2022                  [Page 1]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
    This document is subject to BCP 78 and the IETF Trust's Legal
@@ -109,9 +109,9 @@ Table of Contents
 
 
 
-Sipos, et al.             Expires 27 March 2022                 [Page 2]
+Sipos, et al.             Expires 7 April 2022                  [Page 2]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
    6.  Session Termination . . . . . . . . . . . . . . . . . . . . .  53
@@ -143,15 +143,17 @@ Internet-Draft                 DTN TCPCLv4                September 2021
      9.6.  XFER_REFUSE Reason Codes  . . . . . . . . . . . . . . . .  66
      9.7.  SESS_TERM Reason Codes  . . . . . . . . . . . . . . . . .  67
      9.8.  MSG_REJECT Reason Codes . . . . . . . . . . . . . . . . .  68
-     9.9.  Object Identifier for PKIX Other Name Forms . . . . . . .  69
-     9.10. Object Identifier for PKIX Extended Key Usage . . . . . .  70
+     9.9.  Object Identifier for PKIX Module Identifier  . . . . . .  69
+     9.10. Object Identifier for PKIX Other Name Forms . . . . . . .  69
+     9.11. Object Identifier for PKIX Extended Key Usage . . . . . .  70
    10. Acknowledgments . . . . . . . . . . . . . . . . . . . . . . .  70
    11. References  . . . . . . . . . . . . . . . . . . . . . . . . .  70
      11.1.  Normative References . . . . . . . . . . . . . . . . . .  70
      11.2.  Informative References . . . . . . . . . . . . . . . . .  72
    Appendix A.  Significant changes from RFC7242 . . . . . . . . . .  74
-   Appendix B.  Example of bundleEID Other Name Form . . . . . . . .  75
-   Authors' Addresses  . . . . . . . . . . . . . . . . . . . . . . .  76
+   Appendix B.  ASN.1 Module . . . . . . . . . . . . . . . . . . . .  75
+   Appendix C.  Example of the BundleEID Other Name Form . . . . . .  77
+   Authors' Addresses  . . . . . . . . . . . . . . . . . . . . . . .  77
 
 
 
@@ -163,11 +165,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-
-
-Sipos, et al.             Expires 27 March 2022                 [Page 3]
+Sipos, et al.             Expires 7 April 2022                  [Page 3]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
 1.  Introduction
@@ -221,9 +221,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                 [Page 4]
+Sipos, et al.             Expires 7 April 2022                  [Page 4]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
          Figure 1: The Locations of the Bundle Protocol and the TCP
@@ -277,9 +277,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                 [Page 5]
+Sipos, et al.             Expires 7 April 2022                  [Page 5]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
 2.1.  Definitions Specific to the TCPCL Protocol
@@ -333,9 +333,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                 [Page 6]
+Sipos, et al.             Expires 7 April 2022                  [Page 6]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
       there are two possible transfer streams; one in each direction,
@@ -389,9 +389,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                 [Page 7]
+Sipos, et al.             Expires 7 April 2022                  [Page 7]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
    The relationship between connections, sessions, and streams is shown
@@ -445,9 +445,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                 [Page 8]
+Sipos, et al.             Expires 7 April 2022                  [Page 8]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
 +---------------------------+              +---------------------------+
@@ -501,9 +501,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                 [Page 9]
+Sipos, et al.             Expires 7 April 2022                  [Page 9]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
       terminate an established TCPCL session with a peer entity.  The
@@ -557,9 +557,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 10]
+Sipos, et al.             Expires 7 April 2022                 [Page 10]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
    Transmission Success:  The TCPCL entity indicates to the BP agent
@@ -613,9 +613,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 11]
+Sipos, et al.             Expires 7 April 2022                 [Page 11]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
 3.2.  TCPCL Session Overview
@@ -669,9 +669,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 12]
+Sipos, et al.             Expires 7 April 2022                 [Page 12]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
    A TCPCL receiver can interrupt the transmission of a bundle at any
@@ -725,9 +725,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 13]
+Sipos, et al.             Expires 7 April 2022                 [Page 13]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
               +-------+
@@ -781,9 +781,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 14]
+Sipos, et al.             Expires 7 April 2022                 [Page 14]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
    Contact negotiation involves exchanging a Contact Header (CH) in both
@@ -837,9 +837,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 15]
+Sipos, et al.             Expires 7 April 2022                 [Page 15]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
                +-----------+
@@ -893,9 +893,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 16]
+Sipos, et al.             Expires 7 April 2022                 [Page 16]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
  +-----------+
@@ -949,9 +949,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 17]
+Sipos, et al.             Expires 7 April 2022                 [Page 17]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
                                              +--Send XFER_SEGMENT--+
@@ -1005,9 +1005,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 18]
+Sipos, et al.             Expires 7 April 2022                 [Page 18]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
            Figure 13: Session Termination [ST] from the Initiator
@@ -1061,9 +1061,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 19]
+Sipos, et al.             Expires 7 April 2022                 [Page 19]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
    It is important for interoperability that a TCPCL entity have its own
@@ -1117,9 +1117,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 20]
+Sipos, et al.             Expires 7 April 2022                 [Page 20]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
       outgoing transfer is needed to be sent.  Benefits of this policy
@@ -1173,9 +1173,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 21]
+Sipos, et al.             Expires 7 April 2022                 [Page 21]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
       operates over a TCP stream, which suffers from a form of head-of-
@@ -1229,9 +1229,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 22]
+Sipos, et al.             Expires 7 April 2022                 [Page 22]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
                  Entity A                             Entity B
@@ -1285,9 +1285,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 23]
+Sipos, et al.             Expires 7 April 2022                 [Page 23]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
         Figure 15: An example of the flow of protocol messages on a
@@ -1341,9 +1341,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 24]
+Sipos, et al.             Expires 7 April 2022                 [Page 24]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
    of the Contact Header exchange allows the passive entity to avoid
@@ -1397,9 +1397,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 25]
+Sipos, et al.             Expires 7 April 2022                 [Page 25]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
    See Section 4.3 for details on the use of each of these Contact
@@ -1453,9 +1453,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 26]
+Sipos, et al.             Expires 7 April 2022                 [Page 26]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
    receives a Contact Header with a lower protocol version than the one
@@ -1509,9 +1509,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 27]
+Sipos, et al.             Expires 7 April 2022                 [Page 27]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
 4.4.  Session Security
@@ -1565,9 +1565,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 28]
+Sipos, et al.             Expires 7 April 2022                 [Page 28]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
       NODE-ID but allows a DNS-ID to be identified then one or more
@@ -1582,9 +1582,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
       addresses can be identified in the certificate.
 
    This specification defines a NODE-ID of a certificate as being the
-   subjectAltName entry of type otherName with a name form of bundleEID
+   subjectAltName entry of type otherName with a name form of BundleEID
    (see Section 4.4.2.1) and a value limited to a Node ID.  An entity
-   SHALL ignore any otherName with a name form of bundleEID and a value
+   SHALL ignore any otherName with a name form of BundleEID and a value
    which is some URI other than a Node ID.  The NODE-ID is similar to
    the URI-ID of [RFC6125] but restricted to a Node ID rather than a URI
    with a qualified-name authority part.  Unless specified otherwise by
@@ -1621,9 +1621,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 29]
+Sipos, et al.             Expires 7 April 2022                 [Page 29]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
    TCPCL entities SHALL accept certificates that contain an empty
@@ -1651,7 +1651,7 @@ Internet-Draft                 DTN TCPCLv4                September 2021
    contain a PKIX Extended Key Usage extension in accordance with
    Section 4.2.1.12 of [RFC5280].  When the PKIX Extended Key Usage
    extension is present, it SHOULD contain a key purpose id-kp-
-   bundleSecurity (see Section 4.4.2.1 and Section 9.10).  Although not
+   bundleSecurity (see Section 4.4.2.1 and Section 9.11).  Although not
    specifically required by TCPCL, some networks or TLS implementations
    assume the use of id-kp-clientAuth and id-kp-serverAuth are needed
    for, respectively, the client-side and server-side of TLS
@@ -1677,16 +1677,16 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 30]
+Sipos, et al.             Expires 7 April 2022                 [Page 30]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
 4.4.2.1.  PKIX OID Allocations
 
    This document defines a PKIX Other Name Form identifier of id-on-
-   bundleEID in Section 9.9 which can be used as the type-id in a
-   subjectAltName entry of type otherName.  The bundleEID value
+   bundleEID in Section 9.10 which can be used as the type-id in a
+   subjectAltName entry of type otherName.  The BundleEID value
    associated with otherName type-id id-on-bundleEID SHALL be a URI,
    encoded as an IA5String, with a scheme which is present in the IANA
    "Bundle Protocol URI Scheme Type" registry [IANA-BUNDLE].  Although
@@ -1694,7 +1694,7 @@ Internet-Draft                 DTN TCPCLv4                September 2021
    defined in Section 4.4.1 limits its use to contain only a Node ID.
 
    This document defines a PKIX Extended Key Usage key purpose id-kp-
-   bundleSecurity in Section 9.10 which can be used to restrict a
+   bundleSecurity in Section 9.11 which can be used to restrict a
    certificate's use.  The id-kp-bundleSecurity purpose can be combined
    with other purposes in the same certificate.
 
@@ -1733,9 +1733,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 31]
+Sipos, et al.             Expires 7 April 2022                 [Page 31]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
       within the TLS handshake to allow authentication of its side of
@@ -1789,9 +1789,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 32]
+Sipos, et al.             Expires 7 April 2022                 [Page 32]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
    Success:  Indicating that one or more such claims are present and at
@@ -1845,9 +1845,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 33]
+Sipos, et al.             Expires 7 April 2022                 [Page 33]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
 4.4.4.3.  Node ID Authentication
@@ -1901,9 +1901,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 34]
+Sipos, et al.             Expires 7 April 2022                 [Page 34]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
                Entity A                             Entity B
@@ -1957,9 +1957,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 35]
+Sipos, et al.             Expires 7 April 2022                 [Page 35]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
 4.5.  Message Header
@@ -2013,9 +2013,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 36]
+Sipos, et al.             Expires 7 April 2022                 [Page 36]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
        +==============+======+=====================================+
@@ -2069,9 +2069,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 37]
+Sipos, et al.             Expires 7 April 2022                 [Page 37]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
                       +-----------------------------+
@@ -2125,9 +2125,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 38]
+Sipos, et al.             Expires 7 April 2022                 [Page 38]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
       allows an entity to avoid exposing Node ID information on an
@@ -2181,9 +2181,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 39]
+Sipos, et al.             Expires 7 April 2022                 [Page 39]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
       whole transfers and individual segments are identical to the
@@ -2237,9 +2237,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 40]
+Sipos, et al.             Expires 7 April 2022                 [Page 40]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
    Item Value:  A variable-length data field which is interpreted
@@ -2293,9 +2293,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 41]
+Sipos, et al.             Expires 7 April 2022                 [Page 41]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
    for many sessions on an open, shared network a short interval could
@@ -2349,9 +2349,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 42]
+Sipos, et al.             Expires 7 April 2022                 [Page 42]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
    If a TCPCL entity receives a message type which is unknown to it
@@ -2405,9 +2405,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 43]
+Sipos, et al.             Expires 7 April 2022                 [Page 43]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
    +==============+======+=============================================+
@@ -2461,9 +2461,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 44]
+Sipos, et al.             Expires 7 April 2022                 [Page 44]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
 5.2.1.  Bundle Transfer ID
@@ -2517,9 +2517,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 45]
+Sipos, et al.             Expires 7 April 2022                 [Page 45]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
                      +------------------------------+
@@ -2573,9 +2573,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 46]
+Sipos, et al.             Expires 7 April 2022                 [Page 46]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
    Data length:  A 64-bit unsigned integer indicating the number of
@@ -2629,9 +2629,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 47]
+Sipos, et al.             Expires 7 April 2022                 [Page 47]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
                       +-----------------------------+
@@ -2685,9 +2685,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 48]
+Sipos, et al.             Expires 7 April 2022                 [Page 48]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
 5.2.4.  Transfer Refusal (XFER_REFUSE)
@@ -2741,9 +2741,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 49]
+Sipos, et al.             Expires 7 April 2022                 [Page 49]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
       being refused.
@@ -2797,9 +2797,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 50]
+Sipos, et al.             Expires 7 April 2022                 [Page 50]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
    bundle after transmitting a XFER_REFUSE message since messages can
@@ -2853,9 +2853,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 51]
+Sipos, et al.             Expires 7 April 2022                 [Page 51]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
                  Figure 25: Transfer Extension Item Format
@@ -2909,9 +2909,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 52]
+Sipos, et al.             Expires 7 April 2022                 [Page 52]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
 6.  Session Termination
@@ -2965,9 +2965,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 53]
+Sipos, et al.             Expires 7 April 2022                 [Page 53]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
    of the connection (a "half-closed" state) MAY be ignored by the TCPCL
@@ -3021,9 +3021,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 54]
+Sipos, et al.             Expires 7 April 2022                 [Page 54]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
     +==============+======+==========================================+
@@ -3077,9 +3077,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 55]
+Sipos, et al.             Expires 7 April 2022                 [Page 55]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
 6.2.  Idle Session Shutdown
@@ -3133,9 +3133,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 56]
+Sipos, et al.             Expires 7 April 2022                 [Page 56]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
 8.  Security Considerations
@@ -3189,9 +3189,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 57]
+Sipos, et al.             Expires 7 April 2022                 [Page 57]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
    The purpose of the CAN_TLS flag is to allow the use of TCPCL on
@@ -3245,9 +3245,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 58]
+Sipos, et al.             Expires 7 April 2022                 [Page 58]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
    There are many reasons, described in [RFC5280] and [RFC6125], why a
@@ -3301,14 +3301,14 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 59]
+Sipos, et al.             Expires 7 April 2022                 [Page 59]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
    One mitigation to arbitrary entities with valid PKIX certificates
    impersonating arbitrary Node IDs is the use of the PKIX Extended Key
-   Usage key purpose id-kp-bundleSecurity in Section 9.10.  When this
+   Usage key purpose id-kp-bundleSecurity in Section 9.11.  When this
    Extended Key Usage is present in the certificate, it represents a
    stronger assertion that the private key holder should in fact be
    trusted to operate as a DTN Node.
@@ -3357,9 +3357,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 60]
+Sipos, et al.             Expires 7 April 2022                 [Page 60]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
 8.11.  Mandatory-to-Implement TLS
@@ -3413,9 +3413,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 61]
+Sipos, et al.             Expires 7 April 2022                 [Page 61]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
 8.13.  Predictability of Transfer IDs
@@ -3469,9 +3469,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 62]
+Sipos, et al.             Expires 7 April 2022                 [Page 62]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
           +========================+============================+
@@ -3525,9 +3525,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 63]
+Sipos, et al.             Expires 7 April 2022                 [Page 63]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
 9.3.  Session Extension Types
@@ -3581,9 +3581,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 64]
+Sipos, et al.             Expires 7 April 2022                 [Page 64]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
    Specifications of new transfer extension types need to define the
@@ -3637,9 +3637,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 65]
+Sipos, et al.             Expires 7 April 2022                 [Page 65]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
    If an entity receives an unknown message type the only thing that can
@@ -3693,9 +3693,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 66]
+Sipos, et al.             Expires 7 April 2022                 [Page 66]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
    Expert(s) are encouraged to be biased towards approving registrations
@@ -3749,9 +3749,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 67]
+Sipos, et al.             Expires 7 April 2022                 [Page 67]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
    Expert(s) are encouraged to be biased towards approving registrations
@@ -3805,9 +3805,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 68]
+Sipos, et al.             Expires 7 April 2022                 [Page 68]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
                  +============+==========================+
@@ -3828,7 +3828,23 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
                      Table 17: MSG_REJECT Reason Codes
 
-9.9.  Object Identifier for PKIX Other Name Forms
+9.9.  Object Identifier for PKIX Module Identifier
+
+   IANA has created, under the "Structure of Management Information
+   (SMI) Numbers" registry [IANA-SMI], a sub-registry titled "SMI
+   Security for PKIX Module Identifier".  The table is updated to
+   include a row "id-mod-dtn-tcpclv4-2021" for identifying the module in
+   Appendix B as in the following table.
+
+        +=========+=========================+=====================+
+        | Decimal | Description             | References          |
+        +=========+=========================+=====================+
+        | MOD-TBD | id-mod-dtn-tcpclv4-2021 | This specification. |
+        +---------+-------------------------+---------------------+
+
+                                  Table 18
+
+9.10.  Object Identifier for PKIX Other Name Forms
 
    IANA has created, under the "Structure of Management Information
    (SMI) Numbers" registry [IANA-SMI], a sub-registry titled "SMI
@@ -3836,39 +3852,33 @@ Internet-Draft                 DTN TCPCLv4                September 2021
    updated to include a row "id-on-bundleEID" for identifying DTN
    Endpoint IDs as in the following table.
 
+
+
+
+
+
+
+
+
+
+Sipos, et al.             Expires 7 April 2022                 [Page 69]
+
+Internet-Draft                 DTN TCPCLv4                  October 2021
+
+
             +=========+=================+=====================+
             | Decimal | Description     | References          |
             +=========+=================+=====================+
             | ON-TBD  | id-on-bundleEID | This specification. |
             +---------+-----------------+---------------------+
 
-                                  Table 18
+                                  Table 19
 
-   This also corresponds with the following SMI, in ASN.1 syntax of
-   [X.680], for that otherName type-id and value:
+   The formal structure of the associated other name form is in
+   Appendix B.  The use of this OID is defined in Section 4.4.1 and
+   Section 4.4.2.
 
-   <CODE BEGINS>
-   -- The otherName type-value sequence
-   bundleEID OTHER-NAME ::= { BundleEID IDENTIFIED BY { id-on-bundleEID }}
-
-   id-on-bundleEID OBJECT IDENTIFIER ::= {
-     iso(1) identified-organization(3) dod(6) internet(1)
-     security(5) mechanisms(5) pkix(7) on(8) ON-TBD }
-
-   -- Same encoding as GeneralName of uniformResourceIdentifier
-   BundleEID ::= IA5String
-   <CODE ENDS>
-
-
-
-Sipos, et al.             Expires 27 March 2022                [Page 69]
-
-Internet-Draft                 DTN TCPCLv4                September 2021
-
-
-   The use of this OID is defined in Section 4.4.1 and Section 4.4.2.
-
-9.10.  Object Identifier for PKIX Extended Key Usage
+9.11.  Object Identifier for PKIX Extended Key Usage
 
    IANA has created, under the "Structure of Management Information
    (SMI) Numbers" registry [IANA-SMI], a sub-registry titled "SMI
@@ -3882,18 +3892,10 @@ Internet-Draft                 DTN TCPCLv4                September 2021
          | KP-TBD  | id-kp-bundleSecurity | This specification. |
          +---------+----------------------+---------------------+
 
-                                 Table 19
+                                 Table 20
 
-   This also corresponds with the following SMI, in ASN.1 syntax of
-   [X.680], for that key purpose:
-
-   <CODE BEGINS>
-   id-kp-bundleSecurity OBJECT IDENTIFIER ::= {
-     iso(1) identified-organization(3) dod(6) internet(1)
-     security(5) mechanisms(5) pkix(7) kp(3) KP-TBD }
-   <CODE ENDS>
-
-   The use of this OID is defined in Section 4.4.2.
+   The formal definition of this EKU is in Appendix B.  The use of this
+   OID is defined in Section 4.4.2.
 
 10.  Acknowledgments
 
@@ -3915,11 +3917,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-
-
-Sipos, et al.             Expires 27 March 2022                [Page 70]
+Sipos, et al.             Expires 7 April 2022                 [Page 70]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
    [IANA-SMI] IANA, "Structure of Management Information (SMI) Numbers",
@@ -3973,9 +3973,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 71]
+Sipos, et al.             Expires 7 April 2022                 [Page 71]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
    [RFC7525]  Sheffer, Y., Holz, R., and P. Saint-Andre,
@@ -4004,11 +4004,6 @@ Internet-Draft                 DTN TCPCLv4                September 2021
               <https://datatracker.ietf.org/doc/html/draft-ietf-dtn-
               bpbis-31>.
 
-   [X.680]    ITU-T, "Information technology -- Abstract Syntax Notation
-              One (ASN.1): Specification of basic notation", ITU-T
-              Recommendation X.680, ISO/IEC 8824-1:2015, August 2015,
-              <https://www.itu.int/rec/T-REC-X.680-201508-I/en>.
-
 11.2.  Informative References
 
    [AEAD-LIMITS]
@@ -4025,19 +4020,19 @@ Internet-Draft                 DTN TCPCLv4                September 2021
               DOI 10.17487/RFC3552, July 2003,
               <https://www.rfc-editor.org/info/rfc3552>.
 
-
-
-
-
-Sipos, et al.             Expires 27 March 2022                [Page 72]
-
-Internet-Draft                 DTN TCPCLv4                September 2021
-
-
    [RFC4511]  Sermersheim, J., Ed., "Lightweight Directory Access
               Protocol (LDAP): The Protocol", RFC 4511,
               DOI 10.17487/RFC4511, June 2006,
               <https://www.rfc-editor.org/info/rfc4511>.
+
+
+
+
+
+Sipos, et al.             Expires 7 April 2022                 [Page 72]
+
+Internet-Draft                 DTN TCPCLv4                  October 2021
+
 
    [RFC4838]  Cerf, V., Burleigh, S., Hooke, A., Torgerson, L., Durst,
               R., Scott, K., Fall, K., and H. Weiss, "Delay-Tolerant
@@ -4048,6 +4043,11 @@ Internet-Draft                 DTN TCPCLv4                September 2021
               Transport Layer Security (TLS)", RFC 5489,
               DOI 10.17487/RFC5489, March 2009,
               <https://www.rfc-editor.org/info/rfc5489>.
+
+   [RFC5912]  Hoffman, P. and J. Schaad, "New ASN.1 Modules for the
+              Public Key Infrastructure Using X.509 (PKIX)", RFC 5912,
+              DOI 10.17487/RFC5912, June 2010,
+              <https://www.rfc-editor.org/info/rfc5912>.
 
    [RFC6698]  Hoffman, P. and J. Schlyter, "The DNS-Based Authentication
               of Named Entities (DANE) Transport Layer Security (TLS)
@@ -4085,9 +4085,9 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 73]
+Sipos, et al.             Expires 7 April 2022                 [Page 73]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
    [RFC7942]  Sheffer, Y. and A. Farrel, "Improving Awareness of Running
@@ -4141,9 +4141,9 @@ Appendix A.  Significant changes from RFC7242
 
 
 
-Sipos, et al.             Expires 27 March 2022                [Page 74]
+Sipos, et al.             Expires 7 April 2022                 [Page 74]
 
-Internet-Draft                 DTN TCPCLv4                September 2021
+Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
    *  Added session extension capability.
@@ -4188,22 +4188,84 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
    *  Added "Resource Exhaustion" SESS_TERM reason code.
 
-Appendix B.  Example of bundleEID Other Name Form
+Appendix B.  ASN.1 Module
+
+   The following ASN.1 module formally specifies the BundleEID
+   structure, its Other Name form, and the bundleSecurity EKU.  This
+   specification uses the ASN.1 definitions from [RFC5912] with the 2002
+   ASN.1 notation used in that document.
+
+
+
+Sipos, et al.             Expires 7 April 2022                 [Page 75]
+
+Internet-Draft                 DTN TCPCLv4                  October 2021
+
+
+   <CODE BEGINS>
+   DTN-TCPCLPv4-2021
+     { iso(1) identified-organization(3) dod(6)
+       internet(1) security(5) mechanisms(5) pkix(7) id-mod(0)
+       id-mod-dtn-tcpclv4-2021(MOD-TBD) }
+
+   DEFINITIONS IMPLICIT TAGS ::=
+   BEGIN
+
+   IMPORTS
+     OTHER-NAME
+     FROM PKIX1Implicit-2009 -- [RFC5912]
+       { iso(1) identified-organization(3) dod(6) internet(1)
+         security(5) mechanisms(5) pkix(7) id-mod(0)
+         id-mod-pkix1-implicit-02(59) }
+
+     id-pkix
+     FROM PKIX1Explicit-2009 -- [RFC5912]
+       { iso(1) identified-organization(3) dod(6) internet(1)
+         security(5) mechanisms(5) pkix(7) id-mod(0)
+         id-mod-pkix1-explicit-02(51) } ;
+
+   id-kp OBJECT IDENTIFIER ::= { id-pkix 3 }
+
+   id-on OBJECT IDENTIFIER ::= { id-pkix 8 }
+
+   DTNOtherNames OTHER-NAME ::= { on-BundleEID, ... }
+
+   -- The otherName definition for Bundle EID
+   on-BundleEID OTHER-NAME ::= {
+       BundleEID IDENTIFIED BY { id-on-bundleEID }
+   }
+
+   id-on-bundleEID OBJECT IDENTIFIER ::= { id-on ON-TBD }
+
+   -- Same encoding as GeneralName of uniformResourceIdentifier
+   BundleEID ::= IA5String
+
+   -- The Extended Key Usage key for bundle security
+   id-kp-bundleSecurity OBJECT IDENTIFIER ::= { id-kp KP-TBD }
+
+   END
+   <CODE ENDS>
+
+
+
+
+
+
+
+
+Sipos, et al.             Expires 7 April 2022                 [Page 76]
+
+Internet-Draft                 DTN TCPCLv4                  October 2021
+
+
+Appendix C.  Example of the BundleEID Other Name Form
 
    EDITOR NOTE: The encoded hex part "0b" and OID segment "11" are to be
    replaced by ON-TBD allocated value.  It was necessary to choose some
    OID value, so I chose the first not-allocated code point.
 
-
-
-
-Sipos, et al.             Expires 27 March 2022                [Page 75]
-
-Internet-Draft                 DTN TCPCLv4                September 2021
-
-
    This non-normative example demonstrates an otherName with a name form
-   of bundleEID to encode the Node ID "dtn://example/".
+   of BundleEID to encode the Node ID "dtn://example/".
 
    The hexadecimal form of the DER encoding of the otherName is:
 
@@ -4219,7 +4281,7 @@ Internet-Draft                 DTN TCPCLv4                September 2021
           :     }
           :   }
 
-              Figure 28: Visualized decoding of the bundleEID
+             Figure 28: Visualized decoding of the on-BundleEID
 
 Authors' Addresses
 
@@ -4243,20 +4305,21 @@ Authors' Addresses
    Email: demmer@cs.berkeley.edu
 
 
+
+
+
+
+Sipos, et al.             Expires 7 April 2022                 [Page 77]
+
+Internet-Draft                 DTN TCPCLv4                  October 2021
+
+
    Joerg Ott
    Aalto University
    Department of Communications and Networking
    PO Box 13000
    FI-02015 Aalto
    Finland
-
-
-
-
-Sipos, et al.             Expires 27 March 2022                [Page 76]
-
-Internet-Draft                 DTN TCPCLv4                September 2021
-
 
    Email: ott@in.tum.de
 
@@ -4302,11 +4365,4 @@ Internet-Draft                 DTN TCPCLv4                September 2021
 
 
 
-
-
-
-
-
-
-
-Sipos, et al.             Expires 27 March 2022                [Page 77]
+Sipos, et al.             Expires 7 April 2022                 [Page 78]
