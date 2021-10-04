@@ -1147,12 +1147,12 @@ When allowed by CA policy, a TCPCL end-entity certificate SHOULD contain an Onli
           <section anchor="sec-pkix-oids">
             <name>PKIX OID Allocations</name>
             <t>
-This document defines a PKIX Other Name Form identifier of <tt>id-on-bundleEID</tt> in <xref target="sec-iana-pkix-on-oid"/> which can be used as the <tt>type-id</tt> in a subjectAltName entry of type otherName.
+This document defines a PKIX Other Name Form identifier of <tt>id-on-bundleEID</tt> in <xref target="sec-asn1-mod"/> which can be used as the <tt>type-id</tt> in a subjectAltName entry of type otherName.
 The <tt>BundleEID</tt> value associated with otherName type-id <tt>id-on-bundleEID</tt> SHALL be a URI, encoded as an IA5String, with a scheme which is present in the IANA "Bundle Protocol URI Scheme Type" registry <xref target="IANA-BUNDLE"/>.
 Although this otherName form allows any Endpoint ID to be present, the NODE-ID defined in <xref target="sec-tls-identification"/> limits its use to contain only a Node ID.
             </t>
             <t>
-This document defines a PKIX Extended Key Usage key purpose <tt>id-kp-bundleSecurity</tt> in <xref target="sec-iana-pkix-kp-oid"/> which can be used to restrict a certificate's use.
+This document defines a PKIX Extended Key Usage key purpose <tt>id-kp-bundleSecurity</tt> in <xref target="sec-asn1-mod"/> which can be used to restrict a certificate's use.
 The <tt>id-kp-bundleSecurity</tt> purpose can be combined with other purposes in the same certificate.
             </t>
           </section>
