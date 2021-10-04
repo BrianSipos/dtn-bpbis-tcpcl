@@ -1091,8 +1091,8 @@ If no stable DNS name is available but a stable network address is available and
             </dd>
           </dl>
           <t>
-This specification defines a NODE-ID of a certificate as being the subjectAltName entry of type otherName with a name form of <tt>bundleEID</tt> (see <xref target="sec-pkix-oids"/>) and a value limited to a Node ID.
-An entity SHALL ignore any otherName with a name form of <tt>bundleEID</tt> and a value which is some URI other than a Node ID.
+This specification defines a NODE-ID of a certificate as being the subjectAltName entry of type otherName with a name form of <tt>BundleEID</tt> (see <xref target="sec-pkix-oids"/>) and a value limited to a Node ID.
+An entity SHALL ignore any otherName with a name form of <tt>BundleEID</tt> and a value which is some URI other than a Node ID.
 The NODE-ID is similar to the URI-ID of <xref target="RFC6125"/> but restricted to a Node ID rather than a URI with a qualified-name authority part.
 Unless specified otherwise by the definition of the URI scheme being authenticated, URI matching of a NODE-ID SHALL use the URI comparison logic of <xref target="RFC3986"/> and scheme-based normalization of those schemes specified in <xref target="I-D.ietf-dtn-bpbis"/>.
 A URI scheme can refine this "exact match" logic with rules about how Node IDs within that scheme are to be compared with the certificate-authenticated NODE-ID.
@@ -1148,7 +1148,7 @@ When allowed by CA policy, a TCPCL end-entity certificate SHOULD contain an Onli
             <name>PKIX OID Allocations</name>
             <t>
 This document defines a PKIX Other Name Form identifier of <tt>id-on-bundleEID</tt> in <xref target="sec-iana-pkix-on-oid"/> which can be used as the <tt>type-id</tt> in a subjectAltName entry of type otherName.
-The <tt>bundleEID</tt> value associated with otherName type-id <tt>id-on-bundleEID</tt> SHALL be a URI, encoded as an IA5String, with a scheme which is present in the IANA "Bundle Protocol URI Scheme Type" registry <xref target="IANA-BUNDLE"/>.
+The <tt>BundleEID</tt> value associated with otherName type-id <tt>id-on-bundleEID</tt> SHALL be a URI, encoded as an IA5String, with a scheme which is present in the IANA "Bundle Protocol URI Scheme Type" registry <xref target="IANA-BUNDLE"/>.
 Although this otherName form allows any Endpoint ID to be present, the NODE-ID defined in <xref target="sec-tls-identification"/> limits its use to contain only a Node ID.
             </t>
             <t>
@@ -2909,6 +2909,29 @@ Expert(s) are encouraged to be biased towards approving registrations unless the
           </tbody>
         </table>
       </section>
+      <section anchor="sec-iana-smi-mod">
+        <name>Object Identifier for PKIX Module Identifier</name>
+        <t>
+IANA has created, under the "Structure of Management Information (SMI) Numbers" registry <xref target="IANA-SMI"/>, a sub-registry titled "SMI Security for PKIX Module Identifier".
+The table is updated to include a row "id-mod-dtn-tcpclv4-2021" for identifying the module in <xref target="sec-asn1-mod"/> as in the following table.
+        </t>
+        <table align="center">
+          <thead>
+            <tr>
+              <th>Decimal</th>
+              <th>Description</th>
+              <th>References</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>MOD-TBD</td>
+              <td>id-mod-dtn-tcpclv4-2021</td>
+              <td>This specification.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
       <section anchor="sec-iana-pkix-on-oid">
         <name>Object Identifier for PKIX Other Name Forms</name>
         <t>
@@ -2932,23 +2955,9 @@ The other name forms table is updated to include a row "id-on-bundleEID" for ide
           </tbody>
         </table>
         <t>
-This also corresponds with the following SMI, in ASN.1 syntax of <xref target="X.680"/>, for that otherName type-id and value:
-        </t>
-        <sourcecode markers="true" type="mib">
-
--- The otherName type-value sequence
-bundleEID OTHER-NAME ::= { BundleEID IDENTIFIED BY { id-on-bundleEID }}
-
-id-on-bundleEID OBJECT IDENTIFIER ::= {
-  iso(1) identified-organization(3) dod(6) internet(1)
-  security(5) mechanisms(5) pkix(7) on(8) ON-TBD }
-
--- Same encoding as GeneralName of uniformResourceIdentifier
-BundleEID ::= IA5String
-</sourcecode>
-      <t>
+The formal structure of the associated other name form is in <xref target="sec-asn1-mod"/>.
 The use of this OID is defined in <xref target="sec-tls-identification"/> and <xref target="sec-tcpcl-cert-profile"/>.
-      </t>
+        </t>
       </section>
       <section anchor="sec-iana-pkix-kp-oid">
         <name>Object Identifier for PKIX Extended Key Usage</name>
@@ -2973,17 +2982,9 @@ The extended key purpose table is updated to include a purpose "id-kp-bundleSecu
           </tbody>
         </table>
         <t>
-This also corresponds with the following SMI, in ASN.1 syntax of <xref target="X.680"/>, for that key purpose:
-        </t>
-        <sourcecode markers="true" type="mib">
-
-id-kp-bundleSecurity OBJECT IDENTIFIER ::= {
-  iso(1) identified-organization(3) dod(6) internet(1)
-  security(5) mechanisms(5) pkix(7) kp(3) KP-TBD }
-</sourcecode>
-      <t>
+The formal definition of this EKU is in <xref target="sec-asn1-mod"/>.
 The use of this OID is defined in <xref target="sec-tcpcl-cert-profile"/>.
-      </t>
+        </t>
       </section>
     </section>
     <section anchor="sec-doc-ack">
@@ -3064,6 +3065,7 @@ This specification is based on comments on implementation of <xref target="RFC72
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.4511.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.4838.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.5489.xml"/>
+        <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.5912.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.6698.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.7122.xml"/>
         <xi:include href="https://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.7242.xml"/>
@@ -3130,11 +3132,62 @@ The areas in which extensions from <xref target="RFC7242"/> have been made as ne
         <li>Added "Resource Exhaustion" SESS_TERM reason code.</li>
       </ul>
     </section>
+    <section anchor="sec-asn1-mod">
+      <name>ASN.1 Module</name>
+      <t>
+The following ASN.1 module formally specifies the <tt>BundleEID</tt> structure, its Other Name form, and the <tt>bundleSecurity</tt> Extended Key Usage in the syntax of <xref target="X.680"/>.
+This specification uses the ASN.1 definitions from <xref target="RFC5912"/> with the 2002 ASN.1 notation used in that document.
+      </t>
+      <sourcecode markers="true" type="asn.1">
+
+DTN-TCPCLPv4-2021
+  { iso(1) identified-organization(3) dod(6)
+    internet(1) security(5) mechanisms(5) pkix(7) id-mod(0)
+    id-mod-dtn-tcpclv4-2021(MOD-TBD) }
+
+DEFINITIONS IMPLICIT TAGS ::=
+BEGIN
+
+IMPORTS
+  OTHER-NAME
+  FROM PKIX1Implicit-2009 -- [RFC5912]
+    { iso(1) identified-organization(3) dod(6) internet(1)
+      security(5) mechanisms(5) pkix(7) id-mod(0)
+      id-mod-pkix1-implicit-02(59) }
+
+  id-pkix
+  FROM PKIX1Explicit-2009 -- [RFC5912]
+    { iso(1) identified-organization(3) dod(6) internet(1)
+      security(5) mechanisms(5) pkix(7) id-mod(0)
+      id-mod-pkix1-explicit-02(51) } ;
+
+id-kp OBJECT IDENTIFIER ::= { id-pkix 3 }
+
+id-on OBJECT IDENTIFIER ::= { id-pkix 8 }
+
+DTNOtherNames OTHER-NAME ::= { on-bundleEID, ... }
+
+-- The otherName definition for Bundle EID
+on-bundleEID OTHER-NAME ::= {
+    BundleEID IDENTIFIED BY { id-on-bundleEID }
+}
+
+id-on-bundleEID OBJECT IDENTIFIER ::= { id-on ON-TBD }
+
+-- Same encoding as GeneralName of uniformResourceIdentifier
+BundleEID ::= IA5String
+
+-- The Extended Key Usage key for bundle security
+id-kp-bundleSecurity OBJECT IDENTIFIER ::= { id-kp KP-TBD }
+
+END
+</sourcecode>
+    </section>
     <section>
-      <name>Example of bundleEID Other Name Form</name>
+      <name>Example of the BundleEID Other Name Form</name>
       <t>EDITOR NOTE: The encoded hex part "0b" and OID segment "11" are to be replaced by ON-TBD allocated value. It was necessary to choose some OID value, so I chose the first not-allocated code point.</t>
       <t>
-This non-normative example demonstrates an otherName with a name form of <tt>bundleEID</tt> to encode the Node ID "dtn://example/".
+This non-normative example demonstrates an otherName with a name form of <tt>BundleEID</tt> to encode the Node ID "dtn://example/".
       </t>
       <t>
 The hexadecimal form of the DER encoding of the otherName is:
@@ -3146,7 +3199,7 @@ a01c06082b0601050507080ba010160e64746e3a2f2f6578616d706c652f
 And the text decoding in <xref target="fig-example-dtneid"/> is an output of Peter Gutmann's "dumpasn1" program.
       </t>
       <figure anchor="fig-example-dtneid">
-        <name>Visualized decoding of the bundleEID</name>
+        <name>Visualized decoding of the <tt>on-bundleEID</tt></name>
         <artwork align="left" type="ascii-art">
   0  28: [0] {
   2   8:   OBJECT IDENTIFIER '1 3 6 1 5 5 7 8 11'
