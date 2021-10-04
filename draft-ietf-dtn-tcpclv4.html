@@ -4910,8 +4910,12 @@ This specification is based on comments on implementation of <span>[<a href="#RF
 <span class="refAuthor">Rescorla, E.</span>, <span class="refTitle">"The Transport Layer Security (TLS) Protocol Version 1.3"</span>, <span class="seriesInfo">RFC 8446</span>, <span class="seriesInfo">DOI 10.17487/RFC8446</span>, <time datetime="2018-08" class="refDate">August 2018</time>, <span>&lt;<a href="https://www.rfc-editor.org/info/rfc8446">https://www.rfc-editor.org/info/rfc8446</a>&gt;</span>. </dd>
 <dd class="break"></dd>
 <dt id="I-D.ietf-dtn-bpbis">[I-D.ietf-dtn-bpbis]</dt>
-      <dd>
+        <dd>
 <span class="refAuthor">Burleigh, S.</span>, <span class="refAuthor">Fall, K.</span>, and <span class="refAuthor">E. J. Birrane</span>, <span class="refTitle">"Bundle Protocol Version 7"</span>, <span class="refContent">Work in Progress</span>, <span class="seriesInfo">Internet-Draft, draft-ietf-dtn-bpbis-31</span>, <time datetime="2021-01-25" class="refDate">25 January 2021</time>, <span>&lt;<a href="https://datatracker.ietf.org/doc/html/draft-ietf-dtn-bpbis-31">https://datatracker.ietf.org/doc/html/draft-ietf-dtn-bpbis-31</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="X.680">[X.680]</dt>
+      <dd>
+<span class="refAuthor">ITU-T</span>, <span class="refTitle">"Information technology -- Abstract Syntax Notation One (ASN.1): Specification of basic notation"</span>, <span class="refContent">ITU-T Recommendation X.680, ISO/IEC 8824-1:2015</span>, <time datetime="2015-08" class="refDate">August 2015</time>, <span>&lt;<a href="https://www.itu.int/rec/T-REC-X.680-201508-I/en">https://www.itu.int/rec/T-REC-X.680-201508-I/en</a>&gt;</span>. </dd>
 <dd class="break"></dd>
 </dl>
 </section>
@@ -5056,7 +5060,7 @@ The areas in which extensions from <span>[<a href="#RFC7242" class="xref">RFC724
 <a href="#appendix-B" class="section-number selfRef">Appendix B. </a><a href="#name-asn1-module" class="section-name selfRef">ASN.1 Module</a>
       </h2>
 <p id="appendix-B-1">
-The following ASN.1 module formally specifies the BundleEID structure, its Other Name form, and the bundleSecurity EKU.
+The following ASN.1 module formally specifies the <code>BundleEID</code> structure, its Other Name form, and the <code>bundleSecurity</code> Extended Key Usage in the syntax of <span>[<a href="#X.680" class="xref">X.680</a>]</span>.
 This specification uses the ASN.1 definitions from <span>[<a href="#RFC5912" class="xref">RFC5912</a>]</span> with the 2002 ASN.1 notation used in that document.<a href="#appendix-B-1" class="pilcrow">¶</a></p>
 <div id="appendix-B-2">
 <pre class="lang-asn.1 sourcecode">&lt;CODE BEGINS&gt;
@@ -5086,10 +5090,10 @@ id-kp OBJECT IDENTIFIER ::= { id-pkix 3 }
 
 id-on OBJECT IDENTIFIER ::= { id-pkix 8 }
 
-DTNOtherNames OTHER-NAME ::= { on-BundleEID, ... }
+DTNOtherNames OTHER-NAME ::= { on-bundleEID, ... }
 
 -- The otherName definition for Bundle EID
-on-BundleEID OTHER-NAME ::= {
+on-bundleEID OTHER-NAME ::= {
     BundleEID IDENTIFIED BY { id-on-bundleEID }
 }
 
@@ -5136,7 +5140,7 @@ And the text decoding in <a href="#fig-example-dtneid" class="xref">Figure 28</a
 </pre>
 </div>
 <figcaption><a href="#figure-28" class="selfRef">Figure 28</a>:
-<a href="#name-visualized-decoding-of-the-" class="selfRef">Visualized decoding of the <code>on-BundleEID</code></a>
+<a href="#name-visualized-decoding-of-the-" class="selfRef">Visualized decoding of the <code>on-bundleEID</code></a>
         </figcaption></figure>
 </div>
 </section>

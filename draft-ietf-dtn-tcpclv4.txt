@@ -151,9 +151,9 @@ Internet-Draft                 DTN TCPCLv4                  October 2021
      11.1.  Normative References . . . . . . . . . . . . . . . . . .  70
      11.2.  Informative References . . . . . . . . . . . . . . . . .  72
    Appendix A.  Significant changes from RFC7242 . . . . . . . . . .  74
-   Appendix B.  ASN.1 Module . . . . . . . . . . . . . . . . . . . .  75
-   Appendix C.  Example of the BundleEID Other Name Form . . . . . .  77
-   Authors' Addresses  . . . . . . . . . . . . . . . . . . . . . . .  77
+   Appendix B.  ASN.1 Module . . . . . . . . . . . . . . . . . . . .  76
+   Appendix C.  Example of the BundleEID Other Name Form . . . . . .  78
+   Authors' Addresses  . . . . . . . . . . . . . . . . . . . . . . .  78
 
 
 
@@ -4004,6 +4004,11 @@ Internet-Draft                 DTN TCPCLv4                  October 2021
               <https://datatracker.ietf.org/doc/html/draft-ietf-dtn-
               bpbis-31>.
 
+   [X.680]    ITU-T, "Information technology -- Abstract Syntax Notation
+              One (ASN.1): Specification of basic notation", ITU-T
+              Recommendation X.680, ISO/IEC 8824-1:2015, August 2015,
+              <https://www.itu.int/rec/T-REC-X.680-201508-I/en>.
+
 11.2.  Informative References
 
    [AEAD-LIMITS]
@@ -4020,11 +4025,6 @@ Internet-Draft                 DTN TCPCLv4                  October 2021
               DOI 10.17487/RFC3552, July 2003,
               <https://www.rfc-editor.org/info/rfc3552>.
 
-   [RFC4511]  Sermersheim, J., Ed., "Lightweight Directory Access
-              Protocol (LDAP): The Protocol", RFC 4511,
-              DOI 10.17487/RFC4511, June 2006,
-              <https://www.rfc-editor.org/info/rfc4511>.
-
 
 
 
@@ -4033,6 +4033,11 @@ Sipos, et al.             Expires 7 April 2022                 [Page 72]
 
 Internet-Draft                 DTN TCPCLv4                  October 2021
 
+
+   [RFC4511]  Sermersheim, J., Ed., "Lightweight Directory Access
+              Protocol (LDAP): The Protocol", RFC 4511,
+              DOI 10.17487/RFC4511, June 2006,
+              <https://www.rfc-editor.org/info/rfc4511>.
 
    [RFC4838]  Cerf, V., Burleigh, S., Hooke, A., Torgerson, L., Durst,
               R., Scott, K., Fall, K., and H. Weiss, "Delay-Tolerant
@@ -4076,11 +4081,6 @@ Internet-Draft                 DTN TCPCLv4                  October 2021
               Most of the Time", RFC 7435, DOI 10.17487/RFC7435,
               December 2014, <https://www.rfc-editor.org/info/rfc7435>.
 
-   [RFC7457]  Sheffer, Y., Holz, R., and P. Saint-Andre, "Summarizing
-              Known Attacks on Transport Layer Security (TLS) and
-              Datagram TLS (DTLS)", RFC 7457, DOI 10.17487/RFC7457,
-              February 2015, <https://www.rfc-editor.org/info/rfc7457>.
-
 
 
 
@@ -4089,6 +4089,11 @@ Sipos, et al.             Expires 7 April 2022                 [Page 73]
 
 Internet-Draft                 DTN TCPCLv4                  October 2021
 
+
+   [RFC7457]  Sheffer, Y., Holz, R., and P. Saint-Andre, "Summarizing
+              Known Attacks on Transport Layer Security (TLS) and
+              Datagram TLS (DTLS)", RFC 7457, DOI 10.17487/RFC7457,
+              February 2015, <https://www.rfc-editor.org/info/rfc7457>.
 
    [RFC7942]  Sheffer, Y. and A. Farrel, "Improving Awareness of Running
               Code: The Implementation Status Section", BCP 205,
@@ -4133,11 +4138,6 @@ Appendix A.  Significant changes from RFC7242
    *  Changed Contact Header content to limit number of negotiated
       options.
 
-   *  Added session option to negotiate maximum segment size (per each
-      direction).
-
-   *  Renamed "Endpoint ID" to "Node ID" to conform with BPv7
-      terminology.
 
 
 
@@ -4145,6 +4145,12 @@ Sipos, et al.             Expires 7 April 2022                 [Page 74]
 
 Internet-Draft                 DTN TCPCLv4                  October 2021
 
+
+   *  Added session option to negotiate maximum segment size (per each
+      direction).
+
+   *  Renamed "Endpoint ID" to "Node ID" to conform with BPv7
+      terminology.
 
    *  Added session extension capability.
 
@@ -4188,16 +4194,66 @@ Internet-Draft                 DTN TCPCLv4                  October 2021
 
    *  Added "Resource Exhaustion" SESS_TERM reason code.
 
-Appendix B.  ASN.1 Module
-
-   The following ASN.1 module formally specifies the BundleEID
-   structure, its Other Name form, and the bundleSecurity EKU.  This
-   specification uses the ASN.1 definitions from [RFC5912] with the 2002
-   ASN.1 notation used in that document.
 
 
 
 Sipos, et al.             Expires 7 April 2022                 [Page 75]
+
+Internet-Draft                 DTN TCPCLv4                  October 2021
+
+
+Appendix B.  ASN.1 Module
+
+   The following ASN.1 module formally specifies the BundleEID
+   structure, its Other Name form, and the bundleSecurity Extended Key
+   Usage in the syntax of [X.680].  This specification uses the ASN.1
+   definitions from [RFC5912] with the 2002 ASN.1 notation used in that
+   document.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sipos, et al.             Expires 7 April 2022                 [Page 76]
 
 Internet-Draft                 DTN TCPCLv4                  October 2021
 
@@ -4228,10 +4284,10 @@ Internet-Draft                 DTN TCPCLv4                  October 2021
 
    id-on OBJECT IDENTIFIER ::= { id-pkix 8 }
 
-   DTNOtherNames OTHER-NAME ::= { on-BundleEID, ... }
+   DTNOtherNames OTHER-NAME ::= { on-bundleEID, ... }
 
    -- The otherName definition for Bundle EID
-   on-BundleEID OTHER-NAME ::= {
+   on-bundleEID OTHER-NAME ::= {
        BundleEID IDENTIFIED BY { id-on-bundleEID }
    }
 
@@ -4253,7 +4309,7 @@ Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
 
-Sipos, et al.             Expires 7 April 2022                 [Page 76]
+Sipos, et al.             Expires 7 April 2022                 [Page 77]
 
 Internet-Draft                 DTN TCPCLv4                  October 2021
 
@@ -4281,7 +4337,7 @@ Appendix C.  Example of the BundleEID Other Name Form
           :     }
           :   }
 
-             Figure 28: Visualized decoding of the on-BundleEID
+             Figure 28: Visualized decoding of the on-bundleEID
 
 Authors' Addresses
 
@@ -4309,7 +4365,7 @@ Authors' Addresses
 
 
 
-Sipos, et al.             Expires 7 April 2022                 [Page 77]
+Sipos, et al.             Expires 7 April 2022                 [Page 78]
 
 Internet-Draft                 DTN TCPCLv4                  October 2021
 
@@ -4365,4 +4421,4 @@ Internet-Draft                 DTN TCPCLv4                  October 2021
 
 
 
-Sipos, et al.             Expires 7 April 2022                 [Page 78]
+Sipos, et al.             Expires 7 April 2022                 [Page 79]
