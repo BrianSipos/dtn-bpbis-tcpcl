@@ -2744,7 +2744,7 @@ When assigned one or more stable DNS names, a TCPCL end-entity certificate SHOUL
 When assigned one or more stable network addresses, a TCPCL end-entity certificate MAY contain IPADDR-ID which authenticates those addresses.<a href="#section-4.4.2-5" class="pilcrow">¶</a></p>
 <p id="section-4.4.2-6">
 When allowed by CA policy, a BPSec end-entity certificate SHOULD contain a PKIX Extended Key Usage extension in accordance with <span><a href="https://rfc-editor.org/rfc/rfc5280#section-4.2.1.12" class="relref">Section 4.2.1.12</a> of [<a href="#RFC5280" class="xref">RFC5280</a>]</span>.
-When the PKIX Extended Key Usage extension is present, it SHOULD contain a key purpose <code>id-kp-bundleSecurity</code> (see <a href="#sec-pkix-oids" class="xref">Section 4.4.2.1</a> and <a href="#sec-iana-pkix-kp-oid" class="xref">Section 9.11</a>).
+When the PKIX Extended Key Usage extension is present, it SHOULD contain a key purpose <code>id-kp-bundleSecurity</code> (see <a href="#sec-pkix-oids" class="xref">Section 4.4.2.1</a>).
 Although not specifically required by TCPCL, some networks or TLS implementations assume the use of <code>id-kp-clientAuth</code> and <code>id-kp-serverAuth</code> are needed for, respectively, the client-side and server-side of TLS authentication.
 For interoperability, a TCPCL end-entity certificate MAY contain an Extended Key Usage with both <code>id-kp-clientAuth</code> and <code>id-kp-serverAuth</code> values.<a href="#section-4.4.2-6" class="pilcrow">¶</a></p>
 <p id="section-4.4.2-7">
@@ -2909,7 +2909,7 @@ If the NODE-ID validation result is Failure or if the result is Absent and secur
           </h4>
 <p id="section-4.4.5-1">
 A RECOMMENDED security policy is to enable the use of OCSP checking during TLS handshake.
-A RECOMMENDED security policy is that if an Extended Key Usage is present that it needs to contain <code>id-kp-bundleSecurity</code> (of <a href="#sec-tls-auth-valid-cert" class="xref">Section 4.4.4.1</a>) to be usable with TCPCL security.
+A RECOMMENDED security policy is that if an Extended Key Usage is present that it needs to contain <code>id-kp-bundleSecurity</code> (of <a href="#sec-pkix-oids" class="xref">Section 4.4.2.1</a>) to be usable with TCPCL security.
 A RECOMMENDED security policy is to require a validated Node ID (of <a href="#sec-tls-auth-valid-nodeid" class="xref">Section 4.4.4.3</a>) and to ignore any network-level identifier (of <a href="#sec-tls-auth-valid-netid" class="xref">Section 4.4.4.2</a>).<a href="#section-4.4.5-1" class="pilcrow">¶</a></p>
 <p id="section-4.4.5-2">
 This policy relies on and informs the certificate requirements in <a href="#sec-tls-handshake" class="xref">Section 4.4.3</a>.
@@ -4177,7 +4177,7 @@ NODE-ID validation ensures that the peer to which a bundle is transferred is in 
 In circumstances where certificates can only be issued to DNS names, Node ID validation is not possible but it could be reasonable to assume that a trusted host is not going to present an invalid Node ID.
 Determining when a DNS-ID/IPADDR-ID authentication can be trusted to validate a Node ID is also a policy matter outside of the scope of this document.<a href="#section-8.9-3" class="pilcrow">¶</a></p>
 <p id="section-8.9-4">
-One mitigation to arbitrary entities with valid PKIX certificates impersonating arbitrary Node IDs is the use of the PKIX Extended Key Usage key purpose <code>id-kp-bundleSecurity</code> in <a href="#sec-iana-pkix-kp-oid" class="xref">Section 9.11</a>.
+One mitigation to arbitrary entities with valid PKIX certificates impersonating arbitrary Node IDs is the use of the PKIX Extended Key Usage key purpose <code>id-kp-bundleSecurity</code> (see <a href="#sec-pkix-oids" class="xref">Section 4.4.2.1</a>).
 When this Extended Key Usage is present in the certificate, it represents a stronger assertion that the private key holder should in fact be trusted to operate as a DTN Node.<a href="#section-8.9-4" class="pilcrow">¶</a></p>
 </section>
 </div>

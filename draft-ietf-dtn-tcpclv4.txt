@@ -1651,13 +1651,13 @@ Internet-Draft                 DTN TCPCLv4                  October 2021
    contain a PKIX Extended Key Usage extension in accordance with
    Section 4.2.1.12 of [RFC5280].  When the PKIX Extended Key Usage
    extension is present, it SHOULD contain a key purpose id-kp-
-   bundleSecurity (see Section 4.4.2.1 and Section 9.11).  Although not
-   specifically required by TCPCL, some networks or TLS implementations
-   assume the use of id-kp-clientAuth and id-kp-serverAuth are needed
-   for, respectively, the client-side and server-side of TLS
-   authentication.  For interoperability, a TCPCL end-entity certificate
-   MAY contain an Extended Key Usage with both id-kp-clientAuth and id-
-   kp-serverAuth values.
+   bundleSecurity (see Section 4.4.2.1).  Although not specifically
+   required by TCPCL, some networks or TLS implementations assume the
+   use of id-kp-clientAuth and id-kp-serverAuth are needed for,
+   respectively, the client-side and server-side of TLS authentication.
+   For interoperability, a TCPCL end-entity certificate MAY contain an
+   Extended Key Usage with both id-kp-clientAuth and id-kp-serverAuth
+   values.
 
    When allowed by CA policy, a TCPCL end-entity certificate SHOULD
    contain a PKIX Key Usage extension in accordance with Section 4.2.1.3
@@ -1865,7 +1865,7 @@ Internet-Draft                 DTN TCPCLv4                  October 2021
    A RECOMMENDED security policy is to enable the use of OCSP checking
    during TLS handshake.  A RECOMMENDED security policy is that if an
    Extended Key Usage is present that it needs to contain id-kp-
-   bundleSecurity (of Section 4.4.4.1) to be usable with TCPCL security.
+   bundleSecurity (of Section 4.4.2.1) to be usable with TCPCL security.
    A RECOMMENDED security policy is to require a validated Node ID (of
    Section 4.4.4.3) and to ignore any network-level identifier (of
    Section 4.4.4.2).
@@ -3308,9 +3308,9 @@ Internet-Draft                 DTN TCPCLv4                  October 2021
 
    One mitigation to arbitrary entities with valid PKIX certificates
    impersonating arbitrary Node IDs is the use of the PKIX Extended Key
-   Usage key purpose id-kp-bundleSecurity in Section 9.11.  When this
-   Extended Key Usage is present in the certificate, it represents a
-   stronger assertion that the private key holder should in fact be
+   Usage key purpose id-kp-bundleSecurity (see Section 4.4.2.1).  When
+   this Extended Key Usage is present in the certificate, it represents
+   a stronger assertion that the private key holder should in fact be
    trusted to operate as a DTN Node.
 
 8.10.  Threat: Denial of Service
