@@ -1131,7 +1131,7 @@ When assigned one or more stable network addresses, a TCPCL end-entity certifica
           </t>
           <t>
 When allowed by CA policy, a BPSec end-entity certificate SHOULD contain a PKIX Extended Key Usage extension in accordance with <xref section="4.2.1.12" target="RFC5280"/>.
-When the PKIX Extended Key Usage extension is present, it SHOULD contain a key purpose <tt>id-kp-bundleSecurity</tt> (see <xref target="sec-pkix-oids"/> and <xref target="sec-iana-pkix-kp-oid"/>).
+When the PKIX Extended Key Usage extension is present, it SHOULD contain a key purpose <tt>id-kp-bundleSecurity</tt> (see <xref target="sec-pkix-oids"/>).
 Although not specifically required by TCPCL, some networks or TLS implementations assume the use of <tt>id-kp-clientAuth</tt> and <tt>id-kp-serverAuth</tt> are needed for, respectively, the client-side and server-side of TLS authentication.
 For interoperability, a TCPCL end-entity certificate MAY contain an Extended Key Usage with both <tt>id-kp-clientAuth</tt> and <tt>id-kp-serverAuth</tt> values.
           </t>
@@ -1274,7 +1274,7 @@ If the NODE-ID validation result is Failure or if the result is Absent and secur
           <name>Policy Recommendations</name>
           <t>
 A RECOMMENDED security policy is to enable the use of OCSP checking during TLS handshake.
-A RECOMMENDED security policy is that if an Extended Key Usage is present that it needs to contain <tt>id-kp-bundleSecurity</tt> (of <xref target="sec-tls-auth-valid-cert"/>) to be usable with TCPCL security.
+A RECOMMENDED security policy is that if an Extended Key Usage is present that it needs to contain <tt>id-kp-bundleSecurity</tt> (of <xref target="sec-pkix-oids"/>) to be usable with TCPCL security.
 A RECOMMENDED security policy is to require a validated Node ID (of <xref target="sec-tls-auth-valid-nodeid"/>) and to ignore any network-level identifier (of <xref target="sec-tls-auth-valid-netid"/>).
           </t>
           <t>
@@ -2401,7 +2401,7 @@ In circumstances where certificates can only be issued to DNS names, Node ID val
 Determining when a DNS-ID/IPADDR-ID authentication can be trusted to validate a Node ID is also a policy matter outside of the scope of this document.
         </t>
         <t>
-One mitigation to arbitrary entities with valid PKIX certificates impersonating arbitrary Node IDs is the use of the PKIX Extended Key Usage key purpose <tt>id-kp-bundleSecurity</tt> in <xref target="sec-iana-pkix-kp-oid"/>.
+One mitigation to arbitrary entities with valid PKIX certificates impersonating arbitrary Node IDs is the use of the PKIX Extended Key Usage key purpose <tt>id-kp-bundleSecurity</tt> (see <xref target="sec-pkix-oids"/>).
 When this Extended Key Usage is present in the certificate, it represents a stronger assertion that the private key holder should in fact be trusted to operate as a DTN Node.
         </t>
       </section>
